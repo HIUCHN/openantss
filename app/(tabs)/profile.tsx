@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Alert, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, GraduationCap, Hash as Hashtag, Image as ImageIcon, Smartphone, Save, X } from 'lucide-react-native';
+import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, GraduationCap, Hash as Hashtag, Image as ImageIcon, Smartphone, Save, X, Edit, Trash2 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -94,7 +94,8 @@ export default function ProfileScreen() {
   const { user, profile, loading: authLoading } = useAuth();
   const [educationList, setEducationList] = useState<UserEducation[]>([]);
   const [educationLoading, setEducationLoading] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingEducation, setEditingEducation] = useState<UserEducation | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const hasFetchedRef = useRef(false);
   
@@ -145,6 +146,38 @@ export default function ProfileScreen() {
     }
   };
 
+  const openEditModal = (education?: UserEducation) => {
+    if (education) {
+      setEditingEducation(education);
+      setFormData({
+        school: education.school,
+        degree: education.degree,
+        start_year: education.start_year,
+        end_year: education.end_year
+      });
+    } else {
+      setEditingEducation(null);
+      setFormData({
+        school: '',
+        degree: '',
+        start_year: '',
+        end_year: ''
+      });
+    }
+    setShowEditModal(true);
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setEditingEducation(null);
+    setFormData({
+      school: '',
+      degree: '',
+      start_year: '',
+      end_year: ''
+    });
+  };
+
   const handleSubmit = async () => {
     // Validate form data
     if (!formData.school.trim() || !formData.degree.trim() || !formData.start_year.trim() || !formData.end_year.trim()) {
@@ -180,47 +213,102 @@ export default function ProfileScreen() {
     try {
       setSubmitting(true);
 
-      const newEducation: UserEducationInsert = {
-        user_id: user.id,
-        school: formData.school.trim(),
-        degree: formData.degree.trim(),
-        start_year: formData.start_year.trim(),
-        end_year: formData.end_year.trim()
-      };
+      if (editingEducation) {
+        // Update existing education
+        const { data, error } = await supabase
+          .from('user_education')
+          .update({
+            school: formData.school.trim(),
+            degree: formData.degree.trim(),
+            start_year: formData.start_year.trim(),
+            end_year: formData.end_year.trim()
+          })
+          .eq('id', editingEducation.id)
+          .select()
+          .single();
 
-      const { data, error } = await supabase
-        .from('user_education')
-        .insert(newEducation)
-        .select()
-        .single();
+        if (error) {
+          console.error('Error updating education:', error);
+          Alert.alert('Error', 'Failed to update education record. Please try again.');
+        } else if (data) {
+          // Update the education in the list
+          setEducationList(prev => {
+            const updated = prev.map(edu => edu.id === editingEducation.id ? data : edu);
+            return updated.sort((a, b) => parseInt(b.start_year) - parseInt(a.start_year));
+          });
+          
+          closeEditModal();
+          Alert.alert('Success!', 'Education record updated successfully!');
+        }
+      } else {
+        // Add new education
+        const newEducation: UserEducationInsert = {
+          user_id: user.id,
+          school: formData.school.trim(),
+          degree: formData.degree.trim(),
+          start_year: formData.start_year.trim(),
+          end_year: formData.end_year.trim()
+        };
 
-      if (error) {
-        console.error('Error inserting education:', error);
-        Alert.alert('Error', 'Failed to add education record. Please try again.');
-      } else if (data) {
-        // Success - add the new record to the list (sorted by start_year desc)
-        setEducationList(prev => {
-          const updated = [data, ...prev];
-          return updated.sort((a, b) => parseInt(b.start_year) - parseInt(a.start_year));
-        });
-        
-        // Clear the form and hide it
-        setFormData({
-          school: '',
-          degree: '',
-          start_year: '',
-          end_year: ''
-        });
-        setShowAddForm(false);
+        const { data, error } = await supabase
+          .from('user_education')
+          .insert(newEducation)
+          .select()
+          .single();
 
-        Alert.alert('Success!', 'Education record added successfully!');
+        if (error) {
+          console.error('Error inserting education:', error);
+          Alert.alert('Error', 'Failed to add education record. Please try again.');
+        } else if (data) {
+          // Add the new record to the list (sorted by start_year desc)
+          setEducationList(prev => {
+            const updated = [data, ...prev];
+            return updated.sort((a, b) => parseInt(b.start_year) - parseInt(a.start_year));
+          });
+          
+          closeEditModal();
+          Alert.alert('Success!', 'Education record added successfully!');
+        }
       }
     } catch (error) {
-      console.error('Unexpected error adding education:', error);
+      console.error('Unexpected error with education:', error);
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleDeleteEducation = async (education: UserEducation) => {
+    Alert.alert(
+      'Delete Education',
+      `Are you sure you want to delete "${education.degree}" from ${education.school}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('user_education')
+                .delete()
+                .eq('id', education.id);
+
+              if (error) {
+                console.error('Error deleting education:', error);
+                Alert.alert('Error', 'Failed to delete education record. Please try again.');
+              } else {
+                setEducationList(prev => prev.filter(edu => edu.id !== education.id));
+                Alert.alert('Success!', 'Education record deleted successfully!');
+              }
+            } catch (error) {
+              console.error('Unexpected error deleting education:', error);
+              Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleBack = () => {
@@ -261,6 +349,103 @@ export default function ProfileScreen() {
       </View>
     );
   };
+
+  const EducationEditModal = () => (
+    <Modal
+      visible={showEditModal}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={closeEditModal}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.editModalContent}>
+          <View style={styles.editModalHeader}>
+            <Text style={styles.editModalTitle}>
+              {editingEducation ? 'Edit Education' : 'Add Education'}
+            </Text>
+            <TouchableOpacity onPress={closeEditModal} disabled={submitting}>
+              <X size={24} color={submitting ? "#9CA3AF" : "#6B7280"} />
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView style={styles.editModalForm} showsVerticalScrollIndicator={false}>
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>School or University *</Text>
+              <TextInput
+                style={[styles.formInput, submitting && styles.formInputDisabled]}
+                placeholder="e.g., Harvard University"
+                value={formData.school}
+                onChangeText={(text) => setFormData(prev => ({ ...prev, school: text }))}
+                editable={!submitting}
+              />
+            </View>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Degree *</Text>
+              <TextInput
+                style={[styles.formInput, submitting && styles.formInputDisabled]}
+                placeholder="e.g., Bachelor of Science in Computer Science"
+                value={formData.degree}
+                onChangeText={(text) => setFormData(prev => ({ ...prev, degree: text }))}
+                editable={!submitting}
+              />
+            </View>
+            
+            <View style={styles.yearRow}>
+              <View style={styles.yearGroup}>
+                <Text style={styles.formLabel}>Start Year *</Text>
+                <TextInput
+                  style={[styles.formInput, submitting && styles.formInputDisabled]}
+                  placeholder="2018"
+                  value={formData.start_year}
+                  onChangeText={(text) => setFormData(prev => ({ ...prev, start_year: text }))}
+                  keyboardType="numeric"
+                  maxLength={4}
+                  editable={!submitting}
+                />
+              </View>
+              <View style={styles.yearGroup}>
+                <Text style={styles.formLabel}>End Year *</Text>
+                <TextInput
+                  style={[styles.formInput, submitting && styles.formInputDisabled]}
+                  placeholder="2022"
+                  value={formData.end_year}
+                  onChangeText={(text) => setFormData(prev => ({ ...prev, end_year: text }))}
+                  keyboardType="numeric"
+                  maxLength={4}
+                  editable={!submitting}
+                />
+              </View>
+            </View>
+          </ScrollView>
+          
+          <View style={styles.editModalActions}>
+            <TouchableOpacity 
+              style={[styles.cancelButton, submitting && styles.buttonDisabled]}
+              onPress={closeEditModal}
+              disabled={submitting}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.saveButton, submitting && styles.buttonDisabled]}
+              onPress={handleSubmit}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Save size={16} color="#FFFFFF" />
+              )}
+              <Text style={styles.saveButtonText}>
+                {submitting ? 'Saving...' : editingEducation ? 'Update' : 'Add'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 
   // Show loading state while auth is loading
   if (authLoading) {
@@ -493,10 +678,11 @@ export default function ProfileScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Education</Text>
             <TouchableOpacity 
-              style={styles.addButton}
-              onPress={() => setShowAddForm(!showAddForm)}
+              style={styles.editButton}
+              onPress={() => openEditModal()}
             >
-              <Plus size={16} color="#6366F1" />
+              <Edit size={16} color="#6366F1" />
+              <Text style={styles.editButtonText}>Edit</Text>
             </TouchableOpacity>
           </View>
           
@@ -513,7 +699,7 @@ export default function ProfileScreen() {
             <>
               {educationList.length > 0 ? (
                 educationList.map((education) => (
-                  <View key={education.id} style={styles.experienceItem}>
+                  <View key={education.id} style={styles.educationItem}>
                     <View style={[styles.experienceLogo, { backgroundColor: '#8B5CF6' }]}>
                       <Text style={styles.experienceLogoText}>
                         {education.school.charAt(0).toUpperCase()}
@@ -523,77 +709,27 @@ export default function ProfileScreen() {
                       <Text style={styles.experienceTitle}>{education.degree}</Text>
                       <Text style={styles.experienceCompany}>{education.school} • {education.start_year} - {education.end_year}</Text>
                     </View>
+                    <View style={styles.educationActions}>
+                      <TouchableOpacity 
+                        style={styles.educationActionButton}
+                        onPress={() => openEditModal(education)}
+                      >
+                        <Edit size={16} color="#6B7280" />
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.educationActionButton}
+                        onPress={() => handleDeleteEducation(education)}
+                      >
+                        <Trash2 size={16} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 ))
               ) : (
                 <View style={styles.emptyState}>
                   <GraduationCap size={32} color="#9CA3AF" />
                   <Text style={styles.emptyText}>No education added yet</Text>
-                  <Text style={styles.emptySubtext}>Add your first education record to get started</Text>
-                </View>
-              )}
-
-              {/* Add Education Form */}
-              {showAddForm && (
-                <View style={styles.addForm}>
-                  <View style={styles.formHeader}>
-                    <Text style={styles.formTitle}>Add Education</Text>
-                    <TouchableOpacity onPress={() => setShowAddForm(false)} disabled={submitting}>
-                      <X size={20} color={submitting ? "#9CA3AF" : "#6B7280"} />
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <TextInput
-                    style={[styles.formInput, submitting && styles.formInputDisabled]}
-                    placeholder="School or University (e.g., Harvard University)"
-                    value={formData.school}
-                    onChangeText={(text) => setFormData(prev => ({ ...prev, school: text }))}
-                    editable={!submitting}
-                  />
-                  
-                  <TextInput
-                    style={[styles.formInput, submitting && styles.formInputDisabled]}
-                    placeholder="Degree (e.g., Bachelor of Science in Computer Science)"
-                    value={formData.degree}
-                    onChangeText={(text) => setFormData(prev => ({ ...prev, degree: text }))}
-                    editable={!submitting}
-                  />
-                  
-                  <View style={styles.yearRow}>
-                    <TextInput
-                      style={[styles.formInput, styles.yearInput, submitting && styles.formInputDisabled]}
-                      placeholder="Start Year (e.g., 2018)"
-                      value={formData.start_year}
-                      onChangeText={(text) => setFormData(prev => ({ ...prev, start_year: text }))}
-                      keyboardType="numeric"
-                      maxLength={4}
-                      editable={!submitting}
-                    />
-                    <TextInput
-                      style={[styles.formInput, styles.yearInput, submitting && styles.formInputDisabled]}
-                      placeholder="End Year (e.g., 2022)"
-                      value={formData.end_year}
-                      onChangeText={(text) => setFormData(prev => ({ ...prev, end_year: text }))}
-                      keyboardType="numeric"
-                      maxLength={4}
-                      editable={!submitting}
-                    />
-                  </View>
-                  
-                  <TouchableOpacity 
-                    style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-                    onPress={handleSubmit}
-                    disabled={submitting}
-                  >
-                    {submitting ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Save size={16} color="#FFFFFF" />
-                    )}
-                    <Text style={styles.submitButtonText}>
-                      {submitting ? 'Adding...' : 'Add Education'}
-                    </Text>
-                  </TouchableOpacity>
+                  <Text style={styles.emptySubtext}>Tap "Edit" to add your first education record</Text>
                 </View>
               )}
             </>
@@ -703,6 +839,9 @@ export default function ProfileScreen() {
 
         <View style={styles.bottomPadding} />
       </ScrollView>
+
+      {/* Education Edit Modal */}
+      <EducationEditModal />
     </SafeAreaView>
   );
 }
@@ -943,8 +1082,19 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: '#111827',
   },
-  addButton: {
-    padding: 4,
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  editButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#6366F1',
   },
   locationInfo: {
     flexDirection: 'row',
@@ -1145,65 +1295,19 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     textAlign: 'center',
   },
-  addForm: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    padding: 16,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  formHeader: {
+  educationItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  formTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#111827',
-  },
-  formInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#111827',
     marginBottom: 12,
   },
-  formInputDisabled: {
-    backgroundColor: '#F9FAFB',
-    color: '#9CA3AF',
-  },
-  yearRow: {
+  educationActions: {
     flexDirection: 'row',
-    gap: 12,
-  },
-  yearInput: {
-    flex: 1,
-  },
-  submitButton: {
-    backgroundColor: '#6366F1',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
     gap: 8,
-    marginTop: 8,
   },
-  submitButtonDisabled: {
-    backgroundColor: '#9CA3AF',
-  },
-  submitButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
+  educationActionButton: {
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: '#F9FAFB',
   },
   skillsContainer: {
     flexDirection: 'row',
@@ -1357,6 +1461,108 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  editModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '80%',
+  },
+  editModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  editModalTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
+  },
+  editModalForm: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+  },
+  formGroup: {
+    marginBottom: 16,
+  },
+  formLabel: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#374151',
+    marginBottom: 6,
+  },
+  formInput: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#111827',
+  },
+  formInputDisabled: {
+    backgroundColor: '#F3F4F6',
+    color: '#9CA3AF',
+  },
+  yearRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  yearGroup: {
+    flex: 1,
+  },
+  editModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#374151',
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: '#6366F1',
+    borderRadius: 8,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  saveButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   bottomPadding: {
     height: 100,
