@@ -156,38 +156,6 @@ export interface Database {
           updated_at?: string;
         };
       };
-      user_education: {
-        Row: {
-          id: string;
-          user_id: string;
-          school: string;
-          degree: string;
-          start_year: string;
-          end_year: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          school: string;
-          degree: string;
-          start_year: string;
-          end_year: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          school?: string;
-          degree?: string;
-          start_year?: string;
-          end_year?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
     };
     Views: {
       [_ in never]: never;

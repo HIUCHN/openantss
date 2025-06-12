@@ -1,15 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Alert, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, GraduationCap, Hash as Hashtag, Image as ImageIcon, Smartphone, Save, X, RefreshCw, CircleAlert as AlertCircle } from 'lucide-react-native';
+import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, Hash as Hashtag, Image as ImageIcon, Smartphone } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
-import { Database } from '@/types/database';
-
-type UserEducation = Database['public']['Tables']['user_education']['Row'];
-type UserEducationInsert = Database['public']['Tables']['user_education']['Insert'];
 
 // Mock user data - in a real app, this would come from your API
 const getUserData = () => ({
@@ -53,6 +48,15 @@ const getUserData = () => ({
       tags: []
     }
   ],
+  education: [
+    {
+      degree: 'MSc Business Analytics',
+      school: 'University of Strathclyde',
+      year: '2020',
+      logo: 'S',
+      color: '#8B5CF6'
+    }
+  ],
   skills: [
     { name: '#UI/UX', color: 'blue' },
     { name: '#Figma', color: 'purple' },
@@ -92,217 +96,7 @@ const getUserData = () => ({
 
 export default function ProfileScreen() {
   const { user, profile, loading: authLoading } = useAuth();
-  const [educationList, setEducationList] = useState<UserEducation[]>([]);
-  const [educationLoading, setEducationLoading] = useState(false);
-  const [educationLoaded, setEducationLoaded] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
-  const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'error'>('checking');
-  
-  // Form state
-  const [formData, setFormData] = useState({
-    school: '',
-    degree: '',
-    start_year: '',
-    end_year: ''
-  });
-
   const userData = getUserData();
-
-  // Check Supabase connection on component mount
-  useEffect(() => {
-    checkSupabaseConnection();
-  }, []);
-
-  // Fetch education data when user is available and connection is established
-  useEffect(() => {
-    if (!authLoading && user && connectionStatus === 'connected' && !educationLoaded) {
-      fetchEducationData();
-    } else if (!authLoading && !user) {
-      setError('Please sign in to view education data');
-    }
-  }, [user, authLoading, connectionStatus, educationLoaded]);
-
-  const checkSupabaseConnection = async () => {
-    try {
-      setConnectionStatus('checking');
-      
-      const { data, error: connectionError } = await Promise.race([
-        supabase.from('profiles').select('id').limit(1),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Connection timeout')), 10000)
-        )
-      ]) as any;
-
-      if (connectionError) {
-        console.error('Supabase connection error:', connectionError);
-        setConnectionStatus('error');
-        setError(`Connection failed: ${connectionError.message}`);
-      } else {
-        setConnectionStatus('connected');
-        setError(null);
-      }
-    } catch (err: any) {
-      console.error('Connection test failed:', err);
-      setConnectionStatus('error');
-      if (err.message === 'Connection timeout') {
-        setError('Unable to connect to database. Please check your internet connection and try again.');
-      } else {
-        setError('Database connection failed. Please try again later.');
-      }
-    }
-  };
-
-  const fetchEducationData = useCallback(async () => {
-    if (!user) {
-      setError('User not authenticated');
-      return;
-    }
-
-    try {
-      setEducationLoading(true);
-      setError(null);
-
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Request timeout')), 30000)
-      );
-
-      const dataPromise = supabase
-        .from('user_education')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('start_year', { ascending: false });
-
-      const { data, error: fetchError } = await Promise.race([dataPromise, timeoutPromise]) as any;
-
-      if (fetchError) {
-        console.error('Error fetching education data:', fetchError);
-        
-        if (fetchError.code === 'PGRST116') {
-          setError('Education data not found. You can add your first education record below.');
-        } else if (fetchError.message?.includes('permission')) {
-          setError('Permission denied. Please check your account access.');
-        } else {
-          setError(`Failed to load education data: ${fetchError.message}`);
-        }
-      } else {
-        setEducationList(data || []);
-        setEducationLoaded(true);
-        setRetryCount(0);
-      }
-    } catch (err: any) {
-      console.error('Unexpected error fetching education:', err);
-      if (err.message === 'Request timeout') {
-        setError('Request timed out. This might be due to a slow connection or server issues.');
-      } else {
-        setError('An unexpected error occurred while loading education data.');
-      }
-    } finally {
-      setEducationLoading(false);
-    }
-  }, [user]);
-
-  const handleRetry = () => {
-    if (connectionStatus === 'error') {
-      checkSupabaseConnection();
-    } else if (retryCount < 3) {
-      setRetryCount(prev => prev + 1);
-      fetchEducationData();
-    } else {
-      setError('Maximum retry attempts reached. Please refresh the page or check your connection.');
-    }
-  };
-
-  const handleRefresh = () => {
-    setEducationLoaded(false);
-    setRetryCount(0);
-    fetchEducationData();
-  };
-
-  const handleSubmit = async () => {
-    // Validate form data
-    if (!formData.school.trim() || !formData.degree.trim() || !formData.start_year.trim() || !formData.end_year.trim()) {
-      Alert.alert('Validation Error', 'Please fill in all fields');
-      return;
-    }
-
-    // Basic year validation
-    const startYear = parseInt(formData.start_year);
-    const endYear = parseInt(formData.end_year);
-    const currentYear = new Date().getFullYear();
-
-    if (isNaN(startYear) || isNaN(endYear)) {
-      Alert.alert('Validation Error', 'Please enter valid years');
-      return;
-    }
-
-    if (startYear < 1900 || startYear > currentYear + 10) {
-      Alert.alert('Validation Error', 'Please enter a valid start year');
-      return;
-    }
-
-    if (endYear < startYear || endYear > currentYear + 10) {
-      Alert.alert('Validation Error', 'End year must be after start year and not too far in the future');
-      return;
-    }
-
-    if (!user) {
-      Alert.alert('Authentication Error', 'Please sign in again to continue');
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      setError(null);
-
-      const newEducation: UserEducationInsert = {
-        user_id: user.id,
-        school: formData.school.trim(),
-        degree: formData.degree.trim(),
-        start_year: formData.start_year.trim(),
-        end_year: formData.end_year.trim()
-      };
-
-      const { data, error: insertError } = await supabase
-        .from('user_education')
-        .insert(newEducation)
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error('Error inserting education:', insertError);
-        
-        if (insertError.message?.includes('permission')) {
-          Alert.alert('Permission Error', 'You do not have permission to add education records. Please check your account status.');
-        } else if (insertError.message?.includes('duplicate')) {
-          Alert.alert('Duplicate Entry', 'This education record already exists.');
-        } else {
-          Alert.alert('Error', `Failed to add education record: ${insertError.message}`);
-        }
-      } else if (data) {
-        // Success - add the new record to the list
-        setEducationList(prev => [data, ...prev]);
-        
-        // Clear the form and hide it
-        setFormData({
-          school: '',
-          degree: '',
-          start_year: '',
-          end_year: ''
-        });
-        setShowAddForm(false);
-
-        Alert.alert('Success', 'Education record added successfully!');
-      }
-    } catch (err: any) {
-      console.error('Unexpected error adding education:', err);
-      Alert.alert('Unexpected Error', 'An unexpected error occurred while saving your education record. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const handleBack = () => {
     router.back();
@@ -348,7 +142,6 @@ export default function ProfileScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#6366F1" />
           <Text style={styles.loadingText}>Loading profile...</Text>
         </View>
       </SafeAreaView>
@@ -360,7 +153,6 @@ export default function ProfileScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centerContainer}>
-          <AlertCircle size={48} color="#EF4444" />
           <Text style={styles.errorText}>Please sign in to view your profile</Text>
           <TouchableOpacity 
             style={styles.retryButton}
@@ -392,24 +184,6 @@ export default function ProfileScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Connection Status Banner */}
-        {connectionStatus === 'checking' && (
-          <View style={styles.connectionBanner}>
-            <ActivityIndicator size="small" color="#6366F1" />
-            <Text style={styles.connectionText}>Connecting to database...</Text>
-          </View>
-        )}
-        
-        {connectionStatus === 'error' && (
-          <View style={[styles.connectionBanner, styles.errorBanner]}>
-            <AlertCircle size={16} color="#DC2626" />
-            <Text style={[styles.connectionText, styles.errorConnectionText]}>Database connection failed</Text>
-            <TouchableOpacity style={styles.reconnectButton} onPress={checkSupabaseConnection}>
-              <Text style={styles.reconnectButtonText}>Reconnect</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
         {/* Profile Header */}
         <View style={styles.profileHeader}>
           <View style={styles.profileInfo}>
@@ -588,151 +362,20 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Education - Fixed implementation */}
+        {/* Education - Using mock data */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Education</Text>
-            <View style={styles.sectionActions}>
-              {educationLoaded && (
-                <TouchableOpacity 
-                  style={styles.refreshButton}
-                  onPress={handleRefresh}
-                  disabled={educationLoading}
-                >
-                  <RefreshCw 
-                    size={16} 
-                    color={educationLoading ? "#9CA3AF" : "#6B7280"} 
-                    style={educationLoading ? styles.spinning : undefined}
-                  />
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity 
-                style={styles.addButton}
-                onPress={() => setShowAddForm(!showAddForm)}
-                disabled={connectionStatus !== 'connected'}
-              >
-                <Plus size={16} color={connectionStatus === 'connected' ? "#6366F1" : "#9CA3AF"} />
-              </TouchableOpacity>
-            </View>
-          </View>
-          
-          {/* Error Display with Retry */}
-          {error && (
-            <View style={styles.errorContainer}>
-              <AlertCircle size={16} color="#DC2626" />
-              <View style={styles.errorContent}>
-                <Text style={styles.errorText}>{error}</Text>
-                {(retryCount < 3 || connectionStatus === 'error') && (
-                  <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
-                    <RefreshCw size={14} color="#6366F1" />
-                    <Text style={styles.retryButtonText}>
-                      {connectionStatus === 'error' ? 'Reconnect' : `Retry (${retryCount + 1}/3)`}
-                    </Text>
-                  </TouchableOpacity>
-                )}
+          <Text style={styles.sectionTitle}>Education</Text>
+          {userData.education.map((edu, index) => (
+            <View key={index} style={styles.experienceItem}>
+              <View style={[styles.experienceLogo, { backgroundColor: edu.color }]}>
+                <Text style={styles.experienceLogoText}>{edu.logo}</Text>
+              </View>
+              <View style={styles.experienceInfo}>
+                <Text style={styles.experienceTitle}>{edu.degree}</Text>
+                <Text style={styles.experienceCompany}>{edu.school} • {edu.year}</Text>
               </View>
             </View>
-          )}
-
-          {/* Loading State */}
-          {educationLoading && (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#6366F1" />
-              <Text style={styles.loadingText}>Loading education data...</Text>
-            </View>
-          )}
-
-          {/* Education Content */}
-          {!educationLoading && (
-            <>
-              {/* Education List */}
-              {educationList.length > 0 ? (
-                educationList.map((education) => (
-                  <View key={education.id} style={styles.experienceItem}>
-                    <View style={[styles.experienceLogo, { backgroundColor: '#8B5CF6' }]}>
-                      <Text style={styles.experienceLogoText}>
-                        {education.school.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                    <View style={styles.experienceInfo}>
-                      <Text style={styles.experienceTitle}>{education.degree}</Text>
-                      <Text style={styles.experienceCompany}>{education.school} • {education.start_year} - {education.end_year}</Text>
-                    </View>
-                  </View>
-                ))
-              ) : !error && connectionStatus === 'connected' && educationLoaded && (
-                <View style={styles.emptyState}>
-                  <GraduationCap size={32} color="#9CA3AF" />
-                  <Text style={styles.emptyText}>No education records yet</Text>
-                  <Text style={styles.emptySubtext}>Add your first education record to get started</Text>
-                </View>
-              )}
-
-              {/* Add Education Form */}
-              {showAddForm && connectionStatus === 'connected' && (
-                <View style={styles.addForm}>
-                  <View style={styles.formHeader}>
-                    <Text style={styles.formTitle}>Add Education</Text>
-                    <TouchableOpacity onPress={() => setShowAddForm(false)} disabled={submitting}>
-                      <X size={20} color={submitting ? "#9CA3AF" : "#6B7280"} />
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <TextInput
-                    style={[styles.formInput, submitting && styles.formInputDisabled]}
-                    placeholder="School or University (e.g., Harvard University)"
-                    value={formData.school}
-                    onChangeText={(text) => setFormData(prev => ({ ...prev, school: text }))}
-                    editable={!submitting}
-                  />
-                  
-                  <TextInput
-                    style={[styles.formInput, submitting && styles.formInputDisabled]}
-                    placeholder="Degree (e.g., Bachelor of Science in Computer Science)"
-                    value={formData.degree}
-                    onChangeText={(text) => setFormData(prev => ({ ...prev, degree: text }))}
-                    editable={!submitting}
-                  />
-                  
-                  <View style={styles.yearRow}>
-                    <TextInput
-                      style={[styles.formInput, styles.yearInput, submitting && styles.formInputDisabled]}
-                      placeholder="Start Year (e.g., 2018)"
-                      value={formData.start_year}
-                      onChangeText={(text) => setFormData(prev => ({ ...prev, start_year: text }))}
-                      keyboardType="numeric"
-                      maxLength={4}
-                      editable={!submitting}
-                    />
-                    <TextInput
-                      style={[styles.formInput, styles.yearInput, submitting && styles.formInputDisabled]}
-                      placeholder="End Year (e.g., 2022)"
-                      value={formData.end_year}
-                      onChangeText={(text) => setFormData(prev => ({ ...prev, end_year: text }))}
-                      keyboardType="numeric"
-                      maxLength={4}
-                      editable={!submitting}
-                    />
-                  </View>
-                  
-                  <TouchableOpacity 
-                    style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-                    onPress={handleSubmit}
-                    disabled={submitting}
-                  >
-                    {submitting ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Save size={16} color="#FFFFFF" />
-                    )}
-                    <Text style={styles.submitButtonText}>
-                      {submitting ? 'Adding...' : 'Add Education'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </>
-          )}
+          ))}
         </View>
 
         {/* Skills */}
@@ -878,42 +521,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-  },
-  connectionBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EEF2FF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#C7D2FE',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
-  },
-  errorBanner: {
-    backgroundColor: '#FEF2F2',
-    borderBottomColor: '#FECACA',
-  },
-  connectionText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#6366F1',
-    flex: 1,
-  },
-  errorConnectionText: {
-    color: '#DC2626',
-  },
-  reconnectButton: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#DC2626',
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  reconnectButtonText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#DC2626',
   },
   profileHeader: {
     backgroundColor: '#FFFFFF',
@@ -1103,30 +710,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
   sectionTitle: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
     color: '#111827',
-  },
-  sectionActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  refreshButton: {
-    padding: 4,
-  },
-  addButton: {
-    padding: 4,
-  },
-  spinning: {
-    transform: [{ rotate: '360deg' }],
+    marginBottom: 12,
   },
   locationInfo: {
     flexDirection: 'row',
@@ -1299,131 +887,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
   },
-  errorContainer: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  errorContent: {
-    flex: 1,
-  },
-  errorText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#DC2626',
-    marginBottom: 8,
-  },
-  retryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#6366F1',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    gap: 6,
-    alignSelf: 'flex-start',
-  },
-  retryButtonText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#6366F1',
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    gap: 8,
-  },
-  loadingText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 24,
-    gap: 8,
-  },
-  emptyText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#6B7280',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#9CA3AF',
-    textAlign: 'center',
-  },
-  addForm: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    padding: 16,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  formHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  formTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#111827',
-  },
-  formInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#111827',
-    marginBottom: 12,
-  },
-  formInputDisabled: {
-    backgroundColor: '#F9FAFB',
-    color: '#9CA3AF',
-  },
-  yearRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  yearInput: {
-    flex: 1,
-  },
-  submitButton: {
-    backgroundColor: '#6366F1',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-    marginTop: 8,
-  },
-  submitButtonDisabled: {
-    backgroundColor: '#9CA3AF',
-  },
-  submitButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
   skillsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1556,6 +1019,29 @@ const styles = StyleSheet.create({
   },
   waveButtonText: {
     fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
+  errorText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#EF4444',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
   },
