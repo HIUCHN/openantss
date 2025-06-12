@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, Hash as Hashtag, Image as ImageIcon, Smartphone } from 'lucide-react-native';
+import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, GraduationCap, Hash as Hashtag, Image as ImageIcon, Smartphone, Save, X } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { Database } from '@/types/database';
+
+type UserEducation = Database['public']['Tables']['user_education']['Row'];
+type UserEducationInsert = Database['public']['Tables']['user_education']['Insert'];
 
 // Mock user data - in a real app, this would come from your API
 const getUserData = () => ({
@@ -48,15 +53,6 @@ const getUserData = () => ({
       tags: []
     }
   ],
-  education: [
-    {
-      degree: 'MSc Business Analytics',
-      school: 'University of Strathclyde',
-      year: '2020',
-      logo: 'S',
-      color: '#8B5CF6'
-    }
-  ],
   skills: [
     { name: '#UI/UX', color: 'blue' },
     { name: '#Figma', color: 'purple' },
@@ -96,7 +92,136 @@ const getUserData = () => ({
 
 export default function ProfileScreen() {
   const { user, profile, loading: authLoading } = useAuth();
+  const [educationList, setEducationList] = useState<UserEducation[]>([]);
+  const [educationLoading, setEducationLoading] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const hasFetchedRef = useRef(false);
+  
+  // Form state
+  const [formData, setFormData] = useState({
+    school: '',
+    degree: '',
+    start_year: '',
+    end_year: ''
+  });
+
   const userData = getUserData();
+
+  // Fetch education data when user is available (only once)
+  useEffect(() => {
+    if (!authLoading && user && !hasFetchedRef.current) {
+      fetchEducationData();
+      hasFetchedRef.current = true;
+    }
+  }, [user, authLoading]);
+
+  const fetchEducationData = async () => {
+    if (!user) return;
+
+    try {
+      setEducationLoading(true);
+      
+      const { data, error } = await supabase
+        .from('user_education')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('start_year', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching education data:', error);
+        // Don't show error for empty results
+        if (error.code !== 'PGRST116') {
+          Alert.alert('Error', 'Failed to load education data');
+        }
+      } else {
+        setEducationList(data || []);
+      }
+    } catch (error) {
+      console.error('Unexpected error fetching education:', error);
+      Alert.alert('Error', 'An unexpected error occurred while loading education data');
+    } finally {
+      setEducationLoading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    // Validate form data
+    if (!formData.school.trim() || !formData.degree.trim() || !formData.start_year.trim() || !formData.end_year.trim()) {
+      Alert.alert('Validation Error', 'Please fill in all fields');
+      return;
+    }
+
+    // Basic year validation
+    const startYear = parseInt(formData.start_year);
+    const endYear = parseInt(formData.end_year);
+    const currentYear = new Date().getFullYear();
+
+    if (isNaN(startYear) || isNaN(endYear)) {
+      Alert.alert('Validation Error', 'Please enter valid years');
+      return;
+    }
+
+    if (startYear < 1900 || startYear > currentYear + 10) {
+      Alert.alert('Validation Error', 'Please enter a valid start year');
+      return;
+    }
+
+    if (endYear < startYear || endYear > currentYear + 10) {
+      Alert.alert('Validation Error', 'End year must be after start year and not too far in the future');
+      return;
+    }
+
+    if (!user) {
+      Alert.alert('Authentication Error', 'Please sign in again to continue');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+
+      const newEducation: UserEducationInsert = {
+        user_id: user.id,
+        school: formData.school.trim(),
+        degree: formData.degree.trim(),
+        start_year: formData.start_year.trim(),
+        end_year: formData.end_year.trim()
+      };
+
+      const { data, error } = await supabase
+        .from('user_education')
+        .insert(newEducation)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error inserting education:', error);
+        Alert.alert('Error', 'Failed to add education record. Please try again.');
+      } else if (data) {
+        // Success - add the new record to the list (sorted by start_year desc)
+        setEducationList(prev => {
+          const updated = [data, ...prev];
+          return updated.sort((a, b) => parseInt(b.start_year) - parseInt(a.start_year));
+        });
+        
+        // Clear the form and hide it
+        setFormData({
+          school: '',
+          degree: '',
+          start_year: '',
+          end_year: ''
+        });
+        setShowAddForm(false);
+
+        Alert.alert('Success!', 'Education record added successfully!');
+      }
+    } catch (error) {
+      console.error('Unexpected error adding education:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleBack = () => {
     router.back();
@@ -142,6 +267,7 @@ export default function ProfileScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#6366F1" />
           <Text style={styles.loadingText}>Loading profile...</Text>
         </View>
       </SafeAreaView>
@@ -362,20 +488,116 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Education - Using mock data */}
+        {/* Education - Supabase Integration */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Education</Text>
-          {userData.education.map((edu, index) => (
-            <View key={index} style={styles.experienceItem}>
-              <View style={[styles.experienceLogo, { backgroundColor: edu.color }]}>
-                <Text style={styles.experienceLogoText}>{edu.logo}</Text>
-              </View>
-              <View style={styles.experienceInfo}>
-                <Text style={styles.experienceTitle}>{edu.degree}</Text>
-                <Text style={styles.experienceCompany}>{edu.school} • {edu.year}</Text>
-              </View>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Education</Text>
+            <TouchableOpacity 
+              style={styles.addButton}
+              onPress={() => setShowAddForm(!showAddForm)}
+            >
+              <Plus size={16} color="#6366F1" />
+            </TouchableOpacity>
+          </View>
+          
+          {/* Loading State */}
+          {educationLoading && (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#6366F1" />
+              <Text style={styles.loadingText}>Loading education data...</Text>
             </View>
-          ))}
+          )}
+
+          {/* Education List */}
+          {!educationLoading && (
+            <>
+              {educationList.length > 0 ? (
+                educationList.map((education) => (
+                  <View key={education.id} style={styles.experienceItem}>
+                    <View style={[styles.experienceLogo, { backgroundColor: '#8B5CF6' }]}>
+                      <Text style={styles.experienceLogoText}>
+                        {education.school.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.experienceInfo}>
+                      <Text style={styles.experienceTitle}>{education.degree}</Text>
+                      <Text style={styles.experienceCompany}>{education.school} • {education.start_year} - {education.end_year}</Text>
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.emptyState}>
+                  <GraduationCap size={32} color="#9CA3AF" />
+                  <Text style={styles.emptyText}>No education added yet</Text>
+                  <Text style={styles.emptySubtext}>Add your first education record to get started</Text>
+                </View>
+              )}
+
+              {/* Add Education Form */}
+              {showAddForm && (
+                <View style={styles.addForm}>
+                  <View style={styles.formHeader}>
+                    <Text style={styles.formTitle}>Add Education</Text>
+                    <TouchableOpacity onPress={() => setShowAddForm(false)} disabled={submitting}>
+                      <X size={20} color={submitting ? "#9CA3AF" : "#6B7280"} />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <TextInput
+                    style={[styles.formInput, submitting && styles.formInputDisabled]}
+                    placeholder="School or University (e.g., Harvard University)"
+                    value={formData.school}
+                    onChangeText={(text) => setFormData(prev => ({ ...prev, school: text }))}
+                    editable={!submitting}
+                  />
+                  
+                  <TextInput
+                    style={[styles.formInput, submitting && styles.formInputDisabled]}
+                    placeholder="Degree (e.g., Bachelor of Science in Computer Science)"
+                    value={formData.degree}
+                    onChangeText={(text) => setFormData(prev => ({ ...prev, degree: text }))}
+                    editable={!submitting}
+                  />
+                  
+                  <View style={styles.yearRow}>
+                    <TextInput
+                      style={[styles.formInput, styles.yearInput, submitting && styles.formInputDisabled]}
+                      placeholder="Start Year (e.g., 2018)"
+                      value={formData.start_year}
+                      onChangeText={(text) => setFormData(prev => ({ ...prev, start_year: text }))}
+                      keyboardType="numeric"
+                      maxLength={4}
+                      editable={!submitting}
+                    />
+                    <TextInput
+                      style={[styles.formInput, styles.yearInput, submitting && styles.formInputDisabled]}
+                      placeholder="End Year (e.g., 2022)"
+                      value={formData.end_year}
+                      onChangeText={(text) => setFormData(prev => ({ ...prev, end_year: text }))}
+                      keyboardType="numeric"
+                      maxLength={4}
+                      editable={!submitting}
+                    />
+                  </View>
+                  
+                  <TouchableOpacity 
+                    style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+                    onPress={handleSubmit}
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Save size={16} color="#FFFFFF" />
+                    )}
+                    <Text style={styles.submitButtonText}>
+                      {submitting ? 'Adding...' : 'Add Education'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
         </View>
 
         {/* Skills */}
@@ -710,11 +932,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   sectionTitle: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
     color: '#111827',
-    marginBottom: 12,
+  },
+  addButton: {
+    padding: 4,
   },
   locationInfo: {
     flexDirection: 'row',
@@ -887,6 +1117,94 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
   },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 8,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#6B7280',
+  },
+  emptySubtext: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  addForm: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    padding: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  formHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  formTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
+  },
+  formInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#111827',
+    marginBottom: 12,
+  },
+  formInputDisabled: {
+    backgroundColor: '#F9FAFB',
+    color: '#9CA3AF',
+  },
+  yearRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  yearInput: {
+    flex: 1,
+  },
+  submitButton: {
+    backgroundColor: '#6366F1',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+    marginTop: 8,
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+  },
+  submitButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+  },
   skillsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1021,11 +1339,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
-  },
-  loadingText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
   },
   errorText: {
     fontSize: 16,
