@@ -1,0 +1,307 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Eye, EyeOff, Mail, Lock, ArrowRight } from 'lucide-react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useAuth } from '@/contexts/AuthContext';
+
+export default function LoginScreen() {
+  const params = useLocalSearchParams();
+  const [email, setEmail] = useState(params.email as string || '');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const { signIn } = useAuth();
+
+  const handleLogin = async () => {
+    if (!email.trim()) {
+      Alert.alert('Validation Error', 'Email is required');
+      return;
+    }
+
+    if (!password) {
+      Alert.alert('Validation Error', 'Password is required');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      console.log('Attempting to sign in with:', email.trim());
+      
+      const { error } = await signIn(email.trim().toLowerCase(), password);
+      
+      if (error) {
+        console.error('Login error:', error);
+        
+        // Handle specific error cases
+        if (error.message?.includes('Invalid login credentials')) {
+          Alert.alert('Login Failed', 'Invalid email or password. Please check your credentials and try again.');
+        } else if (error.message?.includes('Email not confirmed')) {
+          Alert.alert('Email Not Verified', 'Please check your email and click the verification link before signing in.');
+        } else if (error.message?.includes('Too many requests')) {
+          Alert.alert('Too Many Attempts', 'Too many login attempts. Please wait a few minutes before trying again.');
+        } else {
+          Alert.alert('Login Failed', error.message || 'An unexpected error occurred. Please try again.');
+        }
+      } else {
+        console.log('Login successful');
+        router.replace('/(tabs)');
+      }
+    } catch (error) {
+      console.error('Unexpected error during login:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please check your internet connection and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView 
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <LinearGradient
+          colors={['#6366F1', '#8B5CF6']}
+          style={styles.header}
+        >
+          <View style={styles.logoContainer}>
+            <View style={styles.logo}>
+              <Text style={styles.logoText}>OA</Text>
+            </View>
+            <Text style={styles.appName}>OpenAnts</Text>
+            <Text style={styles.tagline}>Connect. Collaborate. Create.</Text>
+          </View>
+        </LinearGradient>
+
+        <View style={styles.formContainer}>
+          <View style={styles.welcomeSection}>
+            <Text style={styles.welcomeTitle}>Welcome Back</Text>
+            <Text style={styles.welcomeSubtitle}>Sign in to continue networking</Text>
+          </View>
+
+          <View style={styles.form}>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Email Address</Text>
+              <View style={styles.inputWrapper}>
+                <Mail size={20} color="#9CA3AF" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your email address"
+                  placeholderTextColor="#9CA3AF"
+                  value={email}
+                  onChangeText={(text) => setEmail(text.toLowerCase().trim())}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Password</Text>
+              <View style={styles.inputWrapper}>
+                <Lock size={20} color="#9CA3AF" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your password"
+                  placeholderTextColor="#9CA3AF"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity
+                  style={styles.eyeButton}
+                  onPress={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? (
+                    <EyeOff size={20} color="#9CA3AF" />
+                  ) : (
+                    <Eye size={20} color="#9CA3AF" />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+            >
+              <LinearGradient
+                colors={loading ? ['#9CA3AF', '#9CA3AF'] : ['#6366F1', '#8B5CF6']}
+                style={styles.loginButtonGradient}
+              >
+                <Text style={styles.loginButtonText}>
+                  {loading ? 'Signing In...' : 'Sign In'}
+                </Text>
+                {!loading && <ArrowRight size={20} color="#FFFFFF" />}
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.forgotPassword}>
+              <Text style={styles.forgotPasswordText}>Forgot your password?</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.signupSection}>
+            <Text style={styles.signupText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => router.push('/(auth)/signup')}>
+              <Text style={styles.signupLink}>Sign up</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  header: {
+    paddingTop: 40,
+    paddingBottom: 60,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+  },
+  logoContainer: {
+    alignItems: 'center',
+  },
+  logo: {
+    width: 80,
+    height: 80,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  logoText: {
+    fontSize: 32,
+    fontFamily: 'Inter-Bold',
+    color: '#FFFFFF',
+  },
+  appName: {
+    fontSize: 28,
+    fontFamily: 'Inter-Bold',
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  tagline: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  formContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: -32,
+    paddingHorizontal: 32,
+    paddingTop: 40,
+    paddingBottom: 32,
+  },
+  welcomeSection: {
+    marginBottom: 32,
+  },
+  welcomeTitle: {
+    fontSize: 24,
+    fontFamily: 'Inter-Bold',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  welcomeSubtitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
+  form: {
+    flex: 1,
+  },
+  inputContainer: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#111827',
+  },
+  eyeButton: {
+    padding: 4,
+  },
+  loginButton: {
+    marginTop: 12,
+    marginBottom: 20,
+  },
+  loginButtonDisabled: {
+    opacity: 0.7,
+  },
+  loginButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    gap: 8,
+  },
+  loginButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#FFFFFF',
+  },
+  forgotPassword: {
+    alignItems: 'center',
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6366F1',
+  },
+  signupSection: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 'auto',
+  },
+  signupText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
+  signupLink: {
+    fontSize: 14,
+    fontFamily: 'Inter-SemiBold',
+    color: '#6366F1',
+  },
+});

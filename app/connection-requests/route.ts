@@ -1,0 +1,61 @@
+export function GET(request: Request) {
+  const connectionRequests = [
+    {
+      id: 1,
+      name: 'Emily Rodriguez',
+      role: 'UX Researcher',
+      company: 'Meta',
+      message: 'Hi! I saw your presentation on design systems. Would love to connect and discuss collaboration opportunities.',
+      image: 'https://images.pexels.com/photos/1181686/pexels-photo-1181686.jpeg?auto=compress&cs=tinysrgb&w=400',
+      timestamp: '2m ago',
+      tags: ['Design Systems', 'UX Research'],
+      mutualConnections: 3,
+    },
+    {
+      id: 2,
+      name: 'James Wilson',
+      role: 'Product Manager',
+      company: 'Tesla',
+      message: 'Interested in your work on AI-powered design tools. Let\'s connect!',
+      image: 'https://images.pexels.com/photos/2379005/pexels-photo-2379005.jpeg?auto=compress&cs=tinysrgb&w=400',
+      timestamp: '15m ago',
+      tags: ['AI/ML', 'Product Strategy'],
+      mutualConnections: 1,
+    },
+    {
+      id: 3,
+      name: 'Maria Garcia',
+      role: 'Frontend Developer',
+      company: 'Stripe',
+      message: 'Love your portfolio! Would be great to connect and share experiences.',
+      image: 'https://images.pexels.com/photos/1181424/pexels-photo-1181424.jpeg?auto=compress&cs=tinysrgb&w=400',
+      timestamp: '1h ago',
+      tags: ['Frontend', 'React'],
+      mutualConnections: 5,
+    },
+    {
+      id: 4,
+      name: 'David Chen',
+      role: 'Backend Engineer',
+      company: 'Spotify',
+      message: 'Saw your work on microservices architecture. Would love to discuss best practices!',
+      image: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400',
+      timestamp: '2h ago',
+      tags: ['Backend', 'Microservices'],
+      mutualConnections: 2,
+    },
+    {
+      id: 5,
+      name: 'Sophie Martinez',
+      role: 'Data Scientist',
+      company: 'Google',
+      message: 'Your machine learning insights are fascinating! Let\'s connect and share knowledge.',
+      image: 'https://images.pexels.com/photos/1239288/pexels-photo-1239288.jpeg?auto=compress&cs=tinysrgb&w=400',
+      timestamp: '3h ago',
+      tags: ['Machine Learning', 'Data Science'],
+      mutualConnections: 4,
+    },
+  ];
+
+  return Response.json({ requests: connectionRequests });
+}
