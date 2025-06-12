@@ -94,7 +94,7 @@ export default function ProfileScreen() {
   const { user, profile, loading: authLoading } = useAuth();
   const [educationList, setEducationList] = useState<UserEducation[]>([]);
   const [educationLoading, setEducationLoading] = useState(false);
-  const [educationLoaded, setEducationLoaded] = useState(false); // Cache flag
+  const [educationLoaded, setEducationLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -117,7 +117,6 @@ export default function ProfileScreen() {
   }, []);
 
   // Fetch education data when user is available and connection is established
-  // Only fetch if not already loaded (caching)
   useEffect(() => {
     if (!authLoading && user && connectionStatus === 'connected' && !educationLoaded) {
       fetchEducationData();
@@ -130,7 +129,6 @@ export default function ProfileScreen() {
     try {
       setConnectionStatus('checking');
       
-      // Test basic connection with a simple query
       const { data, error: connectionError } = await Promise.race([
         supabase.from('profiles').select('id').limit(1),
         new Promise((_, reject) => 
@@ -167,7 +165,6 @@ export default function ProfileScreen() {
       setEducationLoading(true);
       setError(null);
 
-      // Increased timeout to 30 seconds for better reliability
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Request timeout')), 30000)
       );
@@ -183,7 +180,6 @@ export default function ProfileScreen() {
       if (fetchError) {
         console.error('Error fetching education data:', fetchError);
         
-        // Provide more specific error messages
         if (fetchError.code === 'PGRST116') {
           setError('Education data not found. You can add your first education record below.');
         } else if (fetchError.message?.includes('permission')) {
@@ -193,7 +189,7 @@ export default function ProfileScreen() {
         }
       } else {
         setEducationList(data || []);
-        setEducationLoaded(true); // Mark as loaded for caching
+        setEducationLoaded(true);
         setRetryCount(0);
       }
     } catch (err: any) {
@@ -210,7 +206,6 @@ export default function ProfileScreen() {
 
   const handleRetry = () => {
     if (connectionStatus === 'error') {
-      // If connection failed, retry connection first
       checkSupabaseConnection();
     } else if (retryCount < 3) {
       setRetryCount(prev => prev + 1);
@@ -221,7 +216,7 @@ export default function ProfileScreen() {
   };
 
   const handleRefresh = () => {
-    setEducationLoaded(false); // Reset cache flag
+    setEducationLoaded(false);
     setRetryCount(0);
     fetchEducationData();
   };
@@ -253,26 +248,17 @@ export default function ProfileScreen() {
       return;
     }
 
-    // Create AbortController for timeout handling
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(() => {
-      abortController.abort();
-    }, 8000); // 8 second timeout
+    if (!user) {
+      Alert.alert('Authentication Error', 'Please sign in again to continue');
+      return;
+    }
 
     try {
       setSubmitting(true);
       setError(null);
 
-      // Get current user using supabase.auth.getUser()
-      const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError || !currentUser) {
-        Alert.alert('Authentication Error', 'Please sign in again to continue');
-        return;
-      }
-
       const newEducation: UserEducationInsert = {
-        user_id: currentUser.id,
+        user_id: user.id,
         school: formData.school.trim(),
         degree: formData.degree.trim(),
         start_year: formData.start_year.trim(),
@@ -283,16 +269,11 @@ export default function ProfileScreen() {
         .from('user_education')
         .insert(newEducation)
         .select()
-        .single()
-        .abortSignal(abortController.signal);
-
-      // Clear timeout if request completed
-      clearTimeout(timeoutId);
+        .single();
 
       if (insertError) {
         console.error('Error inserting education:', insertError);
         
-        // Handle specific error types
         if (insertError.message?.includes('permission')) {
           Alert.alert('Permission Error', 'You do not have permission to add education records. Please check your account status.');
         } else if (insertError.message?.includes('duplicate')) {
@@ -317,34 +298,9 @@ export default function ProfileScreen() {
       }
     } catch (err: any) {
       console.error('Unexpected error adding education:', err);
-      
-      // Clear timeout
-      clearTimeout(timeoutId);
-      
-      if (err.name === 'AbortError') {
-        // Request was aborted due to timeout
-        Alert.alert(
-          'Request Timeout', 
-          'The request took too long to complete. Please check your internet connection and try again.',
-          [
-            { text: 'OK', style: 'default' }
-          ]
-        );
-      } else if (err.message === 'Insert timeout') {
-        Alert.alert(
-          'Insert Timeout',
-          'The database is taking longer than expected to respond. This might be due to high server load. Please try again in a moment.',
-          [
-            { text: 'Retry', onPress: () => handleSubmit() },
-            { text: 'Cancel', style: 'cancel' }
-          ]
-        );
-      } else {
-        Alert.alert('Unexpected Error', 'An unexpected error occurred while saving your education record. Please try again.');
-      }
+      Alert.alert('Unexpected Error', 'An unexpected error occurred while saving your education record. Please try again.');
     } finally {
       setSubmitting(false);
-      clearTimeout(timeoutId);
     }
   };
 
@@ -632,7 +588,7 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Education - Now with improved caching and UX */}
+        {/* Education - Fixed implementation */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Education</Text>
