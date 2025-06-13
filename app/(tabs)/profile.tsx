@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, GraduationCap, Hash as Hashtag, Image as ImageIcon, Smartphone, CreditCard as Edit } from 'lucide-react-native';
+import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, GraduationCap, Hash as Hashtag, Image as ImageIcon, Smartphone, CreditCard as Edit, Trash2 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -95,18 +95,19 @@ export default function ProfileScreen() {
   const [educationList, setEducationList] = useState<UserEducation[]>([]);
   const [educationLoading, setEducationLoading] = useState(false);
   const [showEditMode, setShowEditMode] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0); // Force re-render key
   const hasFetchedRef = useRef(false);
 
   const userData = getUserData();
 
-  // Fetch education data when user is available (only once)
+  // Fetch education data when user is available
   useEffect(() => {
-    if (!authLoading && user && !hasFetchedRef.current) {
-      console.log('🔄 Fetching education data for user:', user.id);
+    if (!authLoading && user && (!hasFetchedRef.current || refreshKey > 0)) {
+      console.log('🔄 Fetching education data for user:', user.id, 'refreshKey:', refreshKey);
       fetchEducationData();
       hasFetchedRef.current = true;
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, refreshKey]);
 
   const fetchEducationData = async () => {
     if (!user) {
@@ -144,16 +145,59 @@ export default function ProfileScreen() {
 
   const handleEducationSuccess = (newEducation: UserEducation) => {
     console.log('✅ New education added:', newEducation);
-    // Add the new record to the list (sorted by start_year desc)
+    
+    // Add the new record to the list and sort by start_year desc
     setEducationList(prev => {
       const updated = [newEducation, ...prev];
       return updated.sort((a, b) => parseInt(b.start_year) - parseInt(a.start_year));
     });
+    
+    // Close the form
     setShowEditMode(false);
+    
+    // Force a refresh to ensure data consistency
+    setRefreshKey(prev => prev + 1);
   };
 
   const handleEducationCancel = () => {
     setShowEditMode(false);
+  };
+
+  const handleDeleteEducation = async (educationId: string) => {
+    Alert.alert(
+      'Delete Education',
+      'Are you sure you want to delete this education record?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('🗑️ Deleting education record:', educationId);
+              
+              const { error } = await supabase
+                .from('user_education')
+                .delete()
+                .eq('id', educationId);
+
+              if (error) {
+                console.error('❌ Error deleting education:', error);
+                Alert.alert('Error', 'Failed to delete education record');
+              } else {
+                console.log('✅ Education record deleted successfully');
+                // Remove from local state
+                setEducationList(prev => prev.filter(edu => edu.id !== educationId));
+                Alert.alert('Success', 'Education record deleted successfully');
+              }
+            } catch (error) {
+              console.error('💥 Unexpected error deleting education:', error);
+              Alert.alert('Error', 'An unexpected error occurred');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleBack = () => {
@@ -421,7 +465,7 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Education - Supabase Integration */}
+        {/* Education - Enhanced Supabase Integration */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Education</Text>
@@ -430,7 +474,9 @@ export default function ProfileScreen() {
               onPress={() => setShowEditMode(!showEditMode)}
             >
               <Edit size={16} color="#6366F1" />
-              <Text style={styles.editButtonText}>Edit</Text>
+              <Text style={styles.editButtonText}>
+                {showEditMode ? 'Cancel' : 'Add'}
+              </Text>
             </TouchableOpacity>
           </View>
           
@@ -463,15 +509,23 @@ export default function ProfileScreen() {
                     </View>
                     <View style={styles.experienceInfo}>
                       <Text style={styles.experienceTitle}>{education.degree}</Text>
-                      <Text style={styles.experienceCompany}>{education.school} • {education.start_year} - {education.end_year}</Text>
+                      <Text style={styles.experienceCompany}>
+                        {education.school} • {education.start_year} - {education.end_year}
+                      </Text>
                     </View>
+                    <TouchableOpacity 
+                      style={styles.deleteButton}
+                      onPress={() => handleDeleteEducation(education.id)}
+                    >
+                      <Trash2 size={16} color="#EF4444" />
+                    </TouchableOpacity>
                   </View>
                 ))
               ) : (
                 <View style={styles.emptyState}>
                   <GraduationCap size={32} color="#9CA3AF" />
                   <Text style={styles.emptyText}>No education added yet</Text>
-                  <Text style={styles.emptySubtext}>Tap "Edit" to add your first education record</Text>
+                  <Text style={styles.emptySubtext}>Tap "Add" to add your first education record</Text>
                 </View>
               )}
             </>
@@ -1036,7 +1090,12 @@ const styles = StyleSheet.create({
   },
   educationItem: {
     flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 12,
+  },
+  deleteButton: {
+    padding: 8,
+    marginLeft: 8,
   },
   skillsContainer: {
     flexDirection: 'row',

@@ -63,6 +63,7 @@ export default function EducationForm({ onSuccess, onCancel }: EducationFormProp
 
     try {
       setSubmitting(true);
+      console.log('🎓 Adding new education record...');
 
       const newEducation = {
         user_id: user.id,
@@ -72,6 +73,8 @@ export default function EducationForm({ onSuccess, onCancel }: EducationFormProp
         end_year: endYear.trim()
       };
 
+      console.log('📝 Education data to insert:', newEducation);
+
       const { data, error } = await supabase
         .from('user_education')
         .insert(newEducation)
@@ -79,15 +82,16 @@ export default function EducationForm({ onSuccess, onCancel }: EducationFormProp
         .single();
 
       if (error) {
-        console.error('Error inserting education:', error);
+        console.error('❌ Error inserting education:', error);
         Alert.alert('Error', 'Failed to add education record. Please try again.');
       } else if (data) {
+        console.log('✅ Education record added successfully:', data);
         clearForm();
         onSuccess(data);
         Alert.alert('Success!', 'Education record added successfully!');
       }
     } catch (error) {
-      console.error('Unexpected error with education:', error);
+      console.error('💥 Unexpected error with education:', error);
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
       setSubmitting(false);
