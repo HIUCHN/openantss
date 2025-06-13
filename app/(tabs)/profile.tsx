@@ -2,31 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  ArrowLeft, 
-  MoreVertical, 
-  CheckCircle, 
-  Users, 
-  Heart, 
-  Eye, 
-  TrendingUp, 
-  MapPin, 
-  Calendar,
-  Building,
-  GraduationCap,
-  Plus,
-  Edit3,
-  Trash2,
-  RefreshCw,
-  Briefcase,
-  Award,
-  Target,
-  Clock,
-  Share,
-  MessageCircle,
-  UserPlus,
-  Settings
-} from 'lucide-react-native';
+import { ArrowLeft, MoveVertical as MoreVertical, CircleCheck as CheckCircle, Users, Heart, Eye, TrendingUp, MapPin, Calendar, Building, GraduationCap, Plus, CreditCard as Edit3, Trash2, RefreshCw, Briefcase, Award, Target, Clock, Share, MessageCircle, UserPlus, Settings } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
