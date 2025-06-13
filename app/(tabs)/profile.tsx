@@ -42,7 +42,7 @@ const getUserData = () => ({
       duration: '2022 - Present',
       logo: 'S',
       color: '#1DB954',
-      tags: ['#SaaS', '#Music']
+      tags: ['#ProductStrategy', '#Design', '#Leadership']
     },
     {
       title: 'UX Designer',
