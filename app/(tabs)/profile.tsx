@@ -1,8 +1,32 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, GraduationCap, Hash as Hashtag, Image as ImageIcon, Smartphone, CreditCard as Edit, Trash2, RefreshCw } from 'lucide-react-native';
+import { 
+  ArrowLeft, 
+  MoreVertical, 
+  CheckCircle, 
+  Users, 
+  Heart, 
+  Eye, 
+  TrendingUp, 
+  MapPin, 
+  Calendar,
+  Building,
+  GraduationCap,
+  Plus,
+  Edit3,
+  Trash2,
+  RefreshCw,
+  Briefcase,
+  Award,
+  Target,
+  Clock,
+  Share,
+  MessageCircle,
+  UserPlus,
+  Settings
+} from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -11,37 +35,34 @@ import EducationForm from '@/components/EducationForm';
 
 type UserEducation = Database['public']['Tables']['user_education']['Row'];
 
-// Mock user data - in a real app, this would come from your API
+// Enhanced user data with more comprehensive information
 const getUserData = () => ({
   id: 'current-user',
-  name: 'Alex Chen',
+  name: 'Sarah Mitchell',
   role: 'Senior Product Designer',
-  company: 'Spotify',
+  company: 'Figma',
   image: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+  coverImage: 'https://images.pexels.com/photos/3184291/pexels-photo-3184291.jpeg?auto=compress&cs=tinysrgb&w=800',
   verified: true,
   status: 'Open to Collaborate',
   openToChat: true,
-  bio: 'Product designer passionate about AI and sustainability. Looking to connect with founders and innovators in edtech to create meaningful learning experiences.',
+  bio: 'Passionate product designer with 6+ years crafting user-centered experiences for SaaS products. I believe great design solves real problems while being delightfully simple. Currently exploring AI-powered design tools and mentoring junior designers.',
   metrics: {
     connections: 247,
-    followers: '1.2K',
-    mutual: 8
-  },
-  location: {
-    current: 'Currently Active',
-    publicMode: true,
-    lastSeen: 'Campus Cafe, Tech Hub London',
-    sharedInterests: 5,
-    eventsAttended: 3,
-    lastSeenTime: '2 days ago'
+    followers: '1.3K',
+    views: 89,
+    liveMatches: 32,
+    locations: 9,
+    crossedPaths: 156
   },
   experience: [
     {
       title: 'Senior Product Designer',
-      company: 'Spotify',
+      company: 'Figma',
       duration: '2022 - Present',
-      logo: 'S',
-      color: '#1DB954',
+      logo: 'F',
+      color: '#F24E1E',
+      description: 'Leading design for collaboration features used by 4M+ users',
       tags: ['#ProductStrategy', '#Design', '#Leadership']
     },
     {
@@ -50,44 +71,58 @@ const getUserData = () => ({
       duration: '2020 - 2022',
       logo: 'A',
       color: '#FF0000',
-      tags: []
+      description: 'Designed creative tools for digital artists',
+      tags: ['#CreativeTools', '#UX']
     }
   ],
   skills: [
-    { name: '#UI/UX', color: 'blue' },
-    { name: '#Figma', color: 'purple' },
-    { name: '#DesignSystems', color: 'green' },
-    { name: '#Prototyping', color: 'orange' },
-    { name: '#UserResearch', color: 'pink' },
-    { name: '#Leadership', color: 'indigo' }
+    { name: 'UI/UX Design', color: '#3B82F6', level: 95 },
+    { name: 'Product Strategy', color: '#8B5CF6', level: 88 },
+    { name: 'User Research', color: '#10B981', level: 92 },
+    { name: 'Prototyping', color: '#F59E0B', level: 85 },
+    { name: 'Design Systems', color: '#EF4444', level: 90 },
+    { name: 'Mentoring', color: '#6366F1', level: 87 }
   ],
-  lookingFor: [
-    { text: 'Startup collaborations', icon: Handshake, color: '#10B981' },
-    { text: 'Mentorship', icon: Users, color: '#3B82F6' },
-    { text: 'Finding co-founders', icon: Lightbulb, color: '#F59E0B' }
+  goals: [
+    { text: 'Collaboration Partners', icon: UserPlus, color: '#6366F1' },
+    { text: 'Mentorship Opportunities', icon: Award, color: '#10B981' },
+    { text: 'Speaking Engagements', icon: MessageCircle, color: '#F59E0B' }
   ],
+  interests: ['#FinTech', '#HealthTech', '#EdTech', '#AI/ML'],
   portfolio: [
-    { title: 'Design System', icon: ImageIcon },
-    { title: 'Mobile App', icon: Smartphone }
+    {
+      title: 'Design System 2.0',
+      description: 'Component library redesign',
+      image: 'https://images.pexels.com/photos/196644/pexels-photo-196644.jpeg?auto=compress&cs=tinysrgb&w=400',
+      gradient: ['#3B82F6', '#8B5CF6']
+    },
+    {
+      title: 'Mobile App Redesign',
+      description: 'E-commerce platform',
+      image: 'https://images.pexels.com/photos/267350/pexels-photo-267350.jpeg?auto=compress&cs=tinysrgb&w=400',
+      gradient: ['#10B981', '#3B82F6']
+    },
+    {
+      title: 'Dashboard Analytics',
+      description: 'B2B SaaS product',
+      image: 'https://images.pexels.com/photos/590020/pexels-photo-590020.jpeg?auto=compress&cs=tinysrgb&w=400',
+      gradient: ['#F59E0B', '#EF4444']
+    }
   ],
-  availability: {
-    status: 'Available to meet now',
-    duration: 'Free for the next 2 hours',
-    available: true
-  },
-  mutualInterests: {
-    tags: ['ClimateTech', 'RemoteWork'],
-    events: ['Startup Grind Edinburgh 2025']
-  },
   posts: [
     {
-      content: 'Just wrapped up an amazing design sprint at Tech Hub London! 🚀 Working on sustainable UX patterns for climate tech startups.',
-      timestamp: '2 days ago',
+      content: 'Just wrapped up an incredible design sprint at Tech Summit! The energy around AI-powered design tools was amazing. Can\'t wait to implement some of these ideas 🚀',
+      timestamp: '2d ago',
       likes: 12,
       comments: 3,
-      tags: ['#DesignSprint', '#ClimateTech']
+      tags: ['#DesignSprint', '#AIDesign']
     }
-  ]
+  ],
+  privacy: {
+    publicMode: true,
+    proximityAlerts: true,
+    directMessages: false
+  }
 });
 
 export default function ProfileScreen() {
@@ -252,41 +287,6 @@ export default function ProfileScreen() {
     router.back();
   };
 
-  const handleConnect = () => {
-    console.log('Sending connection request to', userData.name);
-  };
-
-  const handleFollow = () => {
-    console.log('Following', userData.name);
-  };
-
-  const handleMessage = () => {
-    console.log('Messaging', userData.name);
-  };
-
-  const handleWave = () => {
-    console.log('Waving to', userData.name);
-  };
-
-  const SkillTag = ({ skill }) => {
-    const colorMap = {
-      blue: { bg: '#DBEAFE', text: '#1D4ED8' },
-      purple: { bg: '#F3E8FF', text: '#7C3AED' },
-      green: { bg: '#D1FAE5', text: '#059669' },
-      orange: { bg: '#FED7AA', text: '#EA580C' },
-      pink: { bg: '#FCE7F3', text: '#BE185D' },
-      indigo: { bg: '#E0E7FF', text: '#4338CA' }
-    };
-    
-    const colors = colorMap[skill.color] || colorMap.blue;
-    
-    return (
-      <View style={[styles.skillTag, { backgroundColor: colors.bg }]}>
-        <Text style={[styles.skillText, { color: colors.text }]}>{skill.name}</Text>
-      </View>
-    );
-  };
-
   // Show loading state while auth is loading
   if (authLoading) {
     return (
@@ -316,128 +316,98 @@ export default function ProfileScreen() {
     );
   }
 
+  const MetricCard = ({ icon: Icon, value, label, color = '#6366F1' }) => (
+    <View style={styles.metricCard}>
+      <View style={styles.metricIconContainer}>
+        <Icon size={16} color={color} />
+        <Text style={[styles.metricValue, { color }]}>{value}</Text>
+      </View>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+
+  const SkillBar = ({ skill }) => (
+    <View style={styles.skillContainer}>
+      <View style={styles.skillHeader}>
+        <Text style={styles.skillName}>{skill.name}</Text>
+        <Text style={styles.skillPercentage}>{skill.level}%</Text>
+      </View>
+      <View style={styles.skillBarBackground}>
+        <View 
+          style={[
+            styles.skillBarFill, 
+            { width: `${skill.level}%`, backgroundColor: skill.color }
+          ]} 
+        />
+      </View>
+    </View>
+  );
+
+  const PortfolioCard = ({ project, index }) => (
+    <View style={styles.portfolioCard}>
+      <LinearGradient
+        colors={project.gradient}
+        style={styles.portfolioGradient}
+      >
+        <View style={styles.portfolioOverlay} />
+      </LinearGradient>
+      <View style={styles.portfolioContent}>
+        <Text style={styles.portfolioTitle}>{project.title}</Text>
+        <Text style={styles.portfolioDescription}>{project.description}</Text>
+      </View>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.headerButton} onPress={handleBack}>
-          <ArrowLeft size={20} color="#6B7280" />
+          <ArrowLeft size={20} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.headerButton}>
-            <Share size={20} color="#6B7280" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerButton}>
-            <MoreVertical size={20} color="#6B7280" />
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.headerTitle}>My Profile</Text>
+        <TouchableOpacity style={styles.headerButton}>
+          <MoreVertical size={20} color="#FFFFFF" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Profile Header */}
-        <View style={styles.profileHeader}>
-          <View style={styles.profileInfo}>
+        {/* Cover Section */}
+        <LinearGradient
+          colors={['#6366F1', '#8B5CF6']}
+          style={styles.coverSection}
+        >
+          <View style={styles.profileHeaderContent}>
             <View style={styles.avatarContainer}>
               <Image source={{ uri: userData.image }} style={styles.avatar} />
               <View style={styles.verifiedBadge}>
                 <CheckCircle size={12} color="#FFFFFF" fill="#10B981" />
               </View>
             </View>
-            
-            <View style={styles.userInfo}>
-              <Text style={styles.userName}>{userData.name}</Text>
-              <Text style={styles.userRole}>{userData.role}</Text>
-              <Text style={styles.userCompany}>{userData.company}</Text>
-              
-              <View style={styles.statusBadges}>
-                <View style={styles.verifiedTag}>
-                  <CheckCircle size={12} color="#10B981" />
-                  <Text style={styles.verifiedText}>Verified</Text>
-                </View>
-                <View style={styles.statusTag}>
-                  <Text style={styles.statusEmoji}>🌱</Text>
-                  <Text style={styles.statusText}>{userData.status}</Text>
-                </View>
-              </View>
-              
-              {userData.openToChat && (
-                <View style={styles.chatTag}>
-                  <Text style={styles.chatEmoji}>👋</Text>
-                  <Text style={styles.chatText}>Open to chat now</Text>
-                </View>
-              )}
+            <Text style={styles.userName}>{userData.name}</Text>
+            <Text style={styles.userRole}>{userData.role} at {userData.company}</Text>
+            <View style={styles.statusContainer}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>{userData.status}</Text>
             </View>
           </View>
+        </LinearGradient>
 
-          {/* Primary Action Buttons */}
-          <View style={styles.primaryActions}>
-            <TouchableOpacity style={styles.connectButton} onPress={handleConnect}>
-              <UserPlus size={16} color="#FFFFFF" />
-              <Text style={styles.connectButtonText}>Connect</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.followButton} onPress={handleFollow}>
-              <Plus size={16} color="#374151" />
-              <Text style={styles.followButtonText}>Follow</Text>
-            </TouchableOpacity>
+        {/* Metrics Grid */}
+        <View style={styles.metricsSection}>
+          <View style={styles.metricsGrid}>
+            <MetricCard icon={Users} value={userData.metrics.connections} label="Connections" color="#6366F1" />
+            <MetricCard icon={Heart} value={userData.metrics.followers} label="Followers" color="#EF4444" />
+            <MetricCard icon={Eye} value={userData.metrics.views} label="Views (Week)" color="#3B82F6" />
           </View>
-
-          {/* Metrics */}
-          <View style={styles.metricsContainer}>
-            <View style={styles.metricsGrid}>
-              <View style={styles.metricItem}>
-                <Users size={16} color="#6366F1" />
-                <Text style={styles.metricValue}>{userData.metrics.connections}</Text>
-                <Text style={styles.metricLabel}>Connections</Text>
-              </View>
-              <View style={styles.metricItem}>
-                <UserPlus size={16} color="#3B82F6" />
-                <Text style={styles.metricValue}>{userData.metrics.followers}</Text>
-                <Text style={styles.metricLabel}>Followers</Text>
-              </View>
-              <View style={styles.metricItem}>
-                <Users size={16} color="#10B981" />
-                <Text style={styles.metricValue}>{userData.metrics.mutual}</Text>
-                <Text style={styles.metricLabel}>Mutual</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Connectly Unique Stats */}
-          <View style={styles.uniqueStats}>
-            <View style={styles.statItem}>
-              <MapPin size={14} color="#8B5CF6" />
-              <Text style={styles.statText}>Seen at: {userData.location.lastSeen}</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Brain size={14} color="#3B82F6" />
-              <Text style={styles.statText}>{userData.location.sharedInterests} Shared Interests</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Calendar size={14} color="#10B981" />
-              <Text style={styles.statText}>Attended {userData.location.eventsAttended} events with you</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Clock size={14} color="#F59E0B" />
-              <Text style={styles.statText}>Last seen: {userData.location.lastSeenTime} (Public Mode)</Text>
-            </View>
+          <View style={styles.metricsGrid}>
+            <MetricCard icon={TrendingUp} value={userData.metrics.liveMatches} label="Live Matches" color="#10B981" />
+            <MetricCard icon={MapPin} value={userData.metrics.locations} label="Locations" color="#F59E0B" />
+            <MetricCard icon={Users} value={userData.metrics.crossedPaths} label="Crossed Paths" color="#8B5CF6" />
           </View>
         </View>
 
-        {/* Location & Visibility */}
-        <View style={styles.section}>
-          <View style={styles.locationInfo}>
-            <View style={styles.locationLeft}>
-              <MapPin size={16} color="#6366F1" />
-              <Text style={styles.locationText}>{userData.location.current}</Text>
-            </View>
-            <View style={styles.publicModeTag}>
-              <Text style={styles.publicModeText}>Public Mode On</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* About Me */}
+        {/* Bio Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About Me</Text>
           <Text style={styles.bioText}>{userData.bio}</Text>
@@ -445,7 +415,13 @@ export default function ProfileScreen() {
 
         {/* Posts & Activity */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Posts & Activity</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Posts & Activity</Text>
+            <TouchableOpacity style={styles.createPostButton}>
+              <Text style={styles.createPostText}>Create Post</Text>
+            </TouchableOpacity>
+          </View>
+          
           {userData.posts.map((post, index) => (
             <View key={index} style={styles.postCard}>
               <View style={styles.postHeader}>
@@ -462,11 +438,11 @@ export default function ProfileScreen() {
                 {post.tags.map((tag, tagIndex) => (
                   <View key={tagIndex} style={[
                     styles.postTag,
-                    tagIndex === 0 ? styles.bluePostTag : styles.greenPostTag
+                    tagIndex === 0 ? styles.bluePostTag : styles.purplePostTag
                   ]}>
                     <Text style={[
                       styles.postTagText,
-                      tagIndex === 0 ? styles.bluePostTagText : styles.greenPostTagText
+                      tagIndex === 0 ? styles.bluePostTagText : styles.purplePostTagText
                     ]}>{tag}</Text>
                   </View>
                 ))}
@@ -483,14 +459,22 @@ export default function ProfileScreen() {
               </View>
             </View>
           ))}
+          
           <TouchableOpacity style={styles.showMoreButton}>
-            <Text style={styles.showMoreText}>Show More</Text>
+            <Text style={styles.showMoreText}>Show More Posts</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Work Experience */}
+        {/* Experience */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Experience</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Experience</Text>
+            <TouchableOpacity style={styles.editButton}>
+              <Edit3 size={16} color="#6366F1" />
+              <Text style={styles.editButtonText}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+          
           {userData.experience.map((exp, index) => (
             <View key={index} style={styles.experienceItem}>
               <View style={[styles.experienceLogo, { backgroundColor: exp.color }]}>
@@ -499,6 +483,7 @@ export default function ProfileScreen() {
               <View style={styles.experienceInfo}>
                 <Text style={styles.experienceTitle}>{exp.title}</Text>
                 <Text style={styles.experienceCompany}>{exp.company} • {exp.duration}</Text>
+                <Text style={styles.experienceDescription}>{exp.description}</Text>
                 {exp.tags.length > 0 && (
                   <View style={styles.experienceTags}>
                     {exp.tags.map((tag, tagIndex) => (
@@ -530,7 +515,7 @@ export default function ProfileScreen() {
                 style={styles.editButton}
                 onPress={() => setShowEditMode(!showEditMode)}
               >
-                <Edit size={16} color="#6366F1" />
+                <Plus size={16} color="#6366F1" />
                 <Text style={styles.editButtonText}>
                   {showEditMode ? 'Cancel' : 'Add'}
                 </Text>
@@ -577,9 +562,7 @@ export default function ProfileScreen() {
                 educationList.map((education) => (
                   <View key={education.id} style={styles.educationItem}>
                     <View style={[styles.experienceLogo, { backgroundColor: '#8B5CF6' }]}>
-                      <Text style={styles.experienceLogoText}>
-                        {education.school.charAt(0).toUpperCase()}
-                      </Text>
+                      <GraduationCap size={20} color="#FFFFFF" />
                     </View>
                     <View style={styles.experienceInfo}>
                       <Text style={styles.experienceTitle}>{education.degree}</Text>
@@ -606,104 +589,162 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        {/* Skills */}
+        {/* Skills & Expertise */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Skills</Text>
-          <View style={styles.skillsContainer}>
-            {userData.skills.map((skill, index) => (
-              <SkillTag key={index} skill={skill} />
-            ))}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Skills & Expertise</Text>
+            <TouchableOpacity style={styles.editButton}>
+              <Edit3 size={16} color="#6366F1" />
+              <Text style={styles.editButtonText}>Edit</Text>
+            </TouchableOpacity>
           </View>
-        </View>
-
-        {/* Looking to connect on */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Looking to connect on</Text>
-          <View style={styles.lookingForContainer}>
-            {userData.lookingFor.map((item, index) => {
-              const IconComponent = item.icon;
-              return (
-                <View key={index} style={styles.lookingForItem}>
-                  <IconComponent size={16} color={item.color} />
-                  <Text style={styles.lookingForText}>{item.text}</Text>
-                </View>
-              );
-            })}
+          
+          {userData.skills.map((skill, index) => (
+            <SkillBar key={index} skill={skill} />
+          ))}
+          
+          <View style={styles.endorsementInfo}>
+            <Text style={styles.endorsementText}>
+              <Text style={styles.endorsementNumber}>12 endorsements</Text> from connections
+            </Text>
           </View>
         </View>
 
         {/* Portfolio */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Portfolio</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Portfolio</Text>
+            <TouchableOpacity style={styles.editButton}>
+              <Edit3 size={16} color="#6366F1" />
+              <Text style={styles.editButtonText}>Edit Project</Text>
+            </TouchableOpacity>
+          </View>
+          
           <View style={styles.portfolioGrid}>
-            {userData.portfolio.map((project, index) => {
-              const IconComponent = project.icon;
-              return (
-                <View key={index} style={styles.portfolioItem}>
-                  <View style={styles.portfolioIcon}>
-                    <IconComponent size={24} color="#9CA3AF" />
+            {userData.portfolio.map((project, index) => (
+              <PortfolioCard key={index} project={project} index={index} />
+            ))}
+            
+            <TouchableOpacity style={styles.addPortfolioCard}>
+              <Plus size={24} color="#9CA3AF" />
+              <Text style={styles.addPortfolioText}>Add Project</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Goals & Interests */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Goals & Interests</Text>
+          
+          <View style={styles.goalsContainer}>
+            <View style={styles.goalCategory}>
+              <View style={styles.goalHeader}>
+                <Target size={16} color="#6366F1" />
+                <Text style={styles.goalCategoryTitle}>Looking For</Text>
+              </View>
+              <View style={styles.goalTags}>
+                {userData.goals.map((goal, index) => {
+                  const IconComponent = goal.icon;
+                  return (
+                    <View key={index} style={[styles.goalTag, { backgroundColor: `${goal.color}20` }]}>
+                      <IconComponent size={14} color={goal.color} />
+                      <Text style={[styles.goalTagText, { color: goal.color }]}>{goal.text}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+            
+            <View style={styles.goalCategory}>
+              <View style={styles.goalHeader}>
+                <Building size={16} color="#6366F1" />
+                <Text style={styles.goalCategoryTitle}>Industries of Interest</Text>
+              </View>
+              <View style={styles.goalTags}>
+                {userData.interests.map((interest, index) => (
+                  <View key={index} style={styles.interestTag}>
+                    <Text style={styles.interestTagText}>{interest}</Text>
                   </View>
-                  <Text style={styles.portfolioTitle}>{project.title}</Text>
-                </View>
-              );
-            })}
+                ))}
+              </View>
+            </View>
           </View>
         </View>
 
-        {/* Availability */}
+        {/* Activity Insights */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Availability</Text>
-          <View style={[
-            styles.availabilityCard,
-            userData.availability.available ? styles.availableCard : styles.unavailableCard
-          ]}>
-            <View style={styles.availabilityHeader}>
-              <View style={[
-                styles.availabilityDot,
-                { backgroundColor: userData.availability.available ? '#10B981' : '#EF4444' }
-              ]} />
-              <Text style={[
-                styles.availabilityStatus,
-                { color: userData.availability.available ? '#065F46' : '#991B1B' }
-              ]}>
-                {userData.availability.status}
-              </Text>
+          <Text style={styles.sectionTitle}>Activity Insights</Text>
+          
+          <View style={styles.insightsGrid}>
+            <View style={styles.insightCard}>
+              <View style={styles.insightIconContainer}>
+                <Calendar size={16} color="#3B82F6" />
+                <Text style={styles.insightValue}>6</Text>
+              </View>
+              <Text style={styles.insightLabel}>Events Attended</Text>
             </View>
-            <Text style={[
-              styles.availabilityDuration,
-              { color: userData.availability.available ? '#059669' : '#DC2626' }
-            ]}>
-              {userData.availability.duration}
-            </Text>
+            
+            <View style={styles.insightCard}>
+              <View style={styles.insightIconContainer}>
+                <MapPin size={16} color="#10B981" />
+                <Text style={styles.insightValue}>9</Text>
+              </View>
+              <Text style={styles.insightLabel}>Locations Active</Text>
+            </View>
+          </View>
+          
+          <View style={styles.lastActiveCard}>
+            <Clock size={16} color="#6366F1" />
+            <View style={styles.lastActiveInfo}>
+              <Text style={styles.lastActiveTitle}>Last Public Mode</Text>
+              <Text style={styles.lastActiveSubtitle}>Tech Summit – April 2025</Text>
+            </View>
           </View>
         </View>
 
-        {/* Mutual Interests */}
+        {/* Privacy Settings */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>You both share</Text>
-          <View style={styles.mutualContainer}>
-            <View style={styles.mutualItem}>
-              <Hashtag size={14} color="#3B82F6" />
-              <Text style={styles.mutualText}>{userData.mutualInterests.tags.join(', ')}</Text>
+          <Text style={styles.sectionTitle}>Visibility & Privacy</Text>
+          
+          <View style={styles.privacySettings}>
+            <View style={styles.privacySetting}>
+              <View style={styles.privacyInfo}>
+                <Text style={styles.privacyTitle}>Public Mode</Text>
+                <Text style={styles.privacyDescription}>Show your profile to nearby professionals</Text>
+              </View>
+              <Switch
+                value={userData.privacy.publicMode}
+                onValueChange={() => {}}
+                trackColor={{ false: '#E5E7EB', true: '#6366F1' }}
+                thumbColor="#FFFFFF"
+              />
             </View>
-            <View style={styles.mutualItem}>
-              <Calendar size={14} color="#8B5CF6" />
-              <Text style={styles.mutualText}>{userData.mutualInterests.events.join(', ')}</Text>
+            
+            <View style={styles.privacySetting}>
+              <View style={styles.privacyInfo}>
+                <Text style={styles.privacyTitle}>Proximity Alerts</Text>
+                <Text style={styles.privacyDescription}>Get notified about relevant connections nearby</Text>
+              </View>
+              <Switch
+                value={userData.privacy.proximityAlerts}
+                onValueChange={() => {}}
+                trackColor={{ false: '#E5E7EB', true: '#6366F1' }}
+                thumbColor="#FFFFFF"
+              />
             </View>
-          </View>
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.actionButtonsSection}>
-          <View style={styles.primaryActionButtons}>
-            <TouchableOpacity style={styles.messageButton} onPress={handleMessage}>
-              <MessageCircle size={16} color="#FFFFFF" />
-              <Text style={styles.messageButtonText}>Message</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.waveButton} onPress={handleWave}>
-              <Hand size={16} color="#FFFFFF" />
-              <Text style={styles.waveButtonText}>Wave</Text>
-            </TouchableOpacity>
+            
+            <View style={styles.privacySetting}>
+              <View style={styles.privacyInfo}>
+                <Text style={styles.privacyTitle}>Direct Messages</Text>
+                <Text style={styles.privacyDescription}>Allow others to message you directly</Text>
+              </View>
+              <Switch
+                value={userData.privacy.directMessages}
+                onValueChange={() => {}}
+                trackColor={{ false: '#E5E7EB', true: '#6366F1' }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
           </View>
         </View>
 
@@ -729,11 +770,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#6366F1',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    paddingTop: 50,
   },
   headerButton: {
     padding: 8,
@@ -741,193 +781,103 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
-    color: '#111827',
-  },
-  headerRight: {
-    flexDirection: 'row',
-    gap: 4,
+    color: '#FFFFFF',
   },
   content: {
     flex: 1,
   },
-  profileHeader: {
-    backgroundColor: '#FFFFFF',
+  coverSection: {
     paddingHorizontal: 16,
-    paddingVertical: 24,
+    paddingVertical: 32,
+    alignItems: 'center',
   },
-  profileInfo: {
-    flexDirection: 'row',
-    marginBottom: 24,
+  profileHeaderContent: {
+    alignItems: 'center',
   },
   avatarContainer: {
     position: 'relative',
-    marginRight: 16,
+    marginBottom: 16,
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
   },
   verifiedBadge: {
     position: 'absolute',
     bottom: -2,
     right: -2,
-    width: 24,
-    height: 24,
+    width: 32,
+    height: 32,
     backgroundColor: '#10B981',
-    borderRadius: 12,
-    borderWidth: 2,
+    borderRadius: 16,
+    borderWidth: 3,
     borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  userInfo: {
-    flex: 1,
-  },
   userName: {
-    fontSize: 20,
+    fontSize: 24,
     fontFamily: 'Inter-Bold',
-    color: '#111827',
-    marginBottom: 2,
+    color: '#FFFFFF',
+    marginBottom: 4,
   },
   userRole: {
     fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#6B7280',
-    marginBottom: 2,
-  },
-  userCompany: {
-    fontSize: 14,
     fontFamily: 'Inter-Regular',
-    color: '#9CA3AF',
+    color: 'rgba(255, 255, 255, 0.9)',
     marginBottom: 12,
   },
-  statusBadges: {
+  statusContainer: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
     gap: 8,
-    marginBottom: 8,
   },
-  verifiedTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#D1FAE5',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  verifiedText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#059669',
-  },
-  statusTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#DBEAFE',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  statusEmoji: {
-    fontSize: 12,
+  statusDot: {
+    width: 8,
+    height: 8,
+    backgroundColor: '#10B981',
+    borderRadius: 4,
   },
   statusText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#1D4ED8',
-  },
-  chatTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#10B981',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-    alignSelf: 'flex-start',
-  },
-  chatEmoji: {
-    fontSize: 12,
-  },
-  chatText: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
   },
-  primaryActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
-  },
-  connectButton: {
-    flex: 1,
-    backgroundColor: '#3B82F6',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  connectButtonText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  followButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
+  metricsSection: {
     backgroundColor: '#FFFFFF',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  followButtonText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-  },
-  metricsContainer: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
   metricsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+    marginBottom: 12,
   },
-  metricItem: {
+  metricCard: {
     alignItems: 'center',
-    gap: 8,
+    flex: 1,
+  },
+  metricIconContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 4,
   },
   metricValue: {
     fontSize: 20,
     fontFamily: 'Inter-Bold',
-    color: '#111827',
   },
   metricLabel: {
     fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  uniqueStats: {
-    gap: 8,
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  statText: {
-    fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
   },
@@ -936,22 +886,29 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 24,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: 'Inter-SemiBold',
     color: '#111827',
   },
-  educationActions: {
-    flexDirection: 'row',
-    gap: 8,
+  createPostButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  createPostText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
   },
   editButton: {
     flexDirection: 'row',
@@ -967,6 +924,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     color: '#6366F1',
   },
+  educationActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   refreshButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -981,42 +942,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     color: '#6366F1',
   },
-  locationInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  locationLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  locationText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-  },
-  publicModeTag: {
-    backgroundColor: '#D1FAE5',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  publicModeText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#059669',
-  },
   bioText: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: 'Inter-Regular',
     color: '#374151',
-    lineHeight: 20,
+    lineHeight: 22,
   },
   postCard: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
     padding: 16,
     marginBottom: 12,
   },
@@ -1054,33 +988,33 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: '#374151',
     lineHeight: 20,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   postTags: {
     flexDirection: 'row',
-    gap: 4,
+    gap: 8,
     marginBottom: 12,
   },
   postTag: {
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   bluePostTag: {
     backgroundColor: '#DBEAFE',
   },
-  greenPostTag: {
-    backgroundColor: '#D1FAE5',
+  purplePostTag: {
+    backgroundColor: '#F3E8FF',
   },
   postTagText: {
     fontSize: 12,
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter-Medium',
   },
   bluePostTagText: {
     color: '#1D4ED8',
   },
-  greenPostTagText: {
-    color: '#059669',
+  purplePostTagText: {
+    color: '#7C3AED',
   },
   postActions: {
     flexDirection: 'row',
@@ -1107,18 +1041,18 @@ const styles = StyleSheet.create({
   },
   experienceItem: {
     flexDirection: 'row',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   experienceLogo: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+    width: 48,
+    height: 48,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   experienceLogoText: {
-    fontSize: 14,
+    fontSize: 18,
     fontFamily: 'Inter-Bold',
     color: '#FFFFFF',
   },
@@ -1126,7 +1060,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   experienceTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: 'Inter-Medium',
     color: '#111827',
     marginBottom: 2,
@@ -1137,15 +1071,21 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginBottom: 4,
   },
+  experienceDescription: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
+    marginBottom: 8,
+  },
   experienceTags: {
     flexDirection: 'row',
-    gap: 4,
+    gap: 6,
   },
   experienceTag: {
     backgroundColor: '#F3F4F6',
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 8,
   },
   experienceTagText: {
     fontSize: 12,
@@ -1199,7 +1139,7 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: 32,
     gap: 8,
   },
   emptyText: {
@@ -1216,146 +1156,223 @@ const styles = StyleSheet.create({
   educationItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   deleteButton: {
     padding: 8,
     marginLeft: 8,
   },
-  skillsContainer: {
+  skillContainer: {
+    marginBottom: 16,
+  },
+  skillHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  skillName: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#111827',
+  },
+  skillPercentage: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
+  skillBarBackground: {
+    width: '100%',
+    height: 6,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 3,
+  },
+  skillBarFill: {
+    height: 6,
+    borderRadius: 3,
+  },
+  endorsementInfo: {
+    marginTop: 8,
+  },
+  endorsementText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
+  endorsementNumber: {
+    fontFamily: 'Inter-Medium',
+    color: '#111827',
+  },
+  portfolioGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  portfolioCard: {
+    width: '48%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  portfolioGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  portfolioOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  portfolioContent: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    right: 12,
+  },
+  portfolioTitle: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  portfolioDescription: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  addPortfolioCard: {
+    width: '48%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  addPortfolioText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
+  },
+  goalsContainer: {
+    gap: 24,
+  },
+  goalCategory: {
+    gap: 12,
+  },
+  goalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  goalCategoryTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#374151',
+  },
+  goalTags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  skillTag: {
+  goalTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  goalTagText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+  },
+  interestTag: {
+    backgroundColor: '#F3F4F6',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
   },
-  skillText: {
+  interestTagText: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
+    color: '#6B7280',
   },
-  lookingForContainer: {
-    gap: 8,
-  },
-  lookingForItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  lookingForText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#374151',
-  },
-  portfolioGrid: {
+  insightsGrid: {
     flexDirection: 'row',
     gap: 12,
+    marginBottom: 16,
   },
-  portfolioItem: {
+  insightCard: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
     padding: 12,
-    aspectRatio: 1,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  portfolioIcon: {
+  insightIconContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 8,
+    gap: 8,
   },
-  portfolioTitle: {
+  insightValue: {
+    fontSize: 24,
+    fontFamily: 'Inter-Bold',
+    color: '#111827',
+  },
+  insightLabel: {
     fontSize: 12,
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter-Medium',
     color: '#6B7280',
     textAlign: 'center',
   },
-  availabilityCard: {
-    borderRadius: 8,
+  lastActiveCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderRadius: 12,
     padding: 12,
-    borderWidth: 1,
-  },
-  availableCard: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
-  },
-  unavailableCard: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
-  },
-  availabilityHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  availabilityDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  availabilityStatus: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-  },
-  availabilityDuration: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-  },
-  mutualContainer: {
-    gap: 8,
-  },
-  mutualItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  mutualText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#374151',
-  },
-  actionButtonsSection: {
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    paddingHorizontal: 16,
-    paddingVertical: 24,
-  },
-  primaryActionButtons: {
-    flexDirection: 'row',
     gap: 12,
   },
-  messageButton: {
+  lastActiveInfo: {
     flex: 1,
-    backgroundColor: '#6366F1',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
   },
-  messageButtonText: {
+  lastActiveTitle: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#1E40AF',
+    marginBottom: 2,
+  },
+  lastActiveSubtitle: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#3B82F6',
+  },
+  privacySettings: {
+    gap: 16,
+  },
+  privacySetting: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  privacyInfo: {
+    flex: 1,
+    marginRight: 16,
+  },
+  privacyTitle: {
     fontSize: 16,
     fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
+    color: '#111827',
+    marginBottom: 2,
   },
-  waveButton: {
-    flex: 1,
-    backgroundColor: '#10B981',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  waveButtonText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
+  privacyDescription: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
   },
   bottomPadding: {
     height: 100,
