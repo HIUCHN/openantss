@@ -115,16 +115,21 @@ export default function ProfileScreen() {
   // Fetch education data when user is available (only once)
   useEffect(() => {
     if (!authLoading && user && !hasFetchedRef.current) {
+      console.log('Fetching education data for user:', user.id);
       fetchEducationData();
       hasFetchedRef.current = true;
     }
   }, [user, authLoading]);
 
   const fetchEducationData = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('No user found, skipping education fetch');
+      return;
+    }
 
     try {
       setEducationLoading(true);
+      console.log('Starting education data fetch...');
       
       const { data, error } = await supabase
         .from('user_education')
@@ -139,6 +144,7 @@ export default function ProfileScreen() {
           Alert.alert('Error', 'Failed to load education data');
         }
       } else {
+        console.log('Education data fetched successfully:', data);
         setEducationList(data || []);
       }
     } catch (error) {
@@ -157,6 +163,8 @@ export default function ProfileScreen() {
   };
 
   const handleSubmit = async () => {
+    console.log('Submitting education form...');
+    
     // Validate form data
     if (!school.trim() || !degree.trim() || !startYear.trim() || !endYear.trim()) {
       Alert.alert('Validation Error', 'Please fill in all fields');
@@ -190,6 +198,7 @@ export default function ProfileScreen() {
 
     try {
       setSubmitting(true);
+      console.log('Inserting education record...');
 
       const newEducation: UserEducationInsert = {
         user_id: user.id,
@@ -209,6 +218,7 @@ export default function ProfileScreen() {
         console.error('Error inserting education:', error);
         Alert.alert('Error', 'Failed to add education record. Please try again.');
       } else if (data) {
+        console.log('Education record inserted successfully:', data);
         // Add the new record to the list (sorted by start_year desc)
         setEducationList(prev => {
           const updated = [data, ...prev];
@@ -273,7 +283,8 @@ export default function ProfileScreen() {
     );
   };
 
-  const AddEducationForm = () => (
+  // Memoized form component to prevent unnecessary re-renders
+  const AddEducationForm = React.memo(() => (
     <View style={styles.addEducationForm}>
       <Text style={styles.formTitle}>Add Education</Text>
       
@@ -367,7 +378,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
     </View>
-  );
+  ));
 
   // Show loading state while auth is loading
   if (authLoading) {
