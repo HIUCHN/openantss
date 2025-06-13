@@ -65,6 +65,7 @@ export default function EducationForm({ onSuccess, onCancel }: EducationFormProp
       setSubmitting(true);
       console.log('🎓 Adding new education record...');
 
+      // Create education record with explicit UUID generation
       const newEducation = {
         user_id: user.id,
         school: school.trim(),
@@ -75,6 +76,7 @@ export default function EducationForm({ onSuccess, onCancel }: EducationFormProp
 
       console.log('📝 Education data to insert:', newEducation);
 
+      // Insert the new education record
       const { data, error } = await supabase
         .from('user_education')
         .insert(newEducation)
@@ -83,12 +85,29 @@ export default function EducationForm({ onSuccess, onCancel }: EducationFormProp
 
       if (error) {
         console.error('❌ Error inserting education:', error);
-        Alert.alert('Error', 'Failed to add education record. Please try again.');
+        
+        // Check for specific constraint violations
+        if (error.code === '23505') {
+          Alert.alert('Duplicate Entry', 'This education record already exists.');
+        } else if (error.code === '23503') {
+          Alert.alert('User Error', 'Invalid user. Please sign in again.');
+        } else {
+          Alert.alert('Error', `Failed to add education record: ${error.message}`);
+        }
       } else if (data) {
         console.log('✅ Education record added successfully:', data);
+        
+        // Clear form first
         clearForm();
+        
+        // Call success callback with the new data
         onSuccess(data);
+        
+        // Show success message
         Alert.alert('Success!', 'Education record added successfully!');
+      } else {
+        console.warn('⚠️ No data returned from insert operation');
+        Alert.alert('Warning', 'Education record may not have been saved properly.');
       }
     } catch (error) {
       console.error('💥 Unexpected error with education:', error);

@@ -199,6 +199,14 @@ export default function ProfileScreen() {
     
     // Close the form
     setShowEditMode(false);
+    
+    // Force refresh the data to ensure we have the latest from the server
+    if (user) {
+      console.log('🔄 Refreshing education data after successful add...');
+      setTimeout(() => {
+        fetchEducationData(user.id, true);
+      }, 500); // Small delay to ensure server has processed the insert
+    }
   };
 
   const handleEducationCancel = () => {
