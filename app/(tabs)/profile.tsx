@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, GraduationCap, Hash as Hashtag, Image as ImageIcon, Smartphone, CreditCard as Edit, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, GraduationCap, Hash as Hashtag, Image as ImageIcon, Smartphone, CreditCard as Edit, Trash2, RefreshCw } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -96,89 +96,221 @@ export default function ProfileScreen() {
   const [educationLoading, setEducationLoading] = useState(false);
   const [educationError, setEducationError] = useState<string | null>(null);
   const [showEditMode, setShowEditMode] = useState(false);
-  const [dataFetched, setDataFetched] = useState(false);
+  const [fetchAttempts, setFetchAttempts] = useState(0);
+  const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string>('');
+  
+  // Use a ref to track if we're currently fetching to prevent multiple simultaneous requests
+  const isFetchingRef = useRef(false);
+  const mountedRef = useRef(true);
 
   const userData = getUserData();
 
-  // Enhanced education data fetching with better error handling
+  // Cleanup on unmount
   useEffect(() => {
-    let isMounted = true;
-
-    const fetchEducationData = async () => {
-      if (!user) {
-        console.log('❌ No user found, skipping education fetch');
-        return;
-      }
-
-      if (dataFetched) {
-        console.log('📚 Education data already fetched, skipping...');
-        return;
-      }
-
-      try {
-        console.log('🔄 Starting education data fetch for user:', user.id);
-        setEducationLoading(true);
-        setEducationError(null);
-        
-        const { data, error } = await supabase
-          .from('user_education')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('start_year', { ascending: false });
-
-        if (!isMounted) {
-          console.log('⚠️ Component unmounted, ignoring fetch result');
-          return;
-        }
-
-        if (error) {
-          console.error('❌ Supabase error fetching education:', error);
-          console.error('Error details:', {
-            code: error.code,
-            message: error.message,
-            details: error.details,
-            hint: error.hint
-          });
-          
-          // Only show error for actual errors, not empty results
-          if (error.code !== 'PGRST116') {
-            setEducationError(`Failed to load education data: ${error.message}`);
-          } else {
-            console.log('📚 No education records found (empty result)');
-            setEducationList([]);
-          }
-        } else {
-          console.log('✅ Education data fetched successfully:', data?.length || 0, 'records');
-          console.log('📋 Education records:', data);
-          setEducationList(data || []);
-        }
-        
-        setDataFetched(true);
-      } catch (error) {
-        console.error('💥 Unexpected error fetching education:', error);
-        if (isMounted) {
-          setEducationError('An unexpected error occurred while loading education data');
-        }
-      } finally {
-        if (isMounted) {
-          setEducationLoading(false);
-        }
-      }
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
     };
+  }, []);
 
-    if (!authLoading && user) {
+  // Method 1: Simple direct fetch with timeout
+  const fetchEducationSimple = async () => {
+    if (!user || isFetchingRef.current) {
+      console.log('🚫 Skipping fetch - no user or already fetching');
+      return;
+    }
+
+    isFetchingRef.current = true;
+    setEducationLoading(true);
+    setEducationError(null);
+    setDebugInfo(`Attempt ${fetchAttempts + 1} - Starting fetch...`);
+
+    try {
+      console.log('🔄 Method 1: Simple fetch for user:', user.id);
+      
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout after 10 seconds')), 10000)
+      );
+
+      const fetchPromise = supabase
+        .from('user_education')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('start_year', { ascending: false });
+
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+
+      if (!mountedRef.current) return;
+
+      if (error) {
+        console.error('❌ Simple fetch error:', error);
+        setEducationError(`Fetch error: ${error.message}`);
+        setDebugInfo(`Error: ${error.code} - ${error.message}`);
+      } else {
+        console.log('✅ Simple fetch success:', data?.length || 0, 'records');
+        setEducationList(data || []);
+        setDebugInfo(`Success: ${data?.length || 0} records loaded`);
+        setLastFetchTime(new Date());
+      }
+    } catch (error: any) {
+      console.error('💥 Simple fetch exception:', error);
+      if (mountedRef.current) {
+        setEducationError(`Exception: ${error.message}`);
+        setDebugInfo(`Exception: ${error.message}`);
+      }
+    } finally {
+      if (mountedRef.current) {
+        setEducationLoading(false);
+        setFetchAttempts(prev => prev + 1);
+      }
+      isFetchingRef.current = false;
+    }
+  };
+
+  // Method 2: Raw SQL approach
+  const fetchEducationRawSQL = async () => {
+    if (!user || isFetchingRef.current) return;
+
+    isFetchingRef.current = true;
+    setEducationLoading(true);
+    setEducationError(null);
+    setDebugInfo('Trying raw SQL approach...');
+
+    try {
+      console.log('🔄 Method 2: Raw SQL for user:', user.id);
+      
+      const { data, error } = await supabase.rpc('get_user_education', {
+        p_user_id: user.id
+      });
+
+      if (!mountedRef.current) return;
+
+      if (error) {
+        console.error('❌ Raw SQL error:', error);
+        // Fallback to simple method
+        setDebugInfo('Raw SQL failed, trying simple method...');
+        await fetchEducationSimple();
+        return;
+      }
+
+      console.log('✅ Raw SQL success:', data?.length || 0, 'records');
+      setEducationList(data || []);
+      setDebugInfo(`Raw SQL Success: ${data?.length || 0} records`);
+      setLastFetchTime(new Date());
+    } catch (error: any) {
+      console.error('💥 Raw SQL exception:', error);
+      if (mountedRef.current) {
+        setDebugInfo('Raw SQL failed, trying simple method...');
+        await fetchEducationSimple();
+      }
+    } finally {
+      if (mountedRef.current) {
+        setEducationLoading(false);
+        setFetchAttempts(prev => prev + 1);
+      }
+      isFetchingRef.current = false;
+    }
+  };
+
+  // Method 3: Test connection first
+  const fetchEducationWithConnectionTest = async () => {
+    if (!user || isFetchingRef.current) return;
+
+    isFetchingRef.current = true;
+    setEducationLoading(true);
+    setEducationError(null);
+    setDebugInfo('Testing Supabase connection...');
+
+    try {
+      console.log('🔄 Method 3: Connection test + fetch for user:', user.id);
+      
+      // First test the connection
+      const { data: testData, error: testError } = await supabase
+        .from('user_education')
+        .select('count')
+        .limit(1);
+
+      if (testError) {
+        console.error('❌ Connection test failed:', testError);
+        setEducationError(`Connection failed: ${testError.message}`);
+        setDebugInfo(`Connection test failed: ${testError.message}`);
+        return;
+      }
+
+      setDebugInfo('Connection OK, fetching data...');
+
+      // Now fetch the actual data
+      const { data, error } = await supabase
+        .from('user_education')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('start_year', { ascending: false });
+
+      if (!mountedRef.current) return;
+
+      if (error) {
+        console.error('❌ Data fetch error:', error);
+        setEducationError(`Data fetch error: ${error.message}`);
+        setDebugInfo(`Data fetch error: ${error.message}`);
+      } else {
+        console.log('✅ Connection test + fetch success:', data?.length || 0, 'records');
+        setEducationList(data || []);
+        setDebugInfo(`Connection test success: ${data?.length || 0} records`);
+        setLastFetchTime(new Date());
+      }
+    } catch (error: any) {
+      console.error('💥 Connection test exception:', error);
+      if (mountedRef.current) {
+        setEducationError(`Exception: ${error.message}`);
+        setDebugInfo(`Exception: ${error.message}`);
+      }
+    } finally {
+      if (mountedRef.current) {
+        setEducationLoading(false);
+        setFetchAttempts(prev => prev + 1);
+      }
+      isFetchingRef.current = false;
+    }
+  };
+
+  // Main fetch function that tries different methods
+  const fetchEducationData = async () => {
+    if (!user) {
+      console.log('❌ No user found, skipping education fetch');
+      setDebugInfo('No authenticated user');
+      return;
+    }
+
+    console.log('🎯 Starting education fetch with multiple methods...');
+    
+    // Try Method 1 first (simple)
+    await fetchEducationSimple();
+    
+    // If that fails and we're still mounted, try Method 3 (connection test)
+    if (mountedRef.current && educationError && fetchAttempts < 2) {
+      console.log('🔄 Trying alternative method...');
+      setTimeout(() => {
+        if (mountedRef.current) {
+          fetchEducationWithConnectionTest();
+        }
+      }, 1000);
+    }
+  };
+
+  // Effect to trigger fetch when user is available
+  useEffect(() => {
+    if (!authLoading && user && !isFetchingRef.current) {
+      console.log('🚀 User available, starting education fetch...');
       fetchEducationData();
     } else if (!authLoading && !user) {
       console.log('🚫 No authenticated user, clearing education data');
       setEducationList([]);
       setEducationLoading(false);
       setEducationError(null);
-      setDataFetched(false);
+      setDebugInfo('No user authenticated');
     }
-
-    return () => {
-      isMounted = false;
-    };
   }, [user, authLoading]);
 
   const handleEducationSuccess = (newEducation: UserEducation) => {
@@ -192,6 +324,7 @@ export default function ProfileScreen() {
     
     // Close the form
     setShowEditMode(false);
+    setDebugInfo(`Added new record: ${newEducation.degree}`);
   };
 
   const handleEducationCancel = () => {
@@ -223,6 +356,7 @@ export default function ProfileScreen() {
                 console.log('✅ Education record deleted successfully');
                 // Remove from local state
                 setEducationList(prev => prev.filter(edu => edu.id !== educationId));
+                setDebugInfo('Record deleted successfully');
                 Alert.alert('Success', 'Education record deleted successfully');
               }
             } catch (error) {
@@ -235,36 +369,15 @@ export default function ProfileScreen() {
     );
   };
 
-  const handleRefreshEducation = async () => {
+  const handleManualRefresh = async () => {
     console.log('🔄 Manual refresh triggered');
-    setDataFetched(false);
+    setFetchAttempts(0);
     setEducationError(null);
+    setDebugInfo('Manual refresh started...');
     
-    // Trigger a fresh fetch
+    // Reset and fetch
     if (user) {
-      try {
-        setEducationLoading(true);
-        
-        const { data, error } = await supabase
-          .from('user_education')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('start_year', { ascending: false });
-
-        if (error && error.code !== 'PGRST116') {
-          console.error('❌ Error refreshing education:', error);
-          setEducationError(`Failed to refresh education data: ${error.message}`);
-        } else {
-          console.log('✅ Education data refreshed:', data?.length || 0, 'records');
-          setEducationList(data || []);
-          setDataFetched(true);
-        }
-      } catch (error) {
-        console.error('💥 Unexpected error refreshing education:', error);
-        setEducationError('An unexpected error occurred while refreshing');
-      } finally {
-        setEducationLoading(false);
-      }
+      await fetchEducationData();
     }
   };
 
@@ -533,19 +646,19 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Education - Enhanced Supabase Integration */}
+        {/* Education - Enhanced Multi-Method Supabase Integration */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Education</Text>
             <View style={styles.educationActions}>
-              {educationError && (
-                <TouchableOpacity 
-                  style={styles.refreshButton}
-                  onPress={handleRefreshEducation}
-                >
-                  <Text style={styles.refreshButtonText}>Retry</Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity 
+                style={styles.refreshButton}
+                onPress={handleManualRefresh}
+                disabled={educationLoading}
+              >
+                <RefreshCw size={16} color="#6366F1" />
+                <Text style={styles.refreshButtonText}>Refresh</Text>
+              </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.editButton}
                 onPress={() => setShowEditMode(!showEditMode)}
@@ -572,21 +685,29 @@ export default function ProfileScreen() {
               <Text style={styles.errorText}>⚠️ {educationError}</Text>
               <TouchableOpacity 
                 style={styles.retryButton}
-                onPress={handleRefreshEducation}
+                onPress={handleManualRefresh}
               >
                 <Text style={styles.retryButtonText}>Try Again</Text>
               </TouchableOpacity>
             </View>
           )}
           
-          {/* Loading State */}
+          {/* Loading State with Enhanced Debug Info */}
           {educationLoading && !educationError && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#6366F1" />
               <Text style={styles.loadingText}>Loading education data...</Text>
               <Text style={styles.debugText}>
-                User ID: {user?.id || 'None'} | Fetched: {dataFetched ? 'Yes' : 'No'}
+                User ID: {user?.id || 'None'}
               </Text>
+              <Text style={styles.debugText}>
+                Attempts: {fetchAttempts} | Status: {debugInfo}
+              </Text>
+              {lastFetchTime && (
+                <Text style={styles.debugText}>
+                  Last fetch: {lastFetchTime.toLocaleTimeString()}
+                </Text>
+              )}
             </View>
           )}
 
@@ -623,6 +744,17 @@ export default function ProfileScreen() {
                 </View>
               )}
             </>
+          )}
+
+          {/* Debug Information Panel */}
+          {debugInfo && (
+            <View style={styles.debugPanel}>
+              <Text style={styles.debugPanelTitle}>Debug Info:</Text>
+              <Text style={styles.debugPanelText}>{debugInfo}</Text>
+              <Text style={styles.debugPanelText}>
+                Records: {educationList.length} | Loading: {educationLoading ? 'Yes' : 'No'}
+              </Text>
+            </View>
           )}
         </View>
 
@@ -988,15 +1120,18 @@ const styles = StyleSheet.create({
     color: '#6366F1',
   },
   refreshButton: {
-    backgroundColor: '#FEF2F2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
+    gap: 4,
   },
   refreshButtonText: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
-    color: '#EF4444',
+    color: '#6366F1',
   },
   locationInfo: {
     flexDirection: 'row',
@@ -1238,6 +1373,24 @@ const styles = StyleSheet.create({
   deleteButton: {
     padding: 8,
     marginLeft: 8,
+  },
+  debugPanel: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+  },
+  debugPanelTitle: {
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  debugPanelText: {
+    fontSize: 11,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    lineHeight: 16,
   },
   skillsContainer: {
     flexDirection: 'row',
