@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from 'lucide-react-native';
@@ -62,99 +62,112 @@ export default function LoginScreen() {
       <KeyboardAvoidingView 
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <LinearGradient
-          colors={['#6366F1', '#8B5CF6']}
-          style={styles.header}
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          bounces={false}
         >
-          <View style={styles.logoContainer}>
-            <View style={styles.logo}>
-              <Text style={styles.logoText}>OA</Text>
-            </View>
-            <Text style={styles.appName}>OpenAnts</Text>
-            <Text style={styles.tagline}>Connect. Collaborate. Create.</Text>
-          </View>
-        </LinearGradient>
-
-        <View style={styles.formContainer}>
-          <View style={styles.welcomeSection}>
-            <Text style={styles.welcomeTitle}>Welcome Back</Text>
-            <Text style={styles.welcomeSubtitle}>Sign in to continue networking</Text>
-          </View>
-
-          <View style={styles.form}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Email Address</Text>
-              <View style={styles.inputWrapper}>
-                <Mail size={20} color="#9CA3AF" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your email address"
-                  placeholderTextColor="#9CA3AF"
-                  value={email}
-                  onChangeText={(text) => setEmail(text.toLowerCase().trim())}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
+          <LinearGradient
+            colors={['#6366F1', '#8B5CF6']}
+            style={styles.header}
+          >
+            <View style={styles.logoContainer}>
+              <View style={styles.logo}>
+                <Text style={styles.logoText}>OA</Text>
               </View>
+              <Text style={styles.appName}>OpenAnts</Text>
+              <Text style={styles.tagline}>Connect. Collaborate. Create.</Text>
+            </View>
+          </LinearGradient>
+
+          <View style={styles.formContainer}>
+            <View style={styles.welcomeSection}>
+              <Text style={styles.welcomeTitle}>Welcome Back</Text>
+              <Text style={styles.welcomeSubtitle}>Sign in to continue networking</Text>
             </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Password</Text>
-              <View style={styles.inputWrapper}>
-                <Lock size={20} color="#9CA3AF" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your password"
-                  placeholderTextColor="#9CA3AF"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <TouchableOpacity
-                  style={styles.eyeButton}
-                  onPress={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeOff size={20} color="#9CA3AF" />
-                  ) : (
-                    <Eye size={20} color="#9CA3AF" />
-                  )}
-                </TouchableOpacity>
+            <View style={styles.form}>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Email Address</Text>
+                <View style={styles.inputWrapper}>
+                  <Mail size={20} color="#9CA3AF" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your email address"
+                    placeholderTextColor="#9CA3AF"
+                    value={email}
+                    onChangeText={(text) => setEmail(text.toLowerCase().trim())}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="next"
+                    blurOnSubmit={false}
+                  />
+                </View>
               </View>
-            </View>
 
-            <TouchableOpacity
-              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
-              onPress={handleLogin}
-              disabled={loading}
-            >
-              <LinearGradient
-                colors={loading ? ['#9CA3AF', '#9CA3AF'] : ['#6366F1', '#8B5CF6']}
-                style={styles.loginButtonGradient}
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Password</Text>
+                <View style={styles.inputWrapper}>
+                  <Lock size={20} color="#9CA3AF" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your password"
+                    placeholderTextColor="#9CA3AF"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    onSubmitEditing={handleLogin}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? (
+                      <EyeOff size={20} color="#9CA3AF" />
+                    ) : (
+                      <Eye size={20} color="#9CA3AF" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+                onPress={handleLogin}
+                disabled={loading}
               >
-                <Text style={styles.loginButtonText}>
-                  {loading ? 'Signing In...' : 'Sign In'}
-                </Text>
-                {!loading && <ArrowRight size={20} color="#FFFFFF" />}
-              </LinearGradient>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={loading ? ['#9CA3AF', '#9CA3AF'] : ['#6366F1', '#8B5CF6']}
+                  style={styles.loginButtonGradient}
+                >
+                  <Text style={styles.loginButtonText}>
+                    {loading ? 'Signing In...' : 'Sign In'}
+                  </Text>
+                  {!loading && <ArrowRight size={20} color="#FFFFFF" />}
+                </LinearGradient>
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.forgotPassword}>
-              <Text style={styles.forgotPasswordText}>Forgot your password?</Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity style={styles.forgotPassword}>
+                <Text style={styles.forgotPasswordText}>Forgot your password?</Text>
+              </TouchableOpacity>
+            </View>
 
-          <View style={styles.signupSection}>
-            <Text style={styles.signupText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => router.push('/(auth)/signup')}>
-              <Text style={styles.signupLink}>Sign up</Text>
-            </TouchableOpacity>
+            <View style={styles.signupSection}>
+              <Text style={styles.signupText}>Don't have an account? </Text>
+              <TouchableOpacity onPress={() => router.push('/(auth)/signup')}>
+                <Text style={styles.signupLink}>Sign up</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -168,11 +181,19 @@ const styles = StyleSheet.create({
   keyboardView: {
     flex: 1,
   },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    minHeight: '100%',
+  },
   header: {
     paddingTop: 40,
     paddingBottom: 60,
     paddingHorizontal: 32,
     alignItems: 'center',
+    minHeight: 200,
   },
   logoContainer: {
     alignItems: 'center',
@@ -210,7 +231,8 @@ const styles = StyleSheet.create({
     marginTop: -32,
     paddingHorizontal: 32,
     paddingTop: 40,
-    paddingBottom: 32,
+    paddingBottom: 40,
+    minHeight: 500,
   },
   welcomeSection: {
     marginBottom: 32,
@@ -228,9 +250,10 @@ const styles = StyleSheet.create({
   },
   form: {
     flex: 1,
+    marginBottom: 32,
   },
   inputContainer: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   inputLabel: {
     fontSize: 14,
@@ -247,6 +270,7 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     paddingHorizontal: 16,
     paddingVertical: 16,
+    minHeight: 56,
   },
   inputIcon: {
     marginRight: 12,
@@ -256,6 +280,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter-Regular',
     color: '#111827',
+    minHeight: 24,
   },
   eyeButton: {
     padding: 4,
@@ -274,6 +299,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 16,
     gap: 8,
+    minHeight: 56,
   },
   loginButtonText: {
     fontSize: 16,
@@ -282,6 +308,7 @@ const styles = StyleSheet.create({
   },
   forgotPassword: {
     alignItems: 'center',
+    paddingVertical: 12,
   },
   forgotPasswordText: {
     fontSize: 14,
@@ -292,7 +319,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 'auto',
+    paddingVertical: 16,
   },
   signupText: {
     fontSize: 14,
