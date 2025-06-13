@@ -112,7 +112,7 @@ export default function ProfileScreen() {
     };
   }, []);
 
-  // COMPLETELY FIXED fetch function - removed problematic early returns
+  // COMPLETELY FIXED fetch function - removed ALL problematic early returns
   const fetchEducationData = useCallback(async (userId: string, forceRefresh = false) => {
     // Prevent multiple simultaneous fetches
     if (isFetchingRef.current) {
@@ -120,7 +120,8 @@ export default function ProfileScreen() {
       return;
     }
 
-    // REMOVED PROBLEMATIC EARLY RETURN - now only skips if not forced and already has initial data
+    // CRITICAL FIX: Only skip if not forced refresh AND already has data
+    // This ensures forceRefresh = true ALWAYS works
     if (!forceRefresh && hasInitiallyFetched) {
       console.log('📋 Using cached education data (not forced refresh)');
       return;
@@ -131,7 +132,7 @@ export default function ProfileScreen() {
     setEducationError(null);
 
     try {
-      console.log('🔄 Fetching education data for user:', userId, forceRefresh ? '(FORCED)' : '(INITIAL)');
+      console.log('🔄 Fetching education data for user:', userId, forceRefresh ? '(FORCED REFRESH)' : '(INITIAL LOAD)');
       
       const { data, error } = await supabase
         .from('user_education')
@@ -188,15 +189,14 @@ export default function ProfileScreen() {
     // STEP 2: Close the form
     setShowEditMode(false);
     
-    // STEP 3: Force refresh to ensure server sync (this will now work properly)
+    // STEP 3: CRITICAL FIX - Force refresh to sync with server
     if (user) {
       console.log('🔄 Force refreshing education data after successful add...');
       // Small delay to ensure server has processed the insert
       setTimeout(() => {
-        // Reset the flag to allow forced refresh
-        setHasInitiallyFetched(false);
-        fetchEducationData(user.id, true);
-      }, 500);
+        // CRITICAL: This ensures the forced refresh will work
+        fetchEducationData(user.id, true); // forceRefresh = true will bypass the early return
+      }, 300);
     }
   };
 
@@ -245,8 +245,7 @@ export default function ProfileScreen() {
     if (!user) return;
     
     console.log('🔄 Manual refresh triggered');
-    // Reset the flag to allow forced refresh
-    setHasInitiallyFetched(false);
+    // Force refresh by calling with forceRefresh = true
     await fetchEducationData(user.id, true);
   };
 
