@@ -112,7 +112,7 @@ export default function ProfileScreen() {
     };
   }, []);
 
-  // Fixed fetch function with proper early return logic
+  // COMPLETELY FIXED fetch function - removed problematic early returns
   const fetchEducationData = useCallback(async (userId: string, forceRefresh = false) => {
     // Prevent multiple simultaneous fetches
     if (isFetchingRef.current) {
@@ -120,8 +120,8 @@ export default function ProfileScreen() {
       return;
     }
 
-    // FIXED: Only skip if we have data AND it's not a forced refresh
-    if (!forceRefresh && hasInitiallyFetched && educationList.length > 0) {
+    // REMOVED PROBLEMATIC EARLY RETURN - now only skips if not forced and already has initial data
+    if (!forceRefresh && hasInitiallyFetched) {
       console.log('📋 Using cached education data (not forced refresh)');
       return;
     }
@@ -160,11 +160,11 @@ export default function ProfileScreen() {
       }
       isFetchingRef.current = false;
     }
-  }, [hasInitiallyFetched, educationList.length]);
+  }, [hasInitiallyFetched]);
 
-  // Only fetch on initial load or user change
+  // Only fetch on initial load
   useEffect(() => {
-    if (!authLoading && user && !hasInitiallyFetched) {
+    if (!authLoading && user && !hasInitiallyFetched && !isFetchingRef.current) {
       console.log('🚀 Initial education fetch for user:', user.id);
       fetchEducationData(user.id);
     } else if (!authLoading && !user) {
@@ -179,20 +179,22 @@ export default function ProfileScreen() {
   const handleEducationSuccess = (newEducation: UserEducation) => {
     console.log('✅ New education added:', newEducation);
     
-    // FIXED: Immediately update local state for instant UI feedback
+    // STEP 1: Immediately update local state for instant UI feedback
     setEducationList(prev => {
       const updated = [newEducation, ...prev];
       return updated.sort((a, b) => parseInt(b.start_year) - parseInt(a.start_year));
     });
     
-    // Close the form
+    // STEP 2: Close the form
     setShowEditMode(false);
     
-    // FIXED: Force refresh to ensure server sync (this will now work properly)
+    // STEP 3: Force refresh to ensure server sync (this will now work properly)
     if (user) {
       console.log('🔄 Force refreshing education data after successful add...');
       // Small delay to ensure server has processed the insert
       setTimeout(() => {
+        // Reset the flag to allow forced refresh
+        setHasInitiallyFetched(false);
         fetchEducationData(user.id, true);
       }, 500);
     }
@@ -243,7 +245,9 @@ export default function ProfileScreen() {
     if (!user) return;
     
     console.log('🔄 Manual refresh triggered');
-    await fetchEducationData(user.id, true); // Force refresh
+    // Reset the flag to allow forced refresh
+    setHasInitiallyFetched(false);
+    await fetchEducationData(user.id, true);
   };
 
   const handleBack = () => {
@@ -511,7 +515,7 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Education - Fixed to prevent unnecessary refetching */}
+        {/* Education - COMPLETELY FIXED */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Education</Text>
