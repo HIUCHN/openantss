@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, GraduationCap, Hash as Hashtag, Image as ImageIcon, Smartphone } from 'lucide-react-native';
+import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, GraduationCap, Hash as Hashtag, Image as ImageIcon, Smartphone, Edit } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -94,17 +94,21 @@ export default function ProfileScreen() {
   const { user, profile, loading: authLoading } = useAuth();
   const [educationList, setEducationList] = useState<UserEducation[]>([]);
   const [educationLoading, setEducationLoading] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [showEditMode, setShowEditMode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const hasFetchedRef = useRef(false);
   
-  // Form state
-  const [formData, setFormData] = useState({
-    school: '',
-    degree: '',
-    start_year: '',
-    end_year: ''
-  });
+  // Form state - using individual state variables to prevent re-render issues
+  const [school, setSchool] = useState('');
+  const [degree, setDegree] = useState('');
+  const [startYear, setStartYear] = useState('');
+  const [endYear, setEndYear] = useState('');
+
+  // Refs for TextInputs to maintain focus
+  const schoolInputRef = useRef<TextInput>(null);
+  const degreeInputRef = useRef<TextInput>(null);
+  const startYearInputRef = useRef<TextInput>(null);
+  const endYearInputRef = useRef<TextInput>(null);
 
   const userData = getUserData();
 
@@ -145,29 +149,36 @@ export default function ProfileScreen() {
     }
   };
 
+  const clearForm = () => {
+    setSchool('');
+    setDegree('');
+    setStartYear('');
+    setEndYear('');
+  };
+
   const handleSubmit = async () => {
     // Validate form data
-    if (!formData.school.trim() || !formData.degree.trim() || !formData.start_year.trim() || !formData.end_year.trim()) {
+    if (!school.trim() || !degree.trim() || !startYear.trim() || !endYear.trim()) {
       Alert.alert('Validation Error', 'Please fill in all fields');
       return;
     }
 
     // Basic year validation
-    const startYear = parseInt(formData.start_year);
-    const endYear = parseInt(formData.end_year);
+    const startYearNum = parseInt(startYear);
+    const endYearNum = parseInt(endYear);
     const currentYear = new Date().getFullYear();
 
-    if (isNaN(startYear) || isNaN(endYear)) {
+    if (isNaN(startYearNum) || isNaN(endYearNum)) {
       Alert.alert('Validation Error', 'Please enter valid years');
       return;
     }
 
-    if (startYear < 1900 || startYear > currentYear + 10) {
+    if (startYearNum < 1900 || startYearNum > currentYear + 10) {
       Alert.alert('Validation Error', 'Please enter a valid start year');
       return;
     }
 
-    if (endYear < startYear || endYear > currentYear + 10) {
+    if (endYearNum < startYearNum || endYearNum > currentYear + 10) {
       Alert.alert('Validation Error', 'End year must be after start year and not too far in the future');
       return;
     }
@@ -182,10 +193,10 @@ export default function ProfileScreen() {
 
       const newEducation: UserEducationInsert = {
         user_id: user.id,
-        school: formData.school.trim(),
-        degree: formData.degree.trim(),
-        start_year: formData.start_year.trim(),
-        end_year: formData.end_year.trim()
+        school: school.trim(),
+        degree: degree.trim(),
+        start_year: startYear.trim(),
+        end_year: endYear.trim()
       };
 
       const { data, error } = await supabase
@@ -204,14 +215,9 @@ export default function ProfileScreen() {
           return updated.sort((a, b) => parseInt(b.start_year) - parseInt(a.start_year));
         });
         
-        // Clear form and hide it
-        setFormData({
-          school: '',
-          degree: '',
-          start_year: '',
-          end_year: ''
-        });
-        setShowAddForm(false);
+        // Clear form and hide edit mode
+        clearForm();
+        setShowEditMode(false);
         
         Alert.alert('Success!', 'Education record added successfully!');
       }
@@ -221,6 +227,11 @@ export default function ProfileScreen() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleCancel = () => {
+    clearForm();
+    setShowEditMode(false);
   };
 
   const handleBack = () => {
@@ -269,22 +280,34 @@ export default function ProfileScreen() {
       <View style={styles.formGroup}>
         <Text style={styles.formLabel}>School or University *</Text>
         <TextInput
+          ref={schoolInputRef}
           style={[styles.formInput, submitting && styles.formInputDisabled]}
           placeholder="e.g., Harvard University"
-          value={formData.school}
-          onChangeText={(text) => setFormData(prev => ({ ...prev, school: text }))}
+          value={school}
+          onChangeText={setSchool}
           editable={!submitting}
+          autoCorrect={false}
+          autoCapitalize="words"
+          returnKeyType="next"
+          onSubmitEditing={() => degreeInputRef.current?.focus()}
+          blurOnSubmit={false}
         />
       </View>
       
       <View style={styles.formGroup}>
         <Text style={styles.formLabel}>Degree *</Text>
         <TextInput
+          ref={degreeInputRef}
           style={[styles.formInput, submitting && styles.formInputDisabled]}
           placeholder="e.g., Bachelor of Science in Computer Science"
-          value={formData.degree}
-          onChangeText={(text) => setFormData(prev => ({ ...prev, degree: text }))}
+          value={degree}
+          onChangeText={setDegree}
           editable={!submitting}
+          autoCorrect={false}
+          autoCapitalize="words"
+          returnKeyType="next"
+          onSubmitEditing={() => startYearInputRef.current?.focus()}
+          blurOnSubmit={false}
         />
       </View>
       
@@ -292,25 +315,33 @@ export default function ProfileScreen() {
         <View style={styles.yearGroup}>
           <Text style={styles.formLabel}>Start Year *</Text>
           <TextInput
+            ref={startYearInputRef}
             style={[styles.formInput, submitting && styles.formInputDisabled]}
             placeholder="2018"
-            value={formData.start_year}
-            onChangeText={(text) => setFormData(prev => ({ ...prev, start_year: text }))}
+            value={startYear}
+            onChangeText={setStartYear}
             keyboardType="numeric"
             maxLength={4}
             editable={!submitting}
+            returnKeyType="next"
+            onSubmitEditing={() => endYearInputRef.current?.focus()}
+            blurOnSubmit={false}
           />
         </View>
         <View style={styles.yearGroup}>
           <Text style={styles.formLabel}>End Year *</Text>
           <TextInput
+            ref={endYearInputRef}
             style={[styles.formInput, submitting && styles.formInputDisabled]}
             placeholder="2022"
-            value={formData.end_year}
-            onChangeText={(text) => setFormData(prev => ({ ...prev, end_year: text }))}
+            value={endYear}
+            onChangeText={setEndYear}
             keyboardType="numeric"
             maxLength={4}
             editable={!submitting}
+            returnKeyType="done"
+            onSubmitEditing={handleSubmit}
+            blurOnSubmit={true}
           />
         </View>
       </View>
@@ -318,15 +349,7 @@ export default function ProfileScreen() {
       <View style={styles.formActions}>
         <TouchableOpacity 
           style={[styles.cancelButton, submitting && styles.buttonDisabled]}
-          onPress={() => {
-            setShowAddForm(false);
-            setFormData({
-              school: '',
-              degree: '',
-              start_year: '',
-              end_year: ''
-            });
-          }}
+          onPress={handleCancel}
           disabled={submitting}
         >
           <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -577,16 +600,16 @@ export default function ProfileScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Education</Text>
             <TouchableOpacity 
-              style={styles.addButton}
-              onPress={() => setShowAddForm(!showAddForm)}
+              style={styles.editButton}
+              onPress={() => setShowEditMode(!showEditMode)}
             >
-              <Plus size={16} color="#6366F1" />
-              <Text style={styles.addButtonText}>Add Education</Text>
+              <Edit size={16} color="#6366F1" />
+              <Text style={styles.editButtonText}>Edit</Text>
             </TouchableOpacity>
           </View>
           
           {/* Add Education Form */}
-          {showAddForm && <AddEducationForm />}
+          {showEditMode && <AddEducationForm />}
           
           {/* Loading State */}
           {educationLoading && (
@@ -617,7 +640,7 @@ export default function ProfileScreen() {
                 <View style={styles.emptyState}>
                   <GraduationCap size={32} color="#9CA3AF" />
                   <Text style={styles.emptyText}>No education added yet</Text>
-                  <Text style={styles.emptySubtext}>Tap "Add Education" to add your first education record</Text>
+                  <Text style={styles.emptySubtext}>Tap "Edit" to add your first education record</Text>
                 </View>
               )}
             </>
@@ -967,7 +990,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: '#111827',
   },
-  addButton: {
+  editButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F3F4F6',
@@ -976,7 +999,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 4,
   },
-  addButtonText: {
+  editButtonText: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#6366F1',
