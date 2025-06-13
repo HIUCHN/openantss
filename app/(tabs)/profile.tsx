@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, Switch, AppState } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, MoveVertical as MoreVertical, CircleCheck as CheckCircle, Users, Heart, Eye, TrendingUp, MapPin, Calendar, Building, GraduationCap, Plus, CreditCard as Edit3, Trash2, RefreshCw, Briefcase, Award, Target, Clock, Share, MessageCircle, UserPlus, Settings } from 'lucide-react-native';
@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import EducationForm from '@/components/EducationForm';
 import ExperienceForm from '@/components/ExperienceForm';
+import { useFocusEffect } from '@react-navigation/native';
 
 type UserEducation = Database['public']['Tables']['user_education']['Row'];
 type Experience = Database['public']['Tables']['experiences']['Row'];
@@ -101,7 +102,6 @@ export default function ProfileScreen() {
   const isFetchingEducationRef = useRef(false);
   const isFetchingExperienceRef = useRef(false);
   const mountedRef = useRef(true);
-  const hasInitiallyFetchedRef = useRef(false);
 
   const userData = getUserData();
 
@@ -203,37 +203,16 @@ export default function ProfileScreen() {
     }
   }, []);
 
-  // Initial fetch on user change - only once per user
-  useEffect(() => {
-    if (!authLoading && user && !hasInitiallyFetchedRef.current) {
-      console.log('🚀 Initial data fetch for user:', user.id);
-      hasInitiallyFetchedRef.current = true;
-      fetchEducationData(user.id);
-      fetchExperienceData(user.id);
-    } else if (!authLoading && !user) {
-      console.log('🚫 No authenticated user, clearing data');
-      setEducationList([]);
-      setEducationLoading(false);
-      setEducationError(null);
-      setExperienceList([]);
-      setExperienceLoading(false);
-      setExperienceError(null);
-      hasInitiallyFetchedRef.current = false;
-    }
-  }, [user, authLoading, fetchEducationData, fetchExperienceData]);
-
-  // AppState listener for optimized data fetching
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', nextAppState => {
-      if (nextAppState === 'active' && user) {
-        console.log('🔁 App returned to foreground — refreshing data');
+  // Use useFocusEffect instead of useEffect or AppState for optimized data fetching
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        console.log('🔁 Screen focused — fetching data...');
         fetchEducationData(user.id, true);
         fetchExperienceData(user.id, true);
       }
-    });
-
-    return () => subscription?.remove();
-  }, [user, fetchEducationData, fetchExperienceData]);
+    }, [user, fetchEducationData, fetchExperienceData])
+  );
 
   // Education handlers
   const handleEducationSuccess = (newEducation: UserEducation) => {
