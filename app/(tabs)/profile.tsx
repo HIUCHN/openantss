@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -96,13 +96,12 @@ export default function ProfileScreen() {
   const [educationLoading, setEducationLoading] = useState(false);
   const [educationError, setEducationError] = useState<string | null>(null);
   const [showEditMode, setShowEditMode] = useState(false);
-  const [fetchAttempts, setFetchAttempts] = useState(0);
-  const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
-  const [debugInfo, setDebugInfo] = useState<string>('');
+  const [hasInitiallyFetched, setHasInitiallyFetched] = useState(false);
   
-  // Use a ref to track if we're currently fetching to prevent multiple simultaneous requests
+  // Use refs to prevent unnecessary re-fetching
   const isFetchingRef = useRef(false);
   const mountedRef = useRef(true);
+  const lastFetchUserIdRef = useRef<string | null>(null);
 
   const userData = getUserData();
 
@@ -114,204 +113,80 @@ export default function ProfileScreen() {
     };
   }, []);
 
-  // Method 1: Simple direct fetch with timeout
-  const fetchEducationSimple = async () => {
-    if (!user || isFetchingRef.current) {
-      console.log('🚫 Skipping fetch - no user or already fetching');
+  // Memoized fetch function to prevent recreation on every render
+  const fetchEducationData = useCallback(async (userId: string, forceRefresh = false) => {
+    // Prevent multiple simultaneous fetches
+    if (isFetchingRef.current) {
+      console.log('🚫 Fetch already in progress, skipping...');
+      return;
+    }
+
+    // Skip if we already have data and this isn't a forced refresh
+    if (!forceRefresh && hasInitiallyFetched && educationList.length >= 0) {
+      console.log('📋 Using cached education data');
+      return;
+    }
+
+    // Skip if same user and we already fetched
+    if (!forceRefresh && lastFetchUserIdRef.current === userId && hasInitiallyFetched) {
+      console.log('👤 Same user, using cached data');
       return;
     }
 
     isFetchingRef.current = true;
     setEducationLoading(true);
     setEducationError(null);
-    setDebugInfo(`Attempt ${fetchAttempts + 1} - Starting fetch...`);
 
     try {
-      console.log('🔄 Method 1: Simple fetch for user:', user.id);
+      console.log('🔄 Fetching education data for user:', userId);
       
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Request timeout after 10 seconds')), 10000)
-      );
-
-      const fetchPromise = supabase
-        .from('user_education')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('start_year', { ascending: false });
-
-      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
-
-      if (!mountedRef.current) return;
-
-      if (error) {
-        console.error('❌ Simple fetch error:', error);
-        setEducationError(`Fetch error: ${error.message}`);
-        setDebugInfo(`Error: ${error.code} - ${error.message}`);
-      } else {
-        console.log('✅ Simple fetch success:', data?.length || 0, 'records');
-        setEducationList(data || []);
-        setDebugInfo(`Success: ${data?.length || 0} records loaded`);
-        setLastFetchTime(new Date());
-      }
-    } catch (error: any) {
-      console.error('💥 Simple fetch exception:', error);
-      if (mountedRef.current) {
-        setEducationError(`Exception: ${error.message}`);
-        setDebugInfo(`Exception: ${error.message}`);
-      }
-    } finally {
-      if (mountedRef.current) {
-        setEducationLoading(false);
-        setFetchAttempts(prev => prev + 1);
-      }
-      isFetchingRef.current = false;
-    }
-  };
-
-  // Method 2: Raw SQL approach
-  const fetchEducationRawSQL = async () => {
-    if (!user || isFetchingRef.current) return;
-
-    isFetchingRef.current = true;
-    setEducationLoading(true);
-    setEducationError(null);
-    setDebugInfo('Trying raw SQL approach...');
-
-    try {
-      console.log('🔄 Method 2: Raw SQL for user:', user.id);
-      
-      const { data, error } = await supabase.rpc('get_user_education', {
-        p_user_id: user.id
-      });
-
-      if (!mountedRef.current) return;
-
-      if (error) {
-        console.error('❌ Raw SQL error:', error);
-        // Fallback to simple method
-        setDebugInfo('Raw SQL failed, trying simple method...');
-        await fetchEducationSimple();
-        return;
-      }
-
-      console.log('✅ Raw SQL success:', data?.length || 0, 'records');
-      setEducationList(data || []);
-      setDebugInfo(`Raw SQL Success: ${data?.length || 0} records`);
-      setLastFetchTime(new Date());
-    } catch (error: any) {
-      console.error('💥 Raw SQL exception:', error);
-      if (mountedRef.current) {
-        setDebugInfo('Raw SQL failed, trying simple method...');
-        await fetchEducationSimple();
-      }
-    } finally {
-      if (mountedRef.current) {
-        setEducationLoading(false);
-        setFetchAttempts(prev => prev + 1);
-      }
-      isFetchingRef.current = false;
-    }
-  };
-
-  // Method 3: Test connection first
-  const fetchEducationWithConnectionTest = async () => {
-    if (!user || isFetchingRef.current) return;
-
-    isFetchingRef.current = true;
-    setEducationLoading(true);
-    setEducationError(null);
-    setDebugInfo('Testing Supabase connection...');
-
-    try {
-      console.log('🔄 Method 3: Connection test + fetch for user:', user.id);
-      
-      // First test the connection
-      const { data: testData, error: testError } = await supabase
-        .from('user_education')
-        .select('count')
-        .limit(1);
-
-      if (testError) {
-        console.error('❌ Connection test failed:', testError);
-        setEducationError(`Connection failed: ${testError.message}`);
-        setDebugInfo(`Connection test failed: ${testError.message}`);
-        return;
-      }
-
-      setDebugInfo('Connection OK, fetching data...');
-
-      // Now fetch the actual data
       const { data, error } = await supabase
         .from('user_education')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .order('start_year', { ascending: false });
 
       if (!mountedRef.current) return;
 
       if (error) {
-        console.error('❌ Data fetch error:', error);
-        setEducationError(`Data fetch error: ${error.message}`);
-        setDebugInfo(`Data fetch error: ${error.message}`);
+        console.error('❌ Error fetching education:', error);
+        setEducationError(`Failed to load education data: ${error.message}`);
       } else {
-        console.log('✅ Connection test + fetch success:', data?.length || 0, 'records');
+        console.log('✅ Education data fetched successfully:', data?.length || 0, 'records');
         setEducationList(data || []);
-        setDebugInfo(`Connection test success: ${data?.length || 0} records`);
-        setLastFetchTime(new Date());
+        setHasInitiallyFetched(true);
+        lastFetchUserIdRef.current = userId;
       }
     } catch (error: any) {
-      console.error('💥 Connection test exception:', error);
+      console.error('💥 Unexpected error fetching education:', error);
       if (mountedRef.current) {
-        setEducationError(`Exception: ${error.message}`);
-        setDebugInfo(`Exception: ${error.message}`);
+        setEducationError(`Unexpected error: ${error.message}`);
       }
     } finally {
       if (mountedRef.current) {
         setEducationLoading(false);
-        setFetchAttempts(prev => prev + 1);
       }
       isFetchingRef.current = false;
     }
-  };
+  }, [hasInitiallyFetched, educationList.length]);
 
-  // Main fetch function that tries different methods
-  const fetchEducationData = async () => {
-    if (!user) {
-      console.log('❌ No user found, skipping education fetch');
-      setDebugInfo('No authenticated user');
-      return;
-    }
-
-    console.log('🎯 Starting education fetch with multiple methods...');
-    
-    // Try Method 1 first (simple)
-    await fetchEducationSimple();
-    
-    // If that fails and we're still mounted, try Method 3 (connection test)
-    if (mountedRef.current && educationError && fetchAttempts < 2) {
-      console.log('🔄 Trying alternative method...');
-      setTimeout(() => {
-        if (mountedRef.current) {
-          fetchEducationWithConnectionTest();
-        }
-      }, 1000);
-    }
-  };
-
-  // Effect to trigger fetch when user is available
+  // Only fetch on initial load or user change
   useEffect(() => {
     if (!authLoading && user && !isFetchingRef.current) {
-      console.log('🚀 User available, starting education fetch...');
-      fetchEducationData();
+      // Only fetch if we haven't fetched for this user yet
+      if (!hasInitiallyFetched || lastFetchUserIdRef.current !== user.id) {
+        console.log('🚀 Initial education fetch for user:', user.id);
+        fetchEducationData(user.id);
+      }
     } else if (!authLoading && !user) {
       console.log('🚫 No authenticated user, clearing education data');
       setEducationList([]);
       setEducationLoading(false);
       setEducationError(null);
-      setDebugInfo('No user authenticated');
+      setHasInitiallyFetched(false);
+      lastFetchUserIdRef.current = null;
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, fetchEducationData]);
 
   const handleEducationSuccess = (newEducation: UserEducation) => {
     console.log('✅ New education added:', newEducation);
@@ -324,7 +199,6 @@ export default function ProfileScreen() {
     
     // Close the form
     setShowEditMode(false);
-    setDebugInfo(`Added new record: ${newEducation.degree}`);
   };
 
   const handleEducationCancel = () => {
@@ -356,7 +230,6 @@ export default function ProfileScreen() {
                 console.log('✅ Education record deleted successfully');
                 // Remove from local state
                 setEducationList(prev => prev.filter(edu => edu.id !== educationId));
-                setDebugInfo('Record deleted successfully');
                 Alert.alert('Success', 'Education record deleted successfully');
               }
             } catch (error) {
@@ -370,15 +243,11 @@ export default function ProfileScreen() {
   };
 
   const handleManualRefresh = async () => {
-    console.log('🔄 Manual refresh triggered');
-    setFetchAttempts(0);
-    setEducationError(null);
-    setDebugInfo('Manual refresh started...');
+    if (!user) return;
     
-    // Reset and fetch
-    if (user) {
-      await fetchEducationData();
-    }
+    console.log('🔄 Manual refresh triggered');
+    setHasInitiallyFetched(false); // Reset to allow fresh fetch
+    await fetchEducationData(user.id, true); // Force refresh
   };
 
   const handleBack = () => {
@@ -646,7 +515,7 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Education - Enhanced Multi-Method Supabase Integration */}
+        {/* Education - Fixed to prevent unnecessary refetching */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Education</Text>
@@ -692,27 +561,19 @@ export default function ProfileScreen() {
             </View>
           )}
           
-          {/* Loading State with Enhanced Debug Info */}
-          {educationLoading && !educationError && (
+          {/* Loading State - Only show when actually loading */}
+          {educationLoading && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#6366F1" />
               <Text style={styles.loadingText}>Loading education data...</Text>
               <Text style={styles.debugText}>
                 User ID: {user?.id || 'None'}
               </Text>
-              <Text style={styles.debugText}>
-                Attempts: {fetchAttempts} | Status: {debugInfo}
-              </Text>
-              {lastFetchTime && (
-                <Text style={styles.debugText}>
-                  Last fetch: {lastFetchTime.toLocaleTimeString()}
-                </Text>
-              )}
             </View>
           )}
 
-          {/* Education List */}
-          {!educationLoading && !educationError && (
+          {/* Education List - Show even when loading to prevent flickering */}
+          {!educationError && (
             <>
               {educationList.length > 0 ? (
                 educationList.map((education) => (
@@ -736,7 +597,7 @@ export default function ProfileScreen() {
                     </TouchableOpacity>
                   </View>
                 ))
-              ) : (
+              ) : !educationLoading && hasInitiallyFetched && (
                 <View style={styles.emptyState}>
                   <GraduationCap size={32} color="#9CA3AF" />
                   <Text style={styles.emptyText}>No education added yet</Text>
@@ -744,17 +605,6 @@ export default function ProfileScreen() {
                 </View>
               )}
             </>
-          )}
-
-          {/* Debug Information Panel */}
-          {debugInfo && (
-            <View style={styles.debugPanel}>
-              <Text style={styles.debugPanelTitle}>Debug Info:</Text>
-              <Text style={styles.debugPanelText}>{debugInfo}</Text>
-              <Text style={styles.debugPanelText}>
-                Records: {educationList.length} | Loading: {educationLoading ? 'Yes' : 'No'}
-              </Text>
-            </View>
           )}
         </View>
 
@@ -1373,24 +1223,6 @@ const styles = StyleSheet.create({
   deleteButton: {
     padding: 8,
     marginLeft: 8,
-  },
-  debugPanel: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 12,
-  },
-  debugPanelTitle: {
-    fontSize: 12,
-    fontFamily: 'Inter-SemiBold',
-    color: '#374151',
-    marginBottom: 4,
-  },
-  debugPanelText: {
-    fontSize: 11,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    lineHeight: 16,
   },
   skillsContainer: {
     flexDirection: 'row',
