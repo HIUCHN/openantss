@@ -94,54 +94,92 @@ export default function ProfileScreen() {
   const { user, profile, loading: authLoading } = useAuth();
   const [educationList, setEducationList] = useState<UserEducation[]>([]);
   const [educationLoading, setEducationLoading] = useState(false);
+  const [educationError, setEducationError] = useState<string | null>(null);
   const [showEditMode, setShowEditMode] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0); // Force re-render key
-  const hasFetchedRef = useRef(false);
+  const [dataFetched, setDataFetched] = useState(false);
 
   const userData = getUserData();
 
-  // Fetch education data when user is available
+  // Enhanced education data fetching with better error handling
   useEffect(() => {
-    if (!authLoading && user && (!hasFetchedRef.current || refreshKey > 0)) {
-      console.log('🔄 Fetching education data for user:', user.id, 'refreshKey:', refreshKey);
-      fetchEducationData();
-      hasFetchedRef.current = true;
-    }
-  }, [user, authLoading, refreshKey]);
+    let isMounted = true;
 
-  const fetchEducationData = async () => {
-    if (!user) {
-      console.log('❌ No user found, skipping education fetch');
-      return;
-    }
-
-    try {
-      setEducationLoading(true);
-      console.log('📚 Starting education data fetch...');
-      
-      const { data, error } = await supabase
-        .from('user_education')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('start_year', { ascending: false });
-
-      if (error) {
-        console.error('❌ Error fetching education data:', error);
-        // Don't show error for empty results
-        if (error.code !== 'PGRST116') {
-          Alert.alert('Error', 'Failed to load education data');
-        }
-      } else {
-        console.log('✅ Education data fetched successfully:', data?.length || 0, 'records');
-        setEducationList(data || []);
+    const fetchEducationData = async () => {
+      if (!user) {
+        console.log('❌ No user found, skipping education fetch');
+        return;
       }
-    } catch (error) {
-      console.error('💥 Unexpected error fetching education:', error);
-      Alert.alert('Error', 'An unexpected error occurred while loading education data');
-    } finally {
+
+      if (dataFetched) {
+        console.log('📚 Education data already fetched, skipping...');
+        return;
+      }
+
+      try {
+        console.log('🔄 Starting education data fetch for user:', user.id);
+        setEducationLoading(true);
+        setEducationError(null);
+        
+        const { data, error } = await supabase
+          .from('user_education')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('start_year', { ascending: false });
+
+        if (!isMounted) {
+          console.log('⚠️ Component unmounted, ignoring fetch result');
+          return;
+        }
+
+        if (error) {
+          console.error('❌ Supabase error fetching education:', error);
+          console.error('Error details:', {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint
+          });
+          
+          // Only show error for actual errors, not empty results
+          if (error.code !== 'PGRST116') {
+            setEducationError(`Failed to load education data: ${error.message}`);
+          } else {
+            console.log('📚 No education records found (empty result)');
+            setEducationList([]);
+          }
+        } else {
+          console.log('✅ Education data fetched successfully:', data?.length || 0, 'records');
+          console.log('📋 Education records:', data);
+          setEducationList(data || []);
+        }
+        
+        setDataFetched(true);
+      } catch (error) {
+        console.error('💥 Unexpected error fetching education:', error);
+        if (isMounted) {
+          setEducationError('An unexpected error occurred while loading education data');
+        }
+      } finally {
+        if (isMounted) {
+          setEducationLoading(false);
+        }
+      }
+    };
+
+    if (!authLoading && user) {
+      fetchEducationData();
+    } else if (!authLoading && !user) {
+      console.log('🚫 No authenticated user, clearing education data');
+      setEducationList([]);
       setEducationLoading(false);
+      setEducationError(null);
+      setDataFetched(false);
     }
-  };
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, authLoading]);
 
   const handleEducationSuccess = (newEducation: UserEducation) => {
     console.log('✅ New education added:', newEducation);
@@ -154,9 +192,6 @@ export default function ProfileScreen() {
     
     // Close the form
     setShowEditMode(false);
-    
-    // Force a refresh to ensure data consistency
-    setRefreshKey(prev => prev + 1);
   };
 
   const handleEducationCancel = () => {
@@ -198,6 +233,39 @@ export default function ProfileScreen() {
         }
       ]
     );
+  };
+
+  const handleRefreshEducation = async () => {
+    console.log('🔄 Manual refresh triggered');
+    setDataFetched(false);
+    setEducationError(null);
+    
+    // Trigger a fresh fetch
+    if (user) {
+      try {
+        setEducationLoading(true);
+        
+        const { data, error } = await supabase
+          .from('user_education')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('start_year', { ascending: false });
+
+        if (error && error.code !== 'PGRST116') {
+          console.error('❌ Error refreshing education:', error);
+          setEducationError(`Failed to refresh education data: ${error.message}`);
+        } else {
+          console.log('✅ Education data refreshed:', data?.length || 0, 'records');
+          setEducationList(data || []);
+          setDataFetched(true);
+        }
+      } catch (error) {
+        console.error('💥 Unexpected error refreshing education:', error);
+        setEducationError('An unexpected error occurred while refreshing');
+      } finally {
+        setEducationLoading(false);
+      }
+    }
   };
 
   const handleBack = () => {
@@ -469,15 +537,25 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Education</Text>
-            <TouchableOpacity 
-              style={styles.editButton}
-              onPress={() => setShowEditMode(!showEditMode)}
-            >
-              <Edit size={16} color="#6366F1" />
-              <Text style={styles.editButtonText}>
-                {showEditMode ? 'Cancel' : 'Add'}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.educationActions}>
+              {educationError && (
+                <TouchableOpacity 
+                  style={styles.refreshButton}
+                  onPress={handleRefreshEducation}
+                >
+                  <Text style={styles.refreshButtonText}>Retry</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity 
+                style={styles.editButton}
+                onPress={() => setShowEditMode(!showEditMode)}
+              >
+                <Edit size={16} color="#6366F1" />
+                <Text style={styles.editButtonText}>
+                  {showEditMode ? 'Cancel' : 'Add'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
           
           {/* Add Education Form */}
@@ -488,16 +566,32 @@ export default function ProfileScreen() {
             />
           )}
           
+          {/* Error State */}
+          {educationError && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>⚠️ {educationError}</Text>
+              <TouchableOpacity 
+                style={styles.retryButton}
+                onPress={handleRefreshEducation}
+              >
+                <Text style={styles.retryButtonText}>Try Again</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          
           {/* Loading State */}
-          {educationLoading && (
+          {educationLoading && !educationError && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#6366F1" />
               <Text style={styles.loadingText}>Loading education data...</Text>
+              <Text style={styles.debugText}>
+                User ID: {user?.id || 'None'} | Fetched: {dataFetched ? 'Yes' : 'No'}
+              </Text>
             </View>
           )}
 
           {/* Education List */}
-          {!educationLoading && (
+          {!educationLoading && !educationError && (
             <>
               {educationList.length > 0 ? (
                 educationList.map((education) => (
@@ -875,6 +969,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: '#111827',
   },
+  educationActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   editButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -888,6 +986,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#6366F1',
+  },
+  refreshButton: {
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  refreshButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#EF4444',
   },
   locationInfo: {
     flexDirection: 'row',
@@ -1061,16 +1170,49 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   loadingContainer: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    paddingVertical: 24,
     gap: 8,
   },
   loadingText: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
+  },
+  debugText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  errorContainer: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    alignItems: 'center',
+    gap: 8,
+  },
+  errorText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#EF4444',
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  retryButtonText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
   },
   emptyState: {
     alignItems: 'center',
@@ -1229,24 +1371,6 @@ const styles = StyleSheet.create({
   },
   waveButtonText: {
     fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  errorText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#EF4444',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  retryButton: {
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
   },
