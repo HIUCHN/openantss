@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Share, MoveVertical as MoreVertical, CircleCheck as CheckCircle, UserPlus, Plus, Users, MapPin, Brain, Calendar, Clock, Heart, MessageCircle, Handshake, Lightbulb, Bookmark, Hand, Building, GraduationCap, Hash as Hashtag, Image as ImageIcon, Smartphone, CreditCard as Edit } from 'lucide-react-native';
@@ -7,9 +7,9 @@ import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
+import EducationForm from '@/components/EducationForm';
 
 type UserEducation = Database['public']['Tables']['user_education']['Row'];
-type UserEducationInsert = Database['public']['Tables']['user_education']['Insert'];
 
 // Mock user data - in a real app, this would come from your API
 const getUserData = () => ({
@@ -95,27 +95,14 @@ export default function ProfileScreen() {
   const [educationList, setEducationList] = useState<UserEducation[]>([]);
   const [educationLoading, setEducationLoading] = useState(false);
   const [showEditMode, setShowEditMode] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const hasFetchedRef = useRef(false);
-  
-  // Form state - using individual state variables to prevent re-render issues
-  const [school, setSchool] = useState('');
-  const [degree, setDegree] = useState('');
-  const [startYear, setStartYear] = useState('');
-  const [endYear, setEndYear] = useState('');
-
-  // Refs for TextInputs to maintain focus
-  const schoolInputRef = useRef<TextInput>(null);
-  const degreeInputRef = useRef<TextInput>(null);
-  const startYearInputRef = useRef<TextInput>(null);
-  const endYearInputRef = useRef<TextInput>(null);
 
   const userData = getUserData();
 
   // Fetch education data when user is available (only once)
   useEffect(() => {
     if (!authLoading && user && !hasFetchedRef.current) {
-      console.log('Fetching education data for user:', user.id);
+      console.log('🔄 Fetching education data for user:', user.id);
       fetchEducationData();
       hasFetchedRef.current = true;
     }
@@ -123,13 +110,13 @@ export default function ProfileScreen() {
 
   const fetchEducationData = async () => {
     if (!user) {
-      console.log('No user found, skipping education fetch');
+      console.log('❌ No user found, skipping education fetch');
       return;
     }
 
     try {
       setEducationLoading(true);
-      console.log('Starting education data fetch...');
+      console.log('📚 Starting education data fetch...');
       
       const { data, error } = await supabase
         .from('user_education')
@@ -138,109 +125,34 @@ export default function ProfileScreen() {
         .order('start_year', { ascending: false });
 
       if (error) {
-        console.error('Error fetching education data:', error);
+        console.error('❌ Error fetching education data:', error);
         // Don't show error for empty results
         if (error.code !== 'PGRST116') {
           Alert.alert('Error', 'Failed to load education data');
         }
       } else {
-        console.log('Education data fetched successfully:', data);
+        console.log('✅ Education data fetched successfully:', data?.length || 0, 'records');
         setEducationList(data || []);
       }
     } catch (error) {
-      console.error('Unexpected error fetching education:', error);
+      console.error('💥 Unexpected error fetching education:', error);
       Alert.alert('Error', 'An unexpected error occurred while loading education data');
     } finally {
       setEducationLoading(false);
     }
   };
 
-  const clearForm = () => {
-    setSchool('');
-    setDegree('');
-    setStartYear('');
-    setEndYear('');
+  const handleEducationSuccess = (newEducation: UserEducation) => {
+    console.log('✅ New education added:', newEducation);
+    // Add the new record to the list (sorted by start_year desc)
+    setEducationList(prev => {
+      const updated = [newEducation, ...prev];
+      return updated.sort((a, b) => parseInt(b.start_year) - parseInt(a.start_year));
+    });
+    setShowEditMode(false);
   };
 
-  const handleSubmit = async () => {
-    console.log('Submitting education form...');
-    
-    // Validate form data
-    if (!school.trim() || !degree.trim() || !startYear.trim() || !endYear.trim()) {
-      Alert.alert('Validation Error', 'Please fill in all fields');
-      return;
-    }
-
-    // Basic year validation
-    const startYearNum = parseInt(startYear);
-    const endYearNum = parseInt(endYear);
-    const currentYear = new Date().getFullYear();
-
-    if (isNaN(startYearNum) || isNaN(endYearNum)) {
-      Alert.alert('Validation Error', 'Please enter valid years');
-      return;
-    }
-
-    if (startYearNum < 1900 || startYearNum > currentYear + 10) {
-      Alert.alert('Validation Error', 'Please enter a valid start year');
-      return;
-    }
-
-    if (endYearNum < startYearNum || endYearNum > currentYear + 10) {
-      Alert.alert('Validation Error', 'End year must be after start year and not too far in the future');
-      return;
-    }
-
-    if (!user) {
-      Alert.alert('Authentication Error', 'Please sign in again to continue');
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      console.log('Inserting education record...');
-
-      const newEducation: UserEducationInsert = {
-        user_id: user.id,
-        school: school.trim(),
-        degree: degree.trim(),
-        start_year: startYear.trim(),
-        end_year: endYear.trim()
-      };
-
-      const { data, error } = await supabase
-        .from('user_education')
-        .insert(newEducation)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Error inserting education:', error);
-        Alert.alert('Error', 'Failed to add education record. Please try again.');
-      } else if (data) {
-        console.log('Education record inserted successfully:', data);
-        // Add the new record to the list (sorted by start_year desc)
-        setEducationList(prev => {
-          const updated = [data, ...prev];
-          return updated.sort((a, b) => parseInt(b.start_year) - parseInt(a.start_year));
-        });
-        
-        // Clear form and hide edit mode
-        clearForm();
-        setShowEditMode(false);
-        
-        Alert.alert('Success!', 'Education record added successfully!');
-      }
-    } catch (error) {
-      console.error('Unexpected error with education:', error);
-      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleCancel = () => {
-    clearForm();
+  const handleEducationCancel = () => {
     setShowEditMode(false);
   };
 
@@ -282,103 +194,6 @@ export default function ProfileScreen() {
       </View>
     );
   };
-
-  // Memoized form component to prevent unnecessary re-renders
-  const AddEducationForm = React.memo(() => (
-    <View style={styles.addEducationForm}>
-      <Text style={styles.formTitle}>Add Education</Text>
-      
-      <View style={styles.formGroup}>
-        <Text style={styles.formLabel}>School or University *</Text>
-        <TextInput
-          ref={schoolInputRef}
-          style={[styles.formInput, submitting && styles.formInputDisabled]}
-          placeholder="e.g., Harvard University"
-          value={school}
-          onChangeText={setSchool}
-          editable={!submitting}
-          autoCorrect={false}
-          autoCapitalize="words"
-          returnKeyType="next"
-          onSubmitEditing={() => degreeInputRef.current?.focus()}
-          blurOnSubmit={false}
-        />
-      </View>
-      
-      <View style={styles.formGroup}>
-        <Text style={styles.formLabel}>Degree *</Text>
-        <TextInput
-          ref={degreeInputRef}
-          style={[styles.formInput, submitting && styles.formInputDisabled]}
-          placeholder="e.g., Bachelor of Science in Computer Science"
-          value={degree}
-          onChangeText={setDegree}
-          editable={!submitting}
-          autoCorrect={false}
-          autoCapitalize="words"
-          returnKeyType="next"
-          onSubmitEditing={() => startYearInputRef.current?.focus()}
-          blurOnSubmit={false}
-        />
-      </View>
-      
-      <View style={styles.yearRow}>
-        <View style={styles.yearGroup}>
-          <Text style={styles.formLabel}>Start Year *</Text>
-          <TextInput
-            ref={startYearInputRef}
-            style={[styles.formInput, submitting && styles.formInputDisabled]}
-            placeholder="2018"
-            value={startYear}
-            onChangeText={setStartYear}
-            keyboardType="numeric"
-            maxLength={4}
-            editable={!submitting}
-            returnKeyType="next"
-            onSubmitEditing={() => endYearInputRef.current?.focus()}
-            blurOnSubmit={false}
-          />
-        </View>
-        <View style={styles.yearGroup}>
-          <Text style={styles.formLabel}>End Year *</Text>
-          <TextInput
-            ref={endYearInputRef}
-            style={[styles.formInput, submitting && styles.formInputDisabled]}
-            placeholder="2022"
-            value={endYear}
-            onChangeText={setEndYear}
-            keyboardType="numeric"
-            maxLength={4}
-            editable={!submitting}
-            returnKeyType="done"
-            onSubmitEditing={handleSubmit}
-            blurOnSubmit={true}
-          />
-        </View>
-      </View>
-      
-      <View style={styles.formActions}>
-        <TouchableOpacity 
-          style={[styles.cancelButton, submitting && styles.buttonDisabled]}
-          onPress={handleCancel}
-          disabled={submitting}
-        >
-          <Text style={styles.cancelButtonText}>Cancel</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.submitButton, submitting && styles.buttonDisabled]}
-          onPress={handleSubmit}
-          disabled={submitting}
-        >
-          {submitting ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Text style={styles.submitButtonText}>Add Education</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-    </View>
-  ));
 
   // Show loading state while auth is loading
   if (authLoading) {
@@ -620,7 +435,12 @@ export default function ProfileScreen() {
           </View>
           
           {/* Add Education Form */}
-          {showEditMode && <AddEducationForm />}
+          {showEditMode && (
+            <EducationForm
+              onSuccess={handleEducationSuccess}
+              onCancel={handleEducationCancel}
+            />
+          )}
           
           {/* Loading State */}
           {educationLoading && (
@@ -1217,85 +1037,6 @@ const styles = StyleSheet.create({
   educationItem: {
     flexDirection: 'row',
     marginBottom: 12,
-  },
-  addEducationForm: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  formTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#111827',
-    marginBottom: 16,
-  },
-  formGroup: {
-    marginBottom: 16,
-  },
-  formLabel: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-    marginBottom: 6,
-  },
-  formInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#111827',
-  },
-  formInputDisabled: {
-    backgroundColor: '#F3F4F6',
-    color: '#9CA3AF',
-  },
-  yearRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  yearGroup: {
-    flex: 1,
-  },
-  formActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-  },
-  submitButton: {
-    flex: 1,
-    backgroundColor: '#6366F1',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
   },
   skillsContainer: {
     flexDirection: 'row',
