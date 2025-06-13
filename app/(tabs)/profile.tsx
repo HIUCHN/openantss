@@ -96,7 +96,6 @@ export default function ProfileScreen() {
   const [educationLoading, setEducationLoading] = useState(false);
   const [educationError, setEducationError] = useState<string | null>(null);
   const [showEditMode, setShowEditMode] = useState(false);
-  const [hasInitiallyFetched, setHasInitiallyFetched] = useState(false);
   
   // Use refs to prevent unnecessary re-fetching
   const isFetchingRef = useRef(false);
@@ -112,18 +111,11 @@ export default function ProfileScreen() {
     };
   }, []);
 
-  // COMPLETELY FIXED fetch function - removed ALL problematic early returns
+  // COMPLETELY REWRITTEN fetch function - removed ALL problematic caching logic
   const fetchEducationData = useCallback(async (userId: string, forceRefresh = false) => {
     // Prevent multiple simultaneous fetches
     if (isFetchingRef.current) {
       console.log('🚫 Fetch already in progress, skipping...');
-      return;
-    }
-
-    // CRITICAL FIX: Only skip if not forced refresh AND already has data
-    // This ensures forceRefresh = true ALWAYS works
-    if (!forceRefresh && hasInitiallyFetched) {
-      console.log('📋 Using cached education data (not forced refresh)');
       return;
     }
 
@@ -132,7 +124,7 @@ export default function ProfileScreen() {
     setEducationError(null);
 
     try {
-      console.log('🔄 Fetching education data for user:', userId, forceRefresh ? '(FORCED REFRESH)' : '(INITIAL LOAD)');
+      console.log('🔄 Fetching education data for user:', userId, forceRefresh ? '(FORCED REFRESH)' : '(NORMAL FETCH)');
       
       const { data, error } = await supabase
         .from('user_education')
@@ -145,15 +137,18 @@ export default function ProfileScreen() {
       if (error) {
         console.error('❌ Error fetching education:', error);
         setEducationError(`Failed to load education data: ${error.message}`);
+        setEducationList([]); // Clear any stale data
       } else {
         console.log('✅ Education data fetched successfully:', data?.length || 0, 'records');
+        console.log('📋 Education data:', data);
         setEducationList(data || []);
-        setHasInitiallyFetched(true);
+        setEducationError(null); // Clear any previous errors
       }
     } catch (error: any) {
       console.error('💥 Unexpected error fetching education:', error);
       if (mountedRef.current) {
         setEducationError(`Unexpected error: ${error.message}`);
+        setEducationList([]); // Clear any stale data
       }
     } finally {
       if (mountedRef.current) {
@@ -161,11 +156,11 @@ export default function ProfileScreen() {
       }
       isFetchingRef.current = false;
     }
-  }, [hasInitiallyFetched]);
+  }, []); // No dependencies - this function is now completely independent
 
-  // Only fetch on initial load
+  // Simple initial fetch on user change
   useEffect(() => {
-    if (!authLoading && user && !hasInitiallyFetched && !isFetchingRef.current) {
+    if (!authLoading && user && !isFetchingRef.current) {
       console.log('🚀 Initial education fetch for user:', user.id);
       fetchEducationData(user.id);
     } else if (!authLoading && !user) {
@@ -173,9 +168,8 @@ export default function ProfileScreen() {
       setEducationList([]);
       setEducationLoading(false);
       setEducationError(null);
-      setHasInitiallyFetched(false);
     }
-  }, [user, authLoading, hasInitiallyFetched, fetchEducationData]);
+  }, [user, authLoading, fetchEducationData]);
 
   const handleEducationSuccess = (newEducation: UserEducation) => {
     console.log('✅ New education added:', newEducation);
@@ -189,13 +183,11 @@ export default function ProfileScreen() {
     // STEP 2: Close the form
     setShowEditMode(false);
     
-    // STEP 3: CRITICAL FIX - Force refresh to sync with server
+    // STEP 3: Force refresh to sync with server (this will now ALWAYS work)
     if (user) {
       console.log('🔄 Force refreshing education data after successful add...');
-      // Small delay to ensure server has processed the insert
       setTimeout(() => {
-        // CRITICAL: This ensures the forced refresh will work
-        fetchEducationData(user.id, true); // forceRefresh = true will bypass the early return
+        fetchEducationData(user.id, true); // This will now always fetch
       }, 300);
     }
   };
@@ -230,6 +222,13 @@ export default function ProfileScreen() {
                 // Remove from local state
                 setEducationList(prev => prev.filter(edu => edu.id !== educationId));
                 Alert.alert('Success', 'Education record deleted successfully');
+                
+                // Force refresh to ensure consistency
+                if (user) {
+                  setTimeout(() => {
+                    fetchEducationData(user.id, true);
+                  }, 300);
+                }
               }
             } catch (error) {
               console.error('💥 Unexpected error deleting education:', error);
@@ -245,7 +244,7 @@ export default function ProfileScreen() {
     if (!user) return;
     
     console.log('🔄 Manual refresh triggered');
-    // Force refresh by calling with forceRefresh = true
+    // This will now always work since we removed the caching logic
     await fetchEducationData(user.id, true);
   };
 
@@ -560,7 +559,7 @@ export default function ProfileScreen() {
             </View>
           )}
           
-          {/* Loading State - Only show when actually loading */}
+          {/* Loading State */}
           {educationLoading && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#6366F1" />
@@ -571,8 +570,8 @@ export default function ProfileScreen() {
             </View>
           )}
 
-          {/* Education List - Show even when loading to prevent flickering */}
-          {!educationError && (
+          {/* Education List */}
+          {!educationError && !educationLoading && (
             <>
               {educationList.length > 0 ? (
                 educationList.map((education) => (
@@ -596,7 +595,7 @@ export default function ProfileScreen() {
                     </TouchableOpacity>
                   </View>
                 ))
-              ) : !educationLoading && hasInitiallyFetched && (
+              ) : (
                 <View style={styles.emptyState}>
                   <GraduationCap size={32} color="#9CA3AF" />
                   <Text style={styles.emptyText}>No education added yet</Text>
