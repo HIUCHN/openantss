@@ -8,8 +8,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import EducationForm from '@/components/EducationForm';
+import ExperienceForm from '@/components/ExperienceForm';
 
 type UserEducation = Database['public']['Tables']['user_education']['Row'];
+type Experience = Database['public']['Tables']['experiences']['Row'];
 
 // Enhanced user data with more comprehensive information
 const getUserData = () => ({
@@ -31,26 +33,6 @@ const getUserData = () => ({
     locations: 9,
     crossedPaths: 156
   },
-  experience: [
-    {
-      title: 'Senior Product Designer',
-      company: 'Figma',
-      duration: '2022 - Present',
-      logo: 'F',
-      color: '#F24E1E',
-      description: 'Leading design for collaboration features used by 4M+ users',
-      tags: ['#ProductStrategy', '#Design', '#Leadership']
-    },
-    {
-      title: 'UX Designer',
-      company: 'Adobe',
-      duration: '2020 - 2022',
-      logo: 'A',
-      color: '#FF0000',
-      description: 'Designed creative tools for digital artists',
-      tags: ['#CreativeTools', '#UX']
-    }
-  ],
   skills: [
     { name: 'UI/UX Design', color: '#3B82F6', level: 95 },
     { name: 'Product Strategy', color: '#8B5CF6', level: 88 },
@@ -106,10 +88,18 @@ export default function ProfileScreen() {
   const [educationList, setEducationList] = useState<UserEducation[]>([]);
   const [educationLoading, setEducationLoading] = useState(false);
   const [educationError, setEducationError] = useState<string | null>(null);
-  const [showEditMode, setShowEditMode] = useState(false);
+  const [showEducationForm, setShowEducationForm] = useState(false);
+  
+  // Experience state
+  const [experienceList, setExperienceList] = useState<Experience[]>([]);
+  const [experienceLoading, setExperienceLoading] = useState(false);
+  const [experienceError, setExperienceError] = useState<string | null>(null);
+  const [showExperienceForm, setShowExperienceForm] = useState(false);
+  const [editingExperience, setEditingExperience] = useState<Experience | null>(null);
   
   // Use refs to prevent unnecessary re-fetching
-  const isFetchingRef = useRef(false);
+  const isFetchingEducationRef = useRef(false);
+  const isFetchingExperienceRef = useRef(false);
   const mountedRef = useRef(true);
 
   const userData = getUserData();
@@ -122,15 +112,14 @@ export default function ProfileScreen() {
     };
   }, []);
 
-  // COMPLETELY REWRITTEN fetch function - removed ALL problematic caching logic
+  // Education fetch function
   const fetchEducationData = useCallback(async (userId: string, forceRefresh = false) => {
-    // Prevent multiple simultaneous fetches
-    if (isFetchingRef.current) {
-      console.log('🚫 Fetch already in progress, skipping...');
+    if (isFetchingEducationRef.current) {
+      console.log('🚫 Education fetch already in progress, skipping...');
       return;
     }
 
-    isFetchingRef.current = true;
+    isFetchingEducationRef.current = true;
     setEducationLoading(true);
     setEducationError(null);
 
@@ -148,63 +137,105 @@ export default function ProfileScreen() {
       if (error) {
         console.error('❌ Error fetching education:', error);
         setEducationError(`Failed to load education data: ${error.message}`);
-        setEducationList([]); // Clear any stale data
+        setEducationList([]);
       } else {
         console.log('✅ Education data fetched successfully:', data?.length || 0, 'records');
-        console.log('📋 Education data:', data);
         setEducationList(data || []);
-        setEducationError(null); // Clear any previous errors
+        setEducationError(null);
       }
     } catch (error: any) {
       console.error('💥 Unexpected error fetching education:', error);
       if (mountedRef.current) {
         setEducationError(`Unexpected error: ${error.message}`);
-        setEducationList([]); // Clear any stale data
+        setEducationList([]);
       }
     } finally {
       if (mountedRef.current) {
         setEducationLoading(false);
       }
-      isFetchingRef.current = false;
+      isFetchingEducationRef.current = false;
     }
-  }, []); // No dependencies - this function is now completely independent
+  }, []);
 
-  // Simple initial fetch on user change
+  // Experience fetch function
+  const fetchExperienceData = useCallback(async (userId: string, forceRefresh = false) => {
+    if (isFetchingExperienceRef.current) {
+      console.log('🚫 Experience fetch already in progress, skipping...');
+      return;
+    }
+
+    isFetchingExperienceRef.current = true;
+    setExperienceLoading(true);
+    setExperienceError(null);
+
+    try {
+      console.log('🔄 Fetching experience data for user:', userId, forceRefresh ? '(FORCED REFRESH)' : '(NORMAL FETCH)');
+      
+      const { data, error } = await supabase
+        .from('experiences')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (!mountedRef.current) return;
+
+      if (error) {
+        console.error('❌ Error fetching experience:', error);
+        setExperienceError(`Failed to load experience data: ${error.message}`);
+        setExperienceList([]);
+      } else {
+        console.log('✅ Experience data fetched successfully:', data?.length || 0, 'records');
+        setExperienceList(data || []);
+        setExperienceError(null);
+      }
+    } catch (error: any) {
+      console.error('💥 Unexpected error fetching experience:', error);
+      if (mountedRef.current) {
+        setExperienceError(`Unexpected error: ${error.message}`);
+        setExperienceList([]);
+      }
+    } finally {
+      if (mountedRef.current) {
+        setExperienceLoading(false);
+      }
+      isFetchingExperienceRef.current = false;
+    }
+  }, []);
+
+  // Initial fetch on user change
   useEffect(() => {
-    if (!authLoading && user && !isFetchingRef.current) {
-      console.log('🚀 Initial education fetch for user:', user.id);
+    if (!authLoading && user && !isFetchingEducationRef.current && !isFetchingExperienceRef.current) {
+      console.log('🚀 Initial data fetch for user:', user.id);
       fetchEducationData(user.id);
+      fetchExperienceData(user.id);
     } else if (!authLoading && !user) {
-      console.log('🚫 No authenticated user, clearing education data');
+      console.log('🚫 No authenticated user, clearing data');
       setEducationList([]);
       setEducationLoading(false);
       setEducationError(null);
+      setExperienceList([]);
+      setExperienceLoading(false);
+      setExperienceError(null);
     }
-  }, [user, authLoading, fetchEducationData]);
+  }, [user, authLoading, fetchEducationData, fetchExperienceData]);
 
+  // Education handlers
   const handleEducationSuccess = (newEducation: UserEducation) => {
     console.log('✅ New education added:', newEducation);
-    
-    // STEP 1: Immediately update local state for instant UI feedback
     setEducationList(prev => {
       const updated = [newEducation, ...prev];
       return updated.sort((a, b) => parseInt(b.start_year) - parseInt(a.start_year));
     });
-    
-    // STEP 2: Close the form
-    setShowEditMode(false);
-    
-    // STEP 3: Force refresh to sync with server (this will now ALWAYS work)
+    setShowEducationForm(false);
     if (user) {
-      console.log('🔄 Force refreshing education data after successful add...');
       setTimeout(() => {
-        fetchEducationData(user.id, true); // This will now always fetch
+        fetchEducationData(user.id, true);
       }, 300);
     }
   };
 
   const handleEducationCancel = () => {
-    setShowEditMode(false);
+    setShowEducationForm(false);
   };
 
   const handleDeleteEducation = async (educationId: string) => {
@@ -230,11 +261,9 @@ export default function ProfileScreen() {
                 Alert.alert('Error', 'Failed to delete education record');
               } else {
                 console.log('✅ Education record deleted successfully');
-                // Remove from local state
                 setEducationList(prev => prev.filter(edu => edu.id !== educationId));
                 Alert.alert('Success', 'Education record deleted successfully');
                 
-                // Force refresh to ensure consistency
                 if (user) {
                   setTimeout(() => {
                     fetchEducationData(user.id, true);
@@ -251,12 +280,90 @@ export default function ProfileScreen() {
     );
   };
 
+  // Experience handlers
+  const handleExperienceSuccess = (experience: Experience) => {
+    console.log('✅ Experience saved:', experience);
+    
+    if (editingExperience) {
+      // Update existing experience in list
+      setExperienceList(prev => 
+        prev.map(exp => exp.id === experience.id ? experience : exp)
+      );
+      setEditingExperience(null);
+    } else {
+      // Add new experience to list
+      setExperienceList(prev => [experience, ...prev]);
+    }
+    
+    setShowExperienceForm(false);
+    
+    if (user) {
+      setTimeout(() => {
+        fetchExperienceData(user.id, true);
+      }, 300);
+    }
+  };
+
+  const handleExperienceCancel = () => {
+    setShowExperienceForm(false);
+    setEditingExperience(null);
+  };
+
+  const handleEditExperience = (experience: Experience) => {
+    setEditingExperience(experience);
+    setShowExperienceForm(true);
+  };
+
+  const handleDeleteExperience = async (experienceId: string) => {
+    Alert.alert(
+      'Delete Experience',
+      'Are you sure you want to delete this experience record?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('🗑️ Deleting experience record:', experienceId);
+              
+              const { error } = await supabase
+                .from('experiences')
+                .delete()
+                .eq('id', experienceId);
+
+              if (error) {
+                console.error('❌ Error deleting experience:', error);
+                Alert.alert('Error', 'Failed to delete experience record');
+              } else {
+                console.log('✅ Experience record deleted successfully');
+                setExperienceList(prev => prev.filter(exp => exp.id !== experienceId));
+                Alert.alert('Success', 'Experience record deleted successfully');
+                
+                if (user) {
+                  setTimeout(() => {
+                    fetchExperienceData(user.id, true);
+                  }, 300);
+                }
+              }
+            } catch (error) {
+              console.error('💥 Unexpected error deleting experience:', error);
+              Alert.alert('Error', 'An unexpected error occurred');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const handleManualRefresh = async () => {
     if (!user) return;
     
     console.log('🔄 Manual refresh triggered');
-    // This will now always work since we removed the caching logic
-    await fetchEducationData(user.id, true);
+    await Promise.all([
+      fetchEducationData(user.id, true),
+      fetchExperienceData(user.id, true)
+    ]);
   };
 
   const handleBack = () => {
@@ -330,6 +437,44 @@ export default function ProfileScreen() {
       <View style={styles.portfolioContent}>
         <Text style={styles.portfolioTitle}>{project.title}</Text>
         <Text style={styles.portfolioDescription}>{project.description}</Text>
+      </View>
+    </View>
+  );
+
+  const ExperienceCard = ({ experience }) => (
+    <View style={styles.experienceCard}>
+      <View style={styles.experienceHeader}>
+        <View style={styles.experienceLogo}>
+          <Briefcase size={20} color="#FFFFFF" />
+        </View>
+        <View style={styles.experienceInfo}>
+          <Text style={styles.experienceTitle}>{experience.job_title}</Text>
+          <Text style={styles.experienceCompany}>{experience.company} • {experience.duration}</Text>
+          <Text style={styles.experienceDescription}>{experience.description}</Text>
+          {experience.tags && experience.tags.length > 0 && (
+            <View style={styles.experienceTags}>
+              {experience.tags.map((tag, index) => (
+                <View key={index} style={styles.experienceTag}>
+                  <Text style={styles.experienceTagText}>{tag}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+        <View style={styles.experienceActions}>
+          <TouchableOpacity 
+            style={styles.editExperienceButton}
+            onPress={() => handleEditExperience(experience)}
+          >
+            <Edit3 size={16} color="#6366F1" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.deleteButton}
+            onPress={() => handleDeleteExperience(experience.id)}
+          >
+            <Trash2 size={16} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -441,66 +586,101 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Experience */}
+        {/* Experience Section - NEW IMPLEMENTATION */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Experience</Text>
-            <TouchableOpacity style={styles.editButton}>
-              <Edit3 size={16} color="#6366F1" />
-              <Text style={styles.editButtonText}>Edit</Text>
-            </TouchableOpacity>
-          </View>
-          
-          {userData.experience.map((exp, index) => (
-            <View key={index} style={styles.experienceItem}>
-              <View style={[styles.experienceLogo, { backgroundColor: exp.color }]}>
-                <Text style={styles.experienceLogoText}>{exp.logo}</Text>
-              </View>
-              <View style={styles.experienceInfo}>
-                <Text style={styles.experienceTitle}>{exp.title}</Text>
-                <Text style={styles.experienceCompany}>{exp.company} • {exp.duration}</Text>
-                <Text style={styles.experienceDescription}>{exp.description}</Text>
-                {exp.tags.length > 0 && (
-                  <View style={styles.experienceTags}>
-                    {exp.tags.map((tag, tagIndex) => (
-                      <View key={tagIndex} style={styles.experienceTag}>
-                        <Text style={styles.experienceTagText}>{tag}</Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            </View>
-          ))}
-        </View>
-
-        {/* Education - COMPLETELY FIXED */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Education</Text>
-            <View style={styles.educationActions}>
+            <View style={styles.experienceActions}>
               <TouchableOpacity 
                 style={styles.refreshButton}
                 onPress={handleManualRefresh}
-                disabled={educationLoading}
+                disabled={experienceLoading}
               >
                 <RefreshCw size={16} color="#6366F1" />
                 <Text style={styles.refreshButtonText}>Refresh</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.editButton}
-                onPress={() => setShowEditMode(!showEditMode)}
+                onPress={() => {
+                  setEditingExperience(null);
+                  setShowExperienceForm(!showExperienceForm);
+                }}
               >
                 <Plus size={16} color="#6366F1" />
                 <Text style={styles.editButtonText}>
-                  {showEditMode ? 'Cancel' : 'Add'}
+                  {showExperienceForm ? 'Cancel' : 'Add'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          {/* Add/Edit Experience Form */}
+          {showExperienceForm && (
+            <ExperienceForm
+              onSuccess={handleExperienceSuccess}
+              onCancel={handleExperienceCancel}
+              editingExperience={editingExperience}
+            />
+          )}
+          
+          {/* Error State */}
+          {experienceError && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>⚠️ {experienceError}</Text>
+              <TouchableOpacity 
+                style={styles.retryButton}
+                onPress={handleManualRefresh}
+              >
+                <Text style={styles.retryButtonText}>Try Again</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          
+          {/* Loading State */}
+          {experienceLoading && (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#6366F1" />
+              <Text style={styles.loadingText}>Loading experience data...</Text>
+            </View>
+          )}
+
+          {/* Experience List */}
+          {!experienceError && !experienceLoading && (
+            <>
+              {experienceList.length > 0 ? (
+                experienceList.map((experience) => (
+                  <ExperienceCard key={experience.id} experience={experience} />
+                ))
+              ) : (
+                <View style={styles.emptyState}>
+                  <Briefcase size={32} color="#9CA3AF" />
+                  <Text style={styles.emptyText}>No experience added yet</Text>
+                  <Text style={styles.emptySubtext}>Tap "Add" to add your first work experience</Text>
+                </View>
+              )}
+            </>
+          )}
+        </View>
+
+        {/* Education Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Education</Text>
+            <View style={styles.educationActions}>
+              <TouchableOpacity 
+                style={styles.editButton}
+                onPress={() => setShowEducationForm(!showEducationForm)}
+              >
+                <Plus size={16} color="#6366F1" />
+                <Text style={styles.editButtonText}>
+                  {showEducationForm ? 'Cancel' : 'Add'}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
           
           {/* Add Education Form */}
-          {showEditMode && (
+          {showEducationForm && (
             <EducationForm
               onSuccess={handleEducationSuccess}
               onCancel={handleEducationCancel}
@@ -525,9 +705,6 @@ export default function ProfileScreen() {
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#6366F1" />
               <Text style={styles.loadingText}>Loading education data...</Text>
-              <Text style={styles.debugText}>
-                User ID: {user?.id || 'None'}
-              </Text>
             </View>
           )}
 
@@ -904,6 +1081,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  experienceActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   refreshButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1015,9 +1196,17 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     color: '#6366F1',
   },
-  experienceItem: {
+  experienceCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  experienceHeader: {
     flexDirection: 'row',
-    marginBottom: 16,
+    alignItems: 'flex-start',
   },
   experienceLogo: {
     width: 48,
@@ -1026,11 +1215,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 16,
-  },
-  experienceLogoText: {
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
-    color: '#FFFFFF',
+    backgroundColor: '#6366F1',
   },
   experienceInfo: {
     flex: 1,
@@ -1045,20 +1230,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   experienceDescription: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
-    color: '#9CA3AF',
+    color: '#374151',
+    lineHeight: 20,
     marginBottom: 8,
   },
   experienceTags: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 6,
   },
   experienceTag: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#DBEAFE',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
@@ -1066,7 +1253,17 @@ const styles = StyleSheet.create({
   experienceTagText: {
     fontSize: 12,
     fontFamily: 'Inter-Regular',
-    color: '#6B7280',
+    color: '#1D4ED8',
+  },
+  experienceActions: {
+    flexDirection: 'column',
+    gap: 8,
+    marginLeft: 8,
+  },
+  editExperienceButton: {
+    padding: 8,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 8,
   },
   loadingContainer: {
     flexDirection: 'column',
@@ -1079,12 +1276,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
-  },
-  debugText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#9CA3AF',
-    textAlign: 'center',
   },
   errorContainer: {
     backgroundColor: '#FEF2F2',
