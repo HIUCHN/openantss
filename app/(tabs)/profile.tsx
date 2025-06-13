@@ -101,7 +101,6 @@ export default function ProfileScreen() {
   // Use refs to prevent unnecessary re-fetching
   const isFetchingRef = useRef(false);
   const mountedRef = useRef(true);
-  const lastFetchUserIdRef = useRef<string | null>(null);
 
   const userData = getUserData();
 
@@ -113,7 +112,7 @@ export default function ProfileScreen() {
     };
   }, []);
 
-  // Memoized fetch function to prevent recreation on every render
+  // Fixed fetch function with proper early return logic
   const fetchEducationData = useCallback(async (userId: string, forceRefresh = false) => {
     // Prevent multiple simultaneous fetches
     if (isFetchingRef.current) {
@@ -121,15 +120,9 @@ export default function ProfileScreen() {
       return;
     }
 
-    // Skip if we already have data and this isn't a forced refresh
-    if (!forceRefresh && hasInitiallyFetched && educationList.length >= 0) {
-      console.log('📋 Using cached education data');
-      return;
-    }
-
-    // Skip if same user and we already fetched
-    if (!forceRefresh && lastFetchUserIdRef.current === userId && hasInitiallyFetched) {
-      console.log('👤 Same user, using cached data');
+    // FIXED: Only skip if we have data AND it's not a forced refresh
+    if (!forceRefresh && hasInitiallyFetched && educationList.length > 0) {
+      console.log('📋 Using cached education data (not forced refresh)');
       return;
     }
 
@@ -138,7 +131,7 @@ export default function ProfileScreen() {
     setEducationError(null);
 
     try {
-      console.log('🔄 Fetching education data for user:', userId);
+      console.log('🔄 Fetching education data for user:', userId, forceRefresh ? '(FORCED)' : '(INITIAL)');
       
       const { data, error } = await supabase
         .from('user_education')
@@ -155,7 +148,6 @@ export default function ProfileScreen() {
         console.log('✅ Education data fetched successfully:', data?.length || 0, 'records');
         setEducationList(data || []);
         setHasInitiallyFetched(true);
-        lastFetchUserIdRef.current = userId;
       }
     } catch (error: any) {
       console.error('💥 Unexpected error fetching education:', error);
@@ -172,26 +164,22 @@ export default function ProfileScreen() {
 
   // Only fetch on initial load or user change
   useEffect(() => {
-    if (!authLoading && user && !isFetchingRef.current) {
-      // Only fetch if we haven't fetched for this user yet
-      if (!hasInitiallyFetched || lastFetchUserIdRef.current !== user.id) {
-        console.log('🚀 Initial education fetch for user:', user.id);
-        fetchEducationData(user.id);
-      }
+    if (!authLoading && user && !hasInitiallyFetched) {
+      console.log('🚀 Initial education fetch for user:', user.id);
+      fetchEducationData(user.id);
     } else if (!authLoading && !user) {
       console.log('🚫 No authenticated user, clearing education data');
       setEducationList([]);
       setEducationLoading(false);
       setEducationError(null);
       setHasInitiallyFetched(false);
-      lastFetchUserIdRef.current = null;
     }
-  }, [user, authLoading, fetchEducationData]);
+  }, [user, authLoading, hasInitiallyFetched, fetchEducationData]);
 
   const handleEducationSuccess = (newEducation: UserEducation) => {
     console.log('✅ New education added:', newEducation);
     
-    // Add the new record to the list and sort by start_year desc
+    // FIXED: Immediately update local state for instant UI feedback
     setEducationList(prev => {
       const updated = [newEducation, ...prev];
       return updated.sort((a, b) => parseInt(b.start_year) - parseInt(a.start_year));
@@ -200,12 +188,13 @@ export default function ProfileScreen() {
     // Close the form
     setShowEditMode(false);
     
-    // Force refresh the data to ensure we have the latest from the server
+    // FIXED: Force refresh to ensure server sync (this will now work properly)
     if (user) {
-      console.log('🔄 Refreshing education data after successful add...');
+      console.log('🔄 Force refreshing education data after successful add...');
+      // Small delay to ensure server has processed the insert
       setTimeout(() => {
         fetchEducationData(user.id, true);
-      }, 500); // Small delay to ensure server has processed the insert
+      }, 500);
     }
   };
 
@@ -254,7 +243,6 @@ export default function ProfileScreen() {
     if (!user) return;
     
     console.log('🔄 Manual refresh triggered');
-    setHasInitiallyFetched(false); // Reset to allow fresh fetch
     await fetchEducationData(user.id, true); // Force refresh
   };
 
