@@ -7,93 +7,114 @@ interface OpenAntsLogoProps {
 }
 
 export default function OpenAntsLogo({ size = 32, color = '#8B5CF6' }: OpenAntsLogoProps) {
-  const dotSize = size * 0.08;
-  const spacing = size * 0.12;
-  
   return (
     <View style={[styles.container, { width: size, height: size }]}>
-      {/* Main ant body - central oval */}
+      {/* Main ant body - large rounded shape */}
       <View style={[
         styles.antBody,
         {
-          width: size * 0.4,
+          width: size * 0.65,
+          height: size * 0.4,
+          backgroundColor: color,
+          left: size * 0.175,
+          top: size * 0.3,
+        }
+      ]} />
+      
+      {/* Ant head - circular */}
+      <View style={[
+        styles.antHead,
+        {
+          width: size * 0.28,
+          height: size * 0.28,
+          backgroundColor: color,
+          left: size * 0.05,
+          top: size * 0.36,
+        }
+      ]} />
+      
+      {/* Ant abdomen - oval shape */}
+      <View style={[
+        styles.antAbdomen,
+        {
+          width: size * 0.35,
           height: size * 0.25,
           backgroundColor: color,
-          left: size * 0.3,
+          left: size * 0.6,
           top: size * 0.375,
         }
       ]} />
       
-      {/* Ant head - smaller circle */}
-      <View style={[
-        styles.antHead,
-        {
-          width: size * 0.18,
-          height: size * 0.18,
-          backgroundColor: color,
-          left: size * 0.15,
-          top: size * 0.35,
-        }
-      ]} />
-      
-      {/* Ant abdomen - larger oval */}
-      <View style={[
-        styles.antAbdomen,
-        {
-          width: size * 0.3,
-          height: size * 0.2,
-          backgroundColor: color,
-          left: size * 0.55,
-          top: size * 0.4,
-        }
-      ]} />
-      
-      {/* Antennae */}
+      {/* Left antenna */}
       <View style={[
         styles.antenna,
         {
-          width: size * 0.12,
-          height: size * 0.02,
+          width: size * 0.15,
+          height: size * 0.03,
           backgroundColor: color,
-          left: size * 0.12,
-          top: size * 0.32,
-          transform: [{ rotate: '-25deg' }],
+          left: size * 0.08,
+          top: size * 0.25,
+          transform: [{ rotate: '-35deg' }],
         }
       ]} />
+      
+      {/* Right antenna */}
       <View style={[
         styles.antenna,
         {
-          width: size * 0.12,
-          height: size * 0.02,
+          width: size * 0.15,
+          height: size * 0.03,
           backgroundColor: color,
           left: size * 0.18,
-          top: size * 0.28,
-          transform: [{ rotate: '15deg' }],
+          top: size * 0.22,
+          transform: [{ rotate: '25deg' }],
         }
       ]} />
       
-      {/* Legs - simplified geometric lines */}
+      {/* Antenna tips */}
+      <View style={[
+        styles.antennaTip,
+        {
+          width: size * 0.04,
+          height: size * 0.04,
+          backgroundColor: color,
+          left: size * 0.02,
+          top: size * 0.18,
+        }
+      ]} />
+      <View style={[
+        styles.antennaTip,
+        {
+          width: size * 0.04,
+          height: size * 0.04,
+          backgroundColor: color,
+          left: size * 0.28,
+          top: size * 0.15,
+        }
+      ]} />
+      
+      {/* Simplified legs - geometric lines */}
       {/* Front legs */}
       <View style={[
         styles.leg,
         {
-          width: size * 0.08,
-          height: size * 0.02,
+          width: size * 0.12,
+          height: size * 0.025,
           backgroundColor: color,
-          left: size * 0.25,
-          top: size * 0.55,
-          transform: [{ rotate: '45deg' }],
+          left: size * 0.22,
+          top: size * 0.72,
+          transform: [{ rotate: '25deg' }],
         }
       ]} />
       <View style={[
         styles.leg,
         {
-          width: size * 0.08,
-          height: size * 0.02,
+          width: size * 0.12,
+          height: size * 0.025,
           backgroundColor: color,
-          left: size * 0.25,
-          top: size * 0.25,
-          transform: [{ rotate: '-45deg' }],
+          left: size * 0.22,
+          top: size * 0.18,
+          transform: [{ rotate: '-25deg' }],
         }
       ]} />
       
@@ -101,23 +122,23 @@ export default function OpenAntsLogo({ size = 32, color = '#8B5CF6' }: OpenAntsL
       <View style={[
         styles.leg,
         {
-          width: size * 0.1,
-          height: size * 0.02,
+          width: size * 0.14,
+          height: size * 0.025,
           backgroundColor: color,
-          left: size * 0.35,
-          top: size * 0.58,
-          transform: [{ rotate: '60deg' }],
+          left: size * 0.38,
+          top: size * 0.75,
+          transform: [{ rotate: '45deg' }],
         }
       ]} />
       <View style={[
         styles.leg,
         {
-          width: size * 0.1,
-          height: size * 0.02,
+          width: size * 0.14,
+          height: size * 0.025,
           backgroundColor: color,
-          left: size * 0.35,
-          top: size * 0.22,
-          transform: [{ rotate: '-60deg' }],
+          left: size * 0.38,
+          top: size * 0.15,
+          transform: [{ rotate: '-45deg' }],
         }
       ]} />
       
@@ -125,74 +146,47 @@ export default function OpenAntsLogo({ size = 32, color = '#8B5CF6' }: OpenAntsL
       <View style={[
         styles.leg,
         {
-          width: size * 0.08,
-          height: size * 0.02,
+          width: size * 0.12,
+          height: size * 0.025,
           backgroundColor: color,
-          left: size * 0.55,
-          top: size * 0.55,
-          transform: [{ rotate: '30deg' }],
+          left: size * 0.65,
+          top: size * 0.72,
+          transform: [{ rotate: '15deg' }],
         }
       ]} />
       <View style={[
         styles.leg,
         {
-          width: size * 0.08,
-          height: size * 0.02,
-          backgroundColor: color,
-          left: size * 0.55,
-          top: size * 0.25,
-          transform: [{ rotate: '-30deg' }],
-        }
-      ]} />
-      
-      {/* Network connection dots around the ant */}
-      {[
-        { x: 0.05, y: 0.15 },
-        { x: 0.85, y: 0.2 },
-        { x: 0.9, y: 0.7 },
-        { x: 0.1, y: 0.8 },
-        { x: 0.45, y: 0.05 },
-        { x: 0.45, y: 0.85 },
-      ].map((pos, i) => (
-        <View
-          key={`dot-${i}`}
-          style={[
-            styles.networkDot,
-            {
-              width: dotSize,
-              height: dotSize,
-              backgroundColor: color,
-              left: size * pos.x,
-              top: size * pos.y,
-              opacity: 0.6,
-            }
-          ]}
-        />
-      ))}
-      
-      {/* Subtle connection lines */}
-      <View style={[
-        styles.connectionLine,
-        {
-          width: size * 0.15,
-          height: 1,
-          backgroundColor: color,
-          left: size * 0.1,
-          top: size * 0.25,
-          opacity: 0.3,
-          transform: [{ rotate: '45deg' }],
-        }
-      ]} />
-      <View style={[
-        styles.connectionLine,
-        {
           width: size * 0.12,
-          height: 1,
+          height: size * 0.025,
           backgroundColor: color,
-          left: size * 0.75,
-          top: size * 0.6,
-          opacity: 0.3,
-          transform: [{ rotate: '-30deg' }],
+          left: size * 0.65,
+          top: size * 0.18,
+          transform: [{ rotate: '-15deg' }],
+        }
+      ]} />
+      
+      {/* Eye - small white circle for contrast */}
+      <View style={[
+        styles.eye,
+        {
+          width: size * 0.06,
+          height: size * 0.06,
+          backgroundColor: 'white',
+          left: size * 0.15,
+          top: size * 0.42,
+        }
+      ]} />
+      
+      {/* Eye pupil */}
+      <View style={[
+        styles.eyePupil,
+        {
+          width: size * 0.025,
+          height: size * 0.025,
+          backgroundColor: color,
+          left: size * 0.165,
+          top: size * 0.435,
         }
       ]} />
     </View>
@@ -219,15 +213,20 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderRadius: 2,
   },
-  leg: {
-    position: 'absolute',
-    borderRadius: 1,
-  },
-  networkDot: {
+  antennaTip: {
     position: 'absolute',
     borderRadius: 50,
   },
-  connectionLine: {
+  leg: {
     position: 'absolute',
+    borderRadius: 2,
+  },
+  eye: {
+    position: 'absolute',
+    borderRadius: 50,
+  },
+  eyePupil: {
+    position: 'absolute',
+    borderRadius: 50,
   },
 });
