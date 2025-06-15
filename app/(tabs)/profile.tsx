@@ -127,6 +127,8 @@ export default function ProfileScreen() {
     try {
       console.log('🔄 Fetching education data for user:', userId, forceRefresh ? '(FORCED REFRESH)' : '(NORMAL FETCH)');
       
+      console.log("anhnq1 - supabase: ", supabase);
+
       const { data, error } = await supabase
         .from('user_education')
         .select('*')
