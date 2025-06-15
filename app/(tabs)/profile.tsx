@@ -128,6 +128,7 @@ export default function ProfileScreen() {
       console.log('🔄 Fetching education data for user:', userId, forceRefresh ? '(FORCED REFRESH)' : '(NORMAL FETCH)');
       
       console.log("anhnq1 - supabase: ", supabase);
+      console.log("anhnq1 - checkLogin?: ", await supabase.auth.getSession());
 
       const { data, error } = await supabase
         .from('user_education')
