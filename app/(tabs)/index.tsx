@@ -2,11 +2,15 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, Bell, MessageCircle, ChevronRight, Briefcase, Users, QrCode, UserPlus, X, Check } from 'lucide-react-native';
+import { MapPin, Bell, MessageCircle, ChevronRight, Briefcase, Users, QrCode, UserPlus, X, Check, Settings } from 'lucide-react-native';
 import SearchBar from '@/components/SearchBar';
 import OpenAntsLogo from '@/components/OpenAntsLogo';
 import { router } from 'expo-router';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
+import DebugPanel from '@/components/DebugPanel';
+
+// Debug mode toggle - set to true to show debug information
+const isDebug = true;
 
 const smartMatches = [
   {
@@ -119,6 +123,7 @@ export default function HomeScreen() {
   const [filteredConnections, setFilteredConnections] = useState(recentConnections);
   const [showAllRequests, setShowAllRequests] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -365,6 +370,15 @@ export default function HomeScreen() {
             <Text style={styles.appName}>OpenAnts</Text>
           </View>
           <View style={styles.headerRight}>
+            {/* Debug Toggle Button - Only show when isDebug is true */}
+            {isDebug && (
+              <TouchableOpacity 
+                style={styles.debugButton}
+                onPress={() => setShowDebugPanel(!showDebugPanel)}
+              >
+                <Settings size={20} color="#6B7280" />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.notificationButton}>
               <Bell size={20} color="#6B7280" />
               <View style={styles.notificationBadge}>
@@ -524,6 +538,9 @@ export default function HomeScreen() {
         visible={showAccountSettings}
         onClose={() => setShowAccountSettings(false)}
       />
+
+      {/* Debug Panel - Only show when isDebug is true */}
+      <DebugPanel isVisible={isDebug && showDebugPanel} />
     </SafeAreaView>
   );
 }
@@ -572,6 +589,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  debugButton: {
+    padding: 8,
   },
   notificationButton: {
     position: 'relative',

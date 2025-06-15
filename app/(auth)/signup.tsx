@@ -5,6 +5,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight, ArrowLeft } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
+import DebugPanel from '@/components/DebugPanel';
+
+// Debug mode toggle - set to true to show debug information
+const isDebug = true;
 
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
@@ -15,6 +19,7 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
   const { signUp } = useAuth();
 
   const validateEmail = (email: string) => {
@@ -159,6 +164,18 @@ export default function SignupScreen() {
               <Text style={styles.appName}>Join OpenAnts</Text>
               <Text style={styles.tagline}>Start building your professional network</Text>
             </View>
+
+            {/* Debug Toggle Button - Only show when isDebug is true */}
+            {isDebug && (
+              <TouchableOpacity 
+                style={styles.debugToggle}
+                onPress={() => setShowDebugPanel(!showDebugPanel)}
+              >
+                <Text style={styles.debugToggleText}>
+                  {showDebugPanel ? 'Hide Debug' : 'Show Debug'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </LinearGradient>
 
           <View style={styles.formContainer}>
@@ -314,6 +331,9 @@ export default function SignupScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Debug Panel - Only show when isDebug is true */}
+      <DebugPanel isVisible={isDebug && showDebugPanel} />
     </SafeAreaView>
   );
 }
@@ -377,6 +397,20 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'center',
+  },
+  debugToggle: {
+    position: 'absolute',
+    top: 20,
+    right: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  debugToggleText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
   },
   formContainer: {
     flex: 1,

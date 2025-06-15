@@ -5,6 +5,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
+import DebugPanel from '@/components/DebugPanel';
+
+// Debug mode toggle - set to true to show debug information
+const isDebug = true;
 
 export default function LoginScreen() {
   const params = useLocalSearchParams();
@@ -12,6 +16,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
   const { signIn } = useAuth();
 
   const handleLogin = async () => {
@@ -82,6 +87,18 @@ export default function LoginScreen() {
               <Text style={styles.appName}>OpenAnts</Text>
               <Text style={styles.tagline}>Connect. Collaborate. Create.</Text>
             </View>
+
+            {/* Debug Toggle Button - Only show when isDebug is true */}
+            {isDebug && (
+              <TouchableOpacity 
+                style={styles.debugToggle}
+                onPress={() => setShowDebugPanel(!showDebugPanel)}
+              >
+                <Text style={styles.debugToggleText}>
+                  {showDebugPanel ? 'Hide Debug' : 'Show Debug'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </LinearGradient>
 
           <View style={styles.formContainer}>
@@ -169,6 +186,9 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Debug Panel - Only show when isDebug is true */}
+      <DebugPanel isVisible={isDebug && showDebugPanel} />
     </SafeAreaView>
   );
 }
@@ -194,6 +214,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     alignItems: 'center',
     minHeight: 200,
+    position: 'relative',
   },
   logoContainer: {
     alignItems: 'center',
@@ -222,6 +243,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter-Regular',
     color: 'rgba(255, 255, 255, 0.9)',
+  },
+  debugToggle: {
+    position: 'absolute',
+    top: 50,
+    right: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  debugToggleText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
   },
   formContainer: {
     flex: 1,
