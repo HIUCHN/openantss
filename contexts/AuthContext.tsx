@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           user: session.user,
         });
 
-        console.log("anhnq1 - ", SESSION_KEY, ": ", sessionData)
+        console.log("anhnq1 - ", Platform.OS)
         if (Platform.OS === 'web') {
           localStorage.setItem(SESSION_KEY, sessionData);
         } else {
