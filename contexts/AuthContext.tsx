@@ -35,6 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Store session securely in device storage
   const storeSession = async (session: Session | null) => {
     try {
+      console.log("anhnq1 - session: ", session);
       if (session) {
         const sessionData = JSON.stringify({
           access_token: session.access_token,
