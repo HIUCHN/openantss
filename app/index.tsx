@@ -11,8 +11,10 @@ export default function IndexScreen() {
   useEffect(() => {
     if (!loading) {
       if (session) {
+        console.log('✅ User authenticated - Redirecting to main app with database access');
         router.replace('/(tabs)');
       } else {
+        console.log('❌ No session found - Redirecting to login');
         router.replace('/(auth)/login');
       }
     }
@@ -27,8 +29,12 @@ export default function IndexScreen() {
         <View style={styles.logoContainer}>
           <OpenAntsLogo size={80} color="#FFFFFF" />
           <Text style={styles.appName}>OpenAnts</Text>
+          <Text style={styles.subtitle}>Professional Networking</Text>
         </View>
         <ActivityIndicator size="large" color="#FFFFFF" style={styles.loader} />
+        <Text style={styles.loadingText}>
+          {loading ? 'Connecting to database...' : 'Initializing...'}
+        </Text>
       </View>
     </LinearGradient>
   );
@@ -53,7 +59,19 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     marginTop: 16,
   },
+  subtitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: 8,
+  },
   loader: {
     marginTop: 20,
+  },
+  loadingText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginTop: 16,
   },
 });

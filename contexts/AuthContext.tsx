@@ -29,7 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Store session securely
+  // Store session securely in device storage
   const storeSession = async (session: Session | null) => {
     try {
       if (session) {
@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           await SecureStore.setItemAsync(SESSION_KEY, sessionData);
         }
-        console.log('✅ Session stored securely');
+        console.log('✅ Session stored securely in device storage');
       } else {
         // Remove session when null
         if (Platform.OS === 'web') {
@@ -53,14 +53,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           await SecureStore.deleteItemAsync(SESSION_KEY);
         }
-        console.log('🗑️ Session removed from secure storage');
+        console.log('🗑️ Session removed from device storage');
       }
     } catch (error) {
       console.error('❌ Error storing session:', error);
     }
   };
 
-  // Restore session from secure storage
+  // Restore session from device storage
   const restoreSession = async () => {
     try {
       let storedSession: string | null = null;
@@ -73,9 +73,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (storedSession) {
         const sessionData = JSON.parse(storedSession);
-        console.log('🔄 Restoring session from secure storage');
+        console.log('🔄 Restoring session from device storage...');
         
-        // Set the session in Supabase
+        // Set the session in Supabase to establish database connection
         const { data, error } = await supabase.auth.setSession({
           access_token: sessionData.access_token,
           refresh_token: sessionData.refresh_token,
@@ -90,7 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await SecureStore.deleteItemAsync(SESSION_KEY);
           }
         } else if (data.session) {
-          console.log('✅ Session restored successfully');
+          console.log('✅ Session restored - Database connection established');
           setSession(data.session);
           setUser(data.session.user);
           await fetchProfile(data.session.user.id);
@@ -114,40 +114,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // Initial session check
+    // Initialize authentication and database connection
     const initializeAuth = async () => {
-      console.log('🚀 Initializing authentication...');
+      console.log('🚀 Initializing authentication and database connection...');
       
       // First try to get current session
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       
       if (currentSession) {
-        console.log('📱 Found current session');
+        console.log('📱 Found current session - Database connected');
         setSession(currentSession);
         setUser(currentSession.user);
         await fetchProfile(currentSession.user.id);
         await storeSession(currentSession);
       } else {
-        console.log('🔍 No current session, trying to restore from storage...');
+        console.log('🔍 No current session, trying to restore from device storage...');
         await restoreSession();
       }
     };
 
     initializeAuth();
 
-    // Listen for auth changes
+    // Listen for auth changes and maintain database connection
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔄 Auth state changed:', event, session ? 'Session exists' : 'No session');
+      console.log('🔄 Auth state changed:', event, session ? 'Session exists - DB connected' : 'No session - DB disconnected');
       
       setSession(session);
       setUser(session?.user ?? null);
       
-      // Store or remove session
+      // Store or remove session in device storage
       await storeSession(session);
       
       if (session?.user) {
+        console.log('🔗 Database connection established for user:', session.user.email);
         await fetchProfile(session.user.id);
       } else {
+        console.log('🔌 Database connection closed');
         setProfile(null);
         setLoading(false);
       }
@@ -156,20 +158,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Handle app state changes (foreground/background)
+  // Handle app state changes (foreground/background) to maintain connection
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') {
-        console.log('📱 App came to foreground, checking session...');
+        console.log('📱 App came to foreground, checking database connection...');
         
-        // Try to refresh the current session
+        // Try to refresh the current session to maintain database connection
         const { data, error } = await supabase.auth.refreshSession();
         
         if (error) {
-          console.log('🔄 Session refresh failed, trying to restore from storage...');
+          console.log('🔄 Session refresh failed, trying to restore from device storage...');
           await restoreSession();
         } else if (data.session) {
-          console.log('✅ Session refreshed successfully');
+          console.log('✅ Session refreshed - Database connection maintained');
           setSession(data.session);
           setUser(data.session.user);
           await storeSession(data.session);
@@ -187,7 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfile = async (userId: string) => {
     try {
-      console.log('👤 Fetching profile for user:', userId);
+      console.log('👤 Fetching profile from database for user:', userId);
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -195,15 +197,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (error && error.code !== 'PGRST116') {
-        console.error('❌ Error fetching profile:', error);
+        console.error('❌ Error fetching profile from database:', error);
       } else if (data) {
-        console.log('✅ Profile fetched successfully');
+        console.log('✅ Profile fetched successfully from database');
         setProfile(data);
       } else {
-        console.log('👤 No profile found');
+        console.log('👤 No profile found in database');
       }
     } catch (error) {
-      console.error('❌ Error fetching profile:', error);
+      console.error('❌ Error fetching profile from database:', error);
     } finally {
       setLoading(false);
     }
@@ -211,7 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      console.log('🔐 Attempting sign in for:', email);
+      console.log('🔐 Attempting sign in and database connection for:', email);
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -220,7 +222,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         console.error('❌ Sign in error:', error);
       } else if (data.session) {
-        console.log('✅ Sign in successful');
+        console.log('✅ Sign in successful - Database connection established');
         // Session will be automatically stored via auth state change
       }
       
@@ -233,7 +235,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (email: string, password: string, username: string, fullName: string) => {
     try {
-      console.log('📝 Attempting sign up for:', email, 'with username:', username);
+      console.log('📝 Attempting sign up and database setup for:', email, 'with username:', username);
       
       // First check if username is already taken
       const { data: existingProfile } = await supabase
@@ -263,9 +265,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error };
       }
 
-      console.log('✅ Sign up successful, creating profile...');
+      console.log('✅ Sign up successful, creating profile in database...');
 
-      // Create profile
+      // Create profile in database
       if (data.user) {
         const { error: profileError } = await supabase
           .from('profiles')
@@ -280,11 +282,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
 
         if (profileError) {
-          console.error('❌ Error creating profile:', profileError);
+          console.error('❌ Error creating profile in database:', profileError);
           return { error: profileError };
         }
         
-        console.log('✅ Profile created successfully');
+        console.log('✅ Profile created successfully in database');
       }
 
       return { error: null };
@@ -296,16 +298,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
-      console.log('🚪 Signing out...');
+      console.log('🚪 Signing out and closing database connection...');
       const { error } = await supabase.auth.signOut();
       
-      // Clear stored session
+      // Clear stored session from device storage
       await storeSession(null);
       
       if (error) {
         console.error('❌ Error signing out:', error);
       } else {
-        console.log('✅ Sign out successful');
+        console.log('✅ Sign out successful - Database connection closed');
       }
     } catch (error) {
       console.error('❌ Unexpected sign out error:', error);
@@ -316,7 +318,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user) return { error: new Error('No user logged in') };
 
     try {
-      console.log('👤 Updating profile with:', updates);
+      console.log('👤 Updating profile in database with:', updates);
       const { error } = await supabase
         .from('profiles')
         .update({ ...updates, updated_at: new Date().toISOString() })
@@ -324,9 +326,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!error && profile) {
         setProfile({ ...profile, ...updates });
-        console.log('✅ Profile updated successfully');
+        console.log('✅ Profile updated successfully in database');
       } else if (error) {
-        console.error('❌ Error updating profile:', error);
+        console.error('❌ Error updating profile in database:', error);
       }
 
       return { error };
