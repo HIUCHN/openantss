@@ -19,6 +19,7 @@ if (!supabaseAnonKey) {
 // Custom session storage using SecureStore
 const SessionStorage = {
   getItem: async (key: string) => {
+    console.log('anhqn1 - key: ', key)
     if (Platform.OS === 'web') {
       // Fallback to localStorage on web
       return localStorage.getItem(key);
