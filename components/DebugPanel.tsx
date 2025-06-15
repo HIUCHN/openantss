@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -7,24 +7,68 @@ interface DebugPanelProps {
 }
 
 export default function DebugPanel({ isVisible }: DebugPanelProps) {
-  const { session, user, profile, loading } = useAuth();
+  const { session, user, profile, loading, connectionStatus } = useAuth();
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Update time every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   if (!isVisible) return null;
 
-  const getConnectionStatus = () => {
-    if (loading) return { status: 'CONNECTING', color: '#F59E0B', text: 'Đang kết nối...' };
-    if (session && user) return { status: 'CONNECTED', color: '#10B981', text: 'Đã kết nối' };
-    return { status: 'DISCONNECTED', color: '#EF4444', text: 'Chưa kết nối' };
+  const getConnectionStatusInfo = () => {
+    switch (connectionStatus) {
+      case 'connecting':
+        return { status: 'ĐANG KẾT NỐI', color: '#F59E0B', text: 'Đang kết nối database...' };
+      case 'connected':
+        return { status: 'ĐÃ KẾT NỐI', color: '#10B981', text: 'Database đã kết nối' };
+      case 'refreshing':
+        return { status: 'ĐANG LÀM MỚI', color: '#3B82F6', text: 'Đang làm mới session...' };
+      case 'disconnected':
+      default:
+        return { status: 'CHƯA KẾT NỐI', color: '#EF4444', text: 'Database chưa kết nối' };
+    }
   };
 
-  const connectionStatus = getConnectionStatus();
+  const connectionInfo = getConnectionStatusInfo();
+
+  const getSessionExpirationInfo = () => {
+    if (!session?.expires_at) return null;
+    
+    const expirationTime = session.expires_at * 1000;
+    const currentTime = Date.now();
+    const timeLeft = expirationTime - currentTime;
+    
+    if (timeLeft <= 0) {
+      return { text: 'ĐÃ HẾT HẠN', color: '#EF4444' };
+    }
+    
+    const minutes = Math.floor(timeLeft / (1000 * 60));
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) {
+      return { text: `${days} ngày ${hours % 24} giờ`, color: '#10B981' };
+    } else if (hours > 0) {
+      return { text: `${hours} giờ ${minutes % 60} phút`, color: hours > 1 ? '#10B981' : '#F59E0B' };
+    } else {
+      return { text: `${minutes} phút`, color: minutes > 5 ? '#F59E0B' : '#EF4444' };
+    }
+  };
+
+  const sessionExpiration = getSessionExpirationInfo();
 
   return (
     <View style={styles.debugContainer}>
       <View style={styles.debugHeader}>
-        <Text style={styles.debugTitle}>🔍 DEBUG MODE</Text>
-        <View style={[styles.statusIndicator, { backgroundColor: connectionStatus.color }]}>
-          <Text style={styles.statusText}>{connectionStatus.text}</Text>
+        <Text style={styles.debugTitle}>🔍 DEBUG MODE - SESSION MANAGEMENT</Text>
+        <View style={[styles.statusIndicator, { backgroundColor: connectionInfo.color }]}>
+          <Text style={styles.statusText}>{connectionInfo.status}</Text>
         </View>
       </View>
 
@@ -34,8 +78,14 @@ export default function DebugPanel({ isVisible }: DebugPanelProps) {
           <Text style={styles.sectionTitle}>🔗 Trạng thái kết nối Database</Text>
           <View style={styles.infoRow}>
             <Text style={styles.label}>Status:</Text>
-            <Text style={[styles.value, { color: connectionStatus.color }]}>
-              {connectionStatus.status}
+            <Text style={[styles.value, { color: connectionInfo.color }]}>
+              {connectionInfo.status}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Description:</Text>
+            <Text style={[styles.valueSmall, { color: connectionInfo.color }]}>
+              {connectionInfo.text}
             </Text>
           </View>
           <View style={styles.infoRow}>
@@ -62,10 +112,28 @@ export default function DebugPanel({ isVisible }: DebugPanelProps) {
                 </Text>
               </View>
               <View style={styles.infoRow}>
+                <Text style={styles.label}>Refresh Token:</Text>
+                <Text style={styles.valueSmall}>
+                  {session.refresh_token ? `${session.refresh_token.substring(0, 20)}...` : 'null'}
+                </Text>
+              </View>
+              <View style={styles.infoRow}>
                 <Text style={styles.label}>Expires At:</Text>
                 <Text style={styles.valueSmall}>
                   {session.expires_at ? new Date(session.expires_at * 1000).toLocaleString('vi-VN') : 'null'}
                 </Text>
+              </View>
+              {sessionExpiration && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.label}>Time Left:</Text>
+                  <Text style={[styles.value, { color: sessionExpiration.color }]}>
+                    {sessionExpiration.text}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.infoRow}>
+                <Text style={styles.label}>Token Type:</Text>
+                <Text style={styles.value}>{session.token_type || 'bearer'}</Text>
               </View>
             </>
           )}
@@ -100,6 +168,12 @@ export default function DebugPanel({ isVisible }: DebugPanelProps) {
                 <Text style={styles.label}>Created At:</Text>
                 <Text style={styles.valueSmall}>
                   {new Date(user.created_at).toLocaleString('vi-VN')}
+                </Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.label}>Last Sign In:</Text>
+                <Text style={styles.valueSmall}>
+                  {user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString('vi-VN') : 'null'}
                 </Text>
               </View>
             </>
@@ -151,6 +225,18 @@ export default function DebugPanel({ isVisible }: DebugPanelProps) {
                   {profile.direct_messages ? 'true' : 'false'}
                 </Text>
               </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.label}>Created At:</Text>
+                <Text style={styles.valueSmall}>
+                  {new Date(profile.created_at).toLocaleString('vi-VN')}
+                </Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.label}>Updated At:</Text>
+                <Text style={styles.valueSmall}>
+                  {new Date(profile.updated_at).toLocaleString('vi-VN')}
+                </Text>
+              </View>
             </>
           )}
         </View>
@@ -169,6 +255,10 @@ export default function DebugPanel({ isVisible }: DebugPanelProps) {
             <Text style={[styles.value, { color: session ? '#10B981' : '#EF4444' }]}>
               {session ? 'true' : 'false'}
             </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Auto Refresh:</Text>
+            <Text style={[styles.value, { color: '#10B981' }]}>Enabled</Text>
           </View>
         </View>
 
@@ -201,12 +291,33 @@ export default function DebugPanel({ isVisible }: DebugPanelProps) {
           <View style={styles.infoRow}>
             <Text style={styles.label}>Current Time:</Text>
             <Text style={styles.valueSmall}>
-              {new Date().toLocaleString('vi-VN')}
+              {currentTime.toLocaleString('vi-VN')}
             </Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.label}>App State:</Text>
             <Text style={styles.value}>Active</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Session Check:</Text>
+            <Text style={styles.value}>Every 60s</Text>
+          </View>
+        </View>
+
+        {/* API Call Status */}
+        <View style={styles.debugSection}>
+          <Text style={styles.sectionTitle}>🌐 API Call Status</Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Ready for API calls:</Text>
+            <Text style={[styles.value, { color: (session && connectionStatus === 'connected') ? '#10B981' : '#EF4444' }]}>
+              {(session && connectionStatus === 'connected') ? 'true' : 'false'}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Auth Header:</Text>
+            <Text style={styles.valueSmall}>
+              {session ? `Bearer ${session.access_token.substring(0, 15)}...` : 'Not available'}
+            </Text>
           </View>
         </View>
       </ScrollView>
@@ -235,9 +346,10 @@ const styles = StyleSheet.create({
     borderBottomColor: '#333',
   },
   debugTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Inter-Bold',
     color: '#FFFFFF',
+    flex: 1,
   },
   statusIndicator: {
     paddingHorizontal: 12,

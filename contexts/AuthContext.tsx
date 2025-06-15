@@ -13,10 +13,12 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
+  connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'refreshing';
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signUp: (email: string, password: string, username: string, fullName: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: any }>;
+  refreshSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'refreshing'>('connecting');
 
   // Store session securely in device storage
   const storeSession = async (session: Session | null) => {
@@ -37,6 +40,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           access_token: session.access_token,
           refresh_token: session.refresh_token,
           expires_at: session.expires_at,
+          expires_in: session.expires_in,
+          token_type: session.token_type,
           user: session.user,
         });
         
@@ -60,9 +65,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Restore session from device storage
+  // Check if session is expired or about to expire (within 5 minutes)
+  const isSessionExpired = (session: Session): boolean => {
+    if (!session.expires_at) return false;
+    const expirationTime = session.expires_at * 1000; // Convert to milliseconds
+    const currentTime = Date.now();
+    const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+    
+    return (expirationTime - currentTime) <= fiveMinutes;
+  };
+
+  // Refresh session using refresh token
+  const refreshSessionWithToken = async (refreshToken: string): Promise<Session | null> => {
+    try {
+      console.log('🔄 Refreshing session with refresh token...');
+      setConnectionStatus('refreshing');
+      
+      const { data, error } = await supabase.auth.refreshSession({
+        refresh_token: refreshToken,
+      });
+
+      if (error) {
+        console.error('❌ Error refreshing session:', error);
+        setConnectionStatus('disconnected');
+        return null;
+      }
+
+      if (data.session) {
+        console.log('✅ Session refreshed successfully - Database connection restored');
+        await storeSession(data.session);
+        setConnectionStatus('connected');
+        return data.session;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('💥 Unexpected error refreshing session:', error);
+      setConnectionStatus('disconnected');
+      return null;
+    }
+  };
+
+  // Restore session from device storage with auto-refresh
   const restoreSession = async () => {
     try {
+      setConnectionStatus('connecting');
       let storedSession: string | null = null;
       
       if (Platform.OS === 'web') {
@@ -75,26 +122,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const sessionData = JSON.parse(storedSession);
         console.log('🔄 Restoring session from device storage...');
         
-        // Set the session in Supabase to establish database connection
-        const { data, error } = await supabase.auth.setSession({
+        // Create a session object
+        const restoredSession: Session = {
           access_token: sessionData.access_token,
           refresh_token: sessionData.refresh_token,
-        });
+          expires_at: sessionData.expires_at,
+          expires_in: sessionData.expires_in,
+          token_type: sessionData.token_type || 'bearer',
+          user: sessionData.user,
+        };
 
-        if (error) {
-          console.error('❌ Error restoring session:', error);
-          // Remove invalid session
-          if (Platform.OS === 'web') {
-            localStorage.removeItem(SESSION_KEY);
+        // Check if session is expired or about to expire
+        if (isSessionExpired(restoredSession)) {
+          console.log('⏰ Session expired or about to expire, refreshing...');
+          const newSession = await refreshSessionWithToken(restoredSession.refresh_token);
+          
+          if (newSession) {
+            setSession(newSession);
+            setUser(newSession.user);
+            await fetchProfile(newSession.user.id);
           } else {
-            await SecureStore.deleteItemAsync(SESSION_KEY);
+            // Refresh failed, clear stored session
+            await storeSession(null);
+            setConnectionStatus('disconnected');
           }
-        } else if (data.session) {
-          console.log('✅ Session restored - Database connection established');
-          setSession(data.session);
-          setUser(data.session.user);
-          await fetchProfile(data.session.user.id);
+        } else {
+          // Session is still valid, set it in Supabase
+          const { data, error } = await supabase.auth.setSession({
+            access_token: restoredSession.access_token,
+            refresh_token: restoredSession.refresh_token,
+          });
+
+          if (error) {
+            console.error('❌ Error setting restored session:', error);
+            // Try to refresh the session
+            const newSession = await refreshSessionWithToken(restoredSession.refresh_token);
+            if (newSession) {
+              setSession(newSession);
+              setUser(newSession.user);
+              await fetchProfile(newSession.user.id);
+            } else {
+              await storeSession(null);
+              setConnectionStatus('disconnected');
+            }
+          } else if (data.session) {
+            console.log('✅ Session restored - Database connection established');
+            setSession(data.session);
+            setUser(data.session.user);
+            await fetchProfile(data.session.user.id);
+            setConnectionStatus('connected');
+          }
         }
+      } else {
+        console.log('📭 No stored session found');
+        setConnectionStatus('disconnected');
       }
     } catch (error) {
       console.error('❌ Error restoring session:', error);
@@ -108,8 +189,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (cleanupError) {
         console.error('Error cleaning up session:', cleanupError);
       }
+      setConnectionStatus('disconnected');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Manual refresh session function
+  const refreshSession = async () => {
+    if (!session?.refresh_token) {
+      console.log('❌ No refresh token available');
+      return;
+    }
+
+    const newSession = await refreshSessionWithToken(session.refresh_token);
+    if (newSession) {
+      setSession(newSession);
+      setUser(newSession.user);
+      if (newSession.user && !profile) {
+        await fetchProfile(newSession.user.id);
+      }
     }
   };
 
@@ -127,6 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(currentSession.user);
         await fetchProfile(currentSession.user.id);
         await storeSession(currentSession);
+        setConnectionStatus('connected');
       } else {
         console.log('🔍 No current session, trying to restore from device storage...');
         await restoreSession();
@@ -148,9 +248,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (session?.user) {
         console.log('🔗 Database connection established for user:', session.user.email);
         await fetchProfile(session.user.id);
+        setConnectionStatus('connected');
       } else {
         console.log('🔌 Database connection closed');
         setProfile(null);
+        setConnectionStatus('disconnected');
         setLoading(false);
       }
     });
@@ -161,23 +263,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Handle app state changes (foreground/background) to maintain connection
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active') {
+      if (nextAppState === 'active' && session) {
         console.log('📱 App came to foreground, checking database connection...');
         
-        // Try to refresh the current session to maintain database connection
-        const { data, error } = await supabase.auth.refreshSession();
-        
-        if (error) {
-          console.log('🔄 Session refresh failed, trying to restore from device storage...');
-          await restoreSession();
-        } else if (data.session) {
-          console.log('✅ Session refreshed - Database connection maintained');
-          setSession(data.session);
-          setUser(data.session.user);
-          await storeSession(data.session);
+        // Check if session is expired or about to expire
+        if (isSessionExpired(session)) {
+          console.log('⏰ Session expired, refreshing...');
+          await refreshSession();
+        } else {
+          // Try to refresh the current session to maintain database connection
+          const { data, error } = await supabase.auth.refreshSession();
           
-          if (data.session.user && !profile) {
-            await fetchProfile(data.session.user.id);
+          if (error) {
+            console.log('🔄 Session refresh failed, trying manual refresh...');
+            await refreshSession();
+          } else if (data.session) {
+            console.log('✅ Session refreshed - Database connection maintained');
+            setSession(data.session);
+            setUser(data.session.user);
+            await storeSession(data.session);
+            setConnectionStatus('connected');
+            
+            if (data.session.user && !profile) {
+              await fetchProfile(data.session.user.id);
+            }
           }
         }
       }
@@ -185,7 +294,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription?.remove();
-  }, [profile]);
+  }, [session, profile]);
+
+  // Auto-refresh session before expiration
+  useEffect(() => {
+    if (!session) return;
+
+    const checkAndRefreshSession = () => {
+      if (isSessionExpired(session)) {
+        console.log('⏰ Session about to expire, auto-refreshing...');
+        refreshSession();
+      }
+    };
+
+    // Check every minute
+    const interval = setInterval(checkAndRefreshSession, 60000);
+    
+    return () => clearInterval(interval);
+  }, [session]);
 
   const fetchProfile = async (userId: string) => {
     try {
@@ -214,6 +340,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     try {
       console.log('🔐 Attempting sign in and database connection for:', email);
+      setConnectionStatus('connecting');
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -221,14 +349,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (error) {
         console.error('❌ Sign in error:', error);
+        setConnectionStatus('disconnected');
       } else if (data.session) {
         console.log('✅ Sign in successful - Database connection established');
         // Session will be automatically stored via auth state change
+        setConnectionStatus('connected');
       }
       
       return { error };
     } catch (error) {
       console.error('❌ Unexpected sign in error:', error);
+      setConnectionStatus('disconnected');
       return { error };
     }
   };
@@ -236,6 +367,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (email: string, password: string, username: string, fullName: string) => {
     try {
       console.log('📝 Attempting sign up and database setup for:', email, 'with username:', username);
+      setConnectionStatus('connecting');
       
       // First check if username is already taken
       const { data: existingProfile } = await supabase
@@ -245,6 +377,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (existingProfile) {
+        setConnectionStatus('disconnected');
         return { error: { message: 'Username is already taken. Please choose a different one.' } };
       }
 
@@ -262,6 +395,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('❌ Sign up error:', error);
+        setConnectionStatus('disconnected');
         return { error };
       }
 
@@ -283,15 +417,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (profileError) {
           console.error('❌ Error creating profile in database:', profileError);
+          setConnectionStatus('disconnected');
           return { error: profileError };
         }
         
         console.log('✅ Profile created successfully in database');
+        setConnectionStatus('connected');
       }
 
       return { error: null };
     } catch (error) {
       console.error('❌ Unexpected sign up error:', error);
+      setConnectionStatus('disconnected');
       return { error };
     }
   };
@@ -299,6 +436,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       console.log('🚪 Signing out and closing database connection...');
+      setConnectionStatus('disconnected');
+      
       const { error } = await supabase.auth.signOut();
       
       // Clear stored session from device storage
@@ -343,10 +482,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     profile,
     loading,
+    connectionStatus,
     signIn,
     signUp,
     signOut,
     updateProfile,
+    refreshSession,
   };
 
   return (
