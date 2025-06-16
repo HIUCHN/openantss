@@ -3,11 +3,11 @@ import { Database } from '@/types/database';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
+console.log("anhnq1 create supabase")
+
 // Get environment variables with fallbacks for development
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
-
-console.log("anhnq1 create supabase");
 
 // Validate that required environment variables are present
 if (!supabaseUrl) {
@@ -32,7 +32,7 @@ const SessionStorage = {
     } catch (error) {
       console.error('Error getting item from SecureStore:', error);
     }
-    // console.log("anhnq1 - sessionStorage: - getItem finish with key: ", key, ' - value: ', value)
+    
     return value;
   },
   setItem: async (key: string, value: string) => {
