@@ -1,0 +1,76 @@
+/**
+ * Color constants for consistent theming
+ */
+
+export const COLORS = {
+  // Primary colors
+  PRIMARY: '#6366F1',
+  PRIMARY_DARK: '#4F46E5',
+  PRIMARY_LIGHT: '#8B5CF6',
+  
+  // Secondary colors
+  SECONDARY: '#8B5CF6',
+  SECONDARY_DARK: '#7C3AED',
+  SECONDARY_LIGHT: '#A78BFA',
+  
+  // Status colors
+  SUCCESS: '#10B981',
+  SUCCESS_DARK: '#059669',
+  SUCCESS_LIGHT: '#34D399',
+  
+  WARNING: '#F59E0B',
+  WARNING_DARK: '#D97706',
+  WARNING_LIGHT: '#FBBF24',
+  
+  ERROR: '#EF4444',
+  ERROR_DARK: '#DC2626',
+  ERROR_LIGHT: '#F87171',
+  
+  INFO: '#3B82F6',
+  INFO_DARK: '#2563EB',
+  INFO_LIGHT: '#60A5FA',
+  
+  // Neutral colors
+  WHITE: '#FFFFFF',
+  BLACK: '#000000',
+  
+  GRAY_50: '#F9FAFB',
+  GRAY_100: '#F3F4F6',
+  GRAY_200: '#E5E7EB',
+  GRAY_300: '#D1D5DB',
+  GRAY_400: '#9CA3AF',
+  GRAY_500: '#6B7280',
+  GRAY_600: '#4B5563',
+  GRAY_700: '#374151',
+  GRAY_800: '#1F2937',
+  GRAY_900: '#111827',
+  
+  // Background colors
+  BACKGROUND_PRIMARY: '#F9FAFB',
+  BACKGROUND_SECONDARY: '#FFFFFF',
+  BACKGROUND_TERTIARY: '#F3F4F6',
+  
+  // Text colors
+  TEXT_PRIMARY: '#111827',
+  TEXT_SECONDARY: '#6B7280',
+  TEXT_TERTIARY: '#9CA3AF',
+  TEXT_INVERSE: '#FFFFFF',
+  
+  // Border colors
+  BORDER_PRIMARY: '#E5E7EB',
+  BORDER_SECONDARY: '#D1D5DB',
+  BORDER_FOCUS: '#6366F1',
+  
+  // Gradient colors
+  GRADIENT_PRIMARY: ['#6366F1', '#8B5CF6'],
+  GRADIENT_SUCCESS: ['#10B981', '#059669'],
+  GRADIENT_WARNING: ['#F59E0B', '#D97706'],
+  GRADIENT_ERROR: ['#EF4444', '#DC2626'],
+} as const;
+
+export const OPACITY = {
+  DISABLED: 0.6,
+  OVERLAY: 0.5,
+  SUBTLE: 0.8,
+  TRANSPARENT: 0.1,
+} as const;
