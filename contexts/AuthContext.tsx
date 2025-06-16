@@ -265,7 +265,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Handle app state changes (foreground/background) to maintain connection
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active' && session) {       
+      if (nextAppState === 'active' && session) {
+        console.log('🔄 anhnq1 Refreshed session start);
+        
+        // const { data, error } = await supabase.auth.refreshSession();
+        console.log('🔄 anhnq1 Refreshed session:');
+        
         console.log('📱 App came to foreground, checking database connection...');
         
         // Check if session is expired or about to expire
