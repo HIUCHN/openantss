@@ -19,17 +19,19 @@ if (!supabaseAnonKey) {
 // Custom session storage using SecureStore
 const SessionStorage = {
   getItem: async (key: string) => {
-    console.log("anhnq1 - sessionStorage: - getItem with key: ", key)
+    console.log("anhnq1 - sessionStorage: - getItem start with key: ", key)
+    var value;
     if (Platform.OS === 'web') {
       // Fallback to localStorage on web
-      return localStorage.getItem(key);
+      value = localStorage.getItem(key);
     }
     try {
-      return await SecureStore.getItemAsync(key);
+      value = await SecureStore.getItemAsync(key);
     } catch (error) {
       console.error('Error getting item from SecureStore:', error);
-      return null;
     }
+    console.log("anhnq1 - sessionStorage: - getItem finish with key: ", key, ' - value: ', value)
+    return value;
   },
   setItem: async (key: string, value: string) => {
     console.log("anhnq1 - sessionStorage: - setItem with key: ", key, " - value: ", value)
