@@ -4,5 +4,4 @@ export * from './colors';
 export * from './fonts';
 export * from './api';
 export * from './storage';
-export * from './validation';
-export * from './ui';
+export * from './value';

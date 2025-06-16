@@ -6,9 +6,8 @@ import { Eye, EyeOff, Mail, Lock, User, ArrowRight, ArrowLeft } from 'lucide-rea
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import DebugPanel from '@/components/DebugPanel';
-
+import { IS_DEBUG } from '@/constants';
 // Debug mode toggle - set to true to show debug information
-const isDebug = true;
 
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
@@ -165,8 +164,8 @@ export default function SignupScreen() {
               <Text style={styles.tagline}>Start building your professional network</Text>
             </View>
 
-            {/* Debug Toggle Button - Only show when isDebug is true */}
-            {isDebug && (
+            {/* Debug Toggle Button - Only show when IS_DEBUG is true */}
+            {IS_DEBUG && (
               <TouchableOpacity 
                 style={styles.debugToggle}
                 onPress={() => setShowDebugPanel(!showDebugPanel)}
@@ -332,8 +331,8 @@ export default function SignupScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Debug Panel - Only show when isDebug is true */}
-      <DebugPanel isVisible={isDebug && showDebugPanel} />
+      {/* Debug Panel - Only show when IS_DEBUG is true */}
+      <DebugPanel isVisible={IS_DEBUG && showDebugPanel} />
     </SafeAreaView>
   );
 }
