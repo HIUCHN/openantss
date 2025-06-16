@@ -7,6 +7,8 @@ import { Platform } from 'react-native';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
+console.log("anhnq1 create supabase");
+
 // Validate that required environment variables are present
 if (!supabaseUrl) {
   throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL environment variable');
@@ -30,6 +32,7 @@ const SessionStorage = {
     } catch (error) {
       console.error('Error getting item from SecureStore:', error);
     }
+    // console.log("anhnq1 - sessionStorage: - getItem finish with key: ", key, ' - value: ', value)
     return value;
   },
   setItem: async (key: string, value: string) => {
@@ -59,9 +62,7 @@ const SessionStorage = {
   },
 };
 
-export const supabase = () => {
-  console.log("anhnq1 - create supabase");
-  return createClient<Database>(supabaseUrl, supabaseAnonKey, {
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: SessionStorage,
     autoRefreshToken: true,
@@ -69,4 +70,3 @@ export const supabase = () => {
     detectSessionInUrl: false,
   },
 });
-};
