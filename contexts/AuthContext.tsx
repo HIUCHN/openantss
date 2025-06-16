@@ -266,7 +266,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active' && session) {
-        await supabase.auth.initialize();
+        const { data, error } = await supabase.auth.refreshSession();
+console.log('🔄 Refreshed session:', data);
         
         console.log('📱 App came to foreground, checking database connection...');
         
