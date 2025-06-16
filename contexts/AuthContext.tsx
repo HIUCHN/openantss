@@ -266,7 +266,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active' && session) {
-        console.log('anhnq1 Refreshed session start);
+        console.log('anhnq1 Refreshed session start');
         
         // const { data, error } = await supabase.auth.refreshSession();
         console.log('anhnq1 Refreshed session:');
