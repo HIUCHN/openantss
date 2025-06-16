@@ -30,7 +30,6 @@ const SessionStorage = {
     } catch (error) {
       console.error('Error getting item from SecureStore:', error);
     }
-    console.log("anhnq1 - sessionStorage: - getItem finish with key: ", key, ' - value: ', value)
     return value;
   },
   setItem: async (key: string, value: string) => {
@@ -60,7 +59,9 @@ const SessionStorage = {
   },
 };
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+export const supabase = () => {
+  console.log("anhnq1 - create supabase");
+  return createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: SessionStorage,
     autoRefreshToken: true,
@@ -68,3 +69,4 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 });
+};
