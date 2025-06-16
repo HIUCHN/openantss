@@ -266,6 +266,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active' && session) {
+        await supabase.auth.initialize();
+        
         console.log('📱 App came to foreground, checking database connection...');
         
         // Check if session is expired or about to expire
