@@ -481,19 +481,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('🔄 Toggling public mode to:', isPublic);
 
-      // Update profile with new public mode setting
-      const { error } = await updateProfile({ is_public: isPublic });
+      // Update profile directly in database without using updateProfile to avoid state conflicts
+      const { error } = await supabase
+        .from('profiles')
+        .update({ 
+          is_public: isPublic,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
 
-      if (!error) {
-        console.log('✅ Public mode updated successfully');
-        
-        // If turning off public mode, clear location data
-        if (!isPublic) {
-          await clearUserLocation();
-        }
+      if (error) {
+        console.error('❌ Error updating public mode in database:', error);
+        return { error };
       }
 
-      return { error };
+      // Update local profile state directly
+      if (profile) {
+        setProfile({ ...profile, is_public: isPublic });
+      }
+
+      console.log('✅ Public mode updated successfully');
+      
+      // If turning off public mode, clear location data
+      if (!isPublic) {
+        await clearUserLocation();
+      }
+
+      return { error: null };
     } catch (error) {
       console.error('❌ Unexpected error toggling public mode:', error);
       return { error };
