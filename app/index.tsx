@@ -67,6 +67,8 @@ export default function IndexScreen() {
         <Text style={[styles.loadingText, { color: getStatusColor() }]}>
           {getStatusMessage()}
         </Text>
+        
+        {/* Connection Status Indicator */}
         <View style={styles.statusContainer}>
           <View style={[styles.statusDot, { backgroundColor: getStatusColor() }]} />
           <Text style={styles.statusText}>
