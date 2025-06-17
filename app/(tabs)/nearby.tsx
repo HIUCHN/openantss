@@ -29,7 +29,9 @@ import * as Location from 'expo-location';
 import SearchBar from '@/components/SearchBar';
 import OpenAntsLogo from '@/components/OpenAntsLogo';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
+import MapBoxMap from '@/components/MapBoxMap';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 const { width, height } = Dimensions.get('window');
 
@@ -134,7 +136,7 @@ const nearbyEvents = [
 const quickFilters = ['All', 'Within 100m', 'Open to Chat', 'Mentoring', 'Freelance'];
 
 export default function NearbyScreen() {
-  const { updateUserLocation } = useAuth();
+  const { updateUserLocation, profile } = useAuth();
   const [isPublicMode, setIsPublicMode] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'map'
@@ -152,6 +154,7 @@ export default function NearbyScreen() {
   const [currentUserLocation, setCurrentUserLocation] = useState(null);
   const [locationPermission, setLocationPermission] = useState(null);
   const [locationWatcher, setLocationWatcher] = useState(null);
+  const [nearbyUsers, setNearbyUsers] = useState([]);
 
   useEffect(() => {
     // Pulse animation for user's location pin
@@ -184,6 +187,13 @@ export default function NearbyScreen() {
       }
     };
   }, []);
+
+  // Fetch nearby users when location changes
+  useEffect(() => {
+    if (currentUserLocation && isPublicMode) {
+      fetchNearbyUsers();
+    }
+  }, [currentUserLocation, isPublicMode]);
 
   const requestLocationPermission = async () => {
     try {
@@ -232,7 +242,9 @@ export default function NearbyScreen() {
       console.log('📍 Initial location obtained:', initialCoords);
 
       // Update location in database
-      await updateUserLocation(initialCoords.latitude, initialCoords.longitude);
+      if (isPublicMode) {
+        await updateUserLocation(initialCoords.latitude, initialCoords.longitude);
+      }
 
       // Start watching position for real-time updates
       const watcher = await Location.watchPositionAsync(
@@ -251,9 +263,11 @@ export default function NearbyScreen() {
           
           setCurrentUserLocation(newCoords);
           console.log('📍 Location updated:', newCoords);
-          
-          // Update location in database
-          await updateUserLocation(newCoords.latitude, newCoords.longitude);
+
+          // Update location in database if public mode is enabled
+          if (isPublicMode) {
+            await updateUserLocation(newCoords.latitude, newCoords.longitude);
+          }
         }
       );
 
@@ -266,23 +280,92 @@ export default function NearbyScreen() {
     }
   };
 
+  const fetchNearbyUsers = async () => {
+    if (!currentUserLocation) return;
+
+    try {
+      console.log('🔍 Fetching nearby users from database...');
+      
+      // Fetch users with location data (excluding current user)
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .neq('id', profile?.id)
+        .not('latitude', 'is', null)
+        .not('longitude', 'is', null)
+        .eq('is_public', true);
+
+      if (error) {
+        console.error('❌ Error fetching nearby users:', error);
+        return;
+      }
+
+      if (data) {
+        // Calculate distances and filter nearby users (within 5km for example)
+        const usersWithDistance = data.map(user => {
+          const distance = calculateDistance(
+            currentUserLocation.latitude,
+            currentUserLocation.longitude,
+            user.latitude!,
+            user.longitude!
+          );
+          
+          return {
+            ...user,
+            distance: Math.round(distance),
+            distanceText: distance < 1000 ? `${Math.round(distance)}m away` : `${(distance / 1000).toFixed(1)}km away`,
+            pinColor: getRandomPinColor(),
+            statusText: user.role || 'Professional',
+          };
+        }).filter(user => user.distance <= 5000); // Within 5km
+
+        // Sort by distance
+        usersWithDistance.sort((a, b) => a.distance - b.distance);
+
+        setNearbyUsers(usersWithDistance);
+        console.log(`✅ Found ${usersWithDistance.length} nearby users`);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching nearby users:', error);
+    }
+  };
+
+  // Calculate distance between two coordinates using Haversine formula
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371000; // Earth's radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  const getRandomPinColor = () => {
+    const colors = ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6', '#EF4444'];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
+
   const handleSearch = (query: string) => {
     setSearchQuery(query);
     
     if (query.trim() === '') {
-      setFilteredPeople(nearbyPeople);
+      setFilteredPeople(nearbyUsers.length > 0 ? nearbyUsers : nearbyPeople);
       return;
     }
 
     const lowercaseQuery = query.toLowerCase();
+    const searchData = nearbyUsers.length > 0 ? nearbyUsers : nearbyPeople;
     
-    const results = nearbyPeople.filter(person => 
-      person.name.toLowerCase().includes(lowercaseQuery) ||
-      person.role.toLowerCase().includes(lowercaseQuery) ||
-      person.company.toLowerCase().includes(lowercaseQuery) ||
-      person.bio.toLowerCase().includes(lowercaseQuery) ||
-      person.interests.some(interest => interest.toLowerCase().includes(lowercaseQuery)) ||
-      person.tags.some(tag => tag.toLowerCase().includes(lowercaseQuery)) ||
+    const results = searchData.filter(person => 
+      person.name?.toLowerCase().includes(lowercaseQuery) ||
+      person.role?.toLowerCase().includes(lowercaseQuery) ||
+      person.company?.toLowerCase().includes(lowercaseQuery) ||
+      person.bio?.toLowerCase().includes(lowercaseQuery) ||
+      person.interests?.some(interest => interest.toLowerCase().includes(lowercaseQuery)) ||
+      person.tags?.some(tag => tag.toLowerCase().includes(lowercaseQuery)) ||
       (person.lookingFor && person.lookingFor.toLowerCase().includes(lowercaseQuery))
     );
     
@@ -303,26 +386,49 @@ export default function NearbyScreen() {
     setShowAccountSettings(true);
   };
 
+  // Convert nearby people to map format
+  const mapUserLocations = (nearbyUsers.length > 0 ? nearbyUsers : filteredPeople).map(person => ({
+    id: person.id.toString(),
+    name: person.name,
+    latitude: person.latitude,
+    longitude: person.longitude,
+    pinColor: person.pinColor,
+    statusText: person.statusText,
+    image: person.image || person.avatar_url,
+    ...person // Include all other properties
+  }));
+
   const PersonCard = ({ person }) => (
     <View style={styles.personCard}>
       <View style={styles.personHeader}>
         <View style={styles.avatarContainer}>
-          <Image source={{ uri: person.image }} style={styles.personImage} />
+          <Image source={{ uri: person.image || person.avatar_url }} style={styles.personImage} />
           {person.isOnline && <View style={styles.onlineIndicator} />}
         </View>
         <View style={styles.personInfo}>
           <View style={styles.nameRow}>
-            <Text style={styles.personName}>{person.name}</Text>
+            <Text style={styles.personName}>{person.name || person.full_name}</Text>
             <View style={styles.distanceBadge}>
-              <Text style={styles.distanceText}>{person.distance} • {person.location}</Text>
+              <Text style={styles.distanceText}>
+                {person.distanceText || person.distance || 'Nearby'}
+              </Text>
             </View>
           </View>
-          <Text style={styles.personRole}>{person.role} at {person.company}</Text>
-          <Text style={styles.personEducation}>{person.education}</Text>
-          <Text style={styles.personBio}>{person.bio}</Text>
+          <Text style={styles.personRole}>
+            {person.role && person.company 
+              ? `${person.role} at ${person.company}` 
+              : person.role || 'Professional'
+            }
+          </Text>
+          {person.education && (
+            <Text style={styles.personEducation}>{person.education}</Text>
+          )}
+          <Text style={styles.personBio}>
+            {person.bio || 'Professional looking to connect and collaborate.'}
+          </Text>
           
           <View style={styles.interestsContainer}>
-            {person.interests.map((interest, index) => (
+            {(person.interests || person.skills || ['Networking', 'Collaboration']).slice(0, 4).map((interest, index) => (
               <View 
                 key={index} 
                 style={[
@@ -408,95 +514,6 @@ export default function NearbyScreen() {
     </View>
   );
 
-  const ColorfulMapView = () => (
-    <View style={styles.mapContainer}>
-      {/* Colorful gradient background */}
-      <LinearGradient
-        colors={['#667eea', '#764ba2', '#f093fb']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.mapBackground}
-      >
-        {/* Map pattern overlay */}
-        <View style={styles.mapPattern}>
-          {/* Grid lines for map effect */}
-          {Array.from({ length: 8 }).map((_, i) => (
-            <View key={`h-${i}`} style={[styles.gridLineHorizontal, { top: `${i * 12.5}%` }]} />
-          ))}
-          {Array.from({ length: 6 }).map((_, i) => (
-            <View key={`v-${i}`} style={[styles.gridLineVertical, { left: `${i * 16.67}%` }]} />
-          ))}
-        </View>
-
-        {/* Current user location pin (center) */}
-        {currentUserLocation && (
-          <Animated.View 
-            style={[
-              styles.currentUserPin, 
-              { 
-                top: '50%', 
-                left: '50%',
-                opacity: pulseAnimation,
-              }
-            ]}
-          >
-            <View style={styles.currentUserPinInner}>
-              <View style={styles.currentUserDot} />
-            </View>
-          </Animated.View>
-        )}
-        
-        {/* Other user pins */}
-        {filteredPeople.map((user, index) => (
-          <TouchableOpacity
-            key={user.id}
-            style={[
-              styles.userPin,
-              {
-                top: `${25 + index * 20}%`,
-                left: `${20 + index * 25}%`,
-                backgroundColor: user.pinColor,
-              }
-            ]}
-            onPress={() => handleUserPinPress(user)}
-            activeOpacity={0.8}
-          >
-            <Image source={{ uri: user.image }} style={styles.pinUserImage} />
-            <View style={styles.pinStatusDot} />
-          </TouchableOpacity>
-        ))}
-
-        {/* Decorative elements */}
-        <View style={[styles.mapDecoration, { top: '15%', left: '10%', backgroundColor: '#FFD700' }]} />
-        <View style={[styles.mapDecoration, { top: '70%', right: '15%', backgroundColor: '#FF6B6B' }]} />
-        <View style={[styles.mapDecoration, { bottom: '20%', left: '20%', backgroundColor: '#4ECDC4' }]} />
-      </LinearGradient>
-
-      {/* Map Legend */}
-      <View style={styles.mapLegend}>
-        <Text style={styles.legendTitle}>Live Map</Text>
-        <View style={styles.legendItems}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#6366F1' }]} />
-            <Text style={styles.legendText}>You</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
-            <Text style={styles.legendText}>Open to chat</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} />
-            <Text style={styles.legendText}>Available</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
-            <Text style={styles.legendText}>Student</Text>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-
   const UserPopupModal = () => {
     if (!selectedUser) return null;
 
@@ -521,19 +538,26 @@ export default function NearbyScreen() {
             
             <View style={styles.popupContent}>
               <View style={styles.popupHeader}>
-                <Image source={{ uri: selectedUser.image }} style={styles.popupAvatar} />
+                <Image source={{ uri: selectedUser.image || selectedUser.avatar_url }} style={styles.popupAvatar} />
                 <View style={styles.popupUserInfo}>
-                  <Text style={styles.popupUserName}>{selectedUser.name}</Text>
-                  <Text style={styles.popupUserTitle}>{selectedUser.role} at {selectedUser.company}</Text>
-                  <Text style={styles.popupUserDistance}>{selectedUser.distance} – {selectedUser.location}</Text>
+                  <Text style={styles.popupUserName}>{selectedUser.name || selectedUser.full_name}</Text>
+                  <Text style={styles.popupUserTitle}>
+                    {selectedUser.role && selectedUser.company 
+                      ? `${selectedUser.role} at ${selectedUser.company}` 
+                      : selectedUser.role || 'Professional'
+                    }
+                  </Text>
+                  <Text style={styles.popupUserDistance}>
+                    {selectedUser.distanceText || selectedUser.distance || 'Nearby'}
+                  </Text>
                   <Text style={styles.popupUserStatus}>
-                    {selectedUser.statusText} • Active {selectedUser.lastActive}
+                    {selectedUser.statusText} • Active {selectedUser.lastActive || 'recently'}
                   </Text>
                 </View>
               </View>
               
               <View style={styles.popupTags}>
-                {selectedUser.tags.map((tag, index) => (
+                {(selectedUser.tags || selectedUser.skills || ['#Professional']).slice(0, 3).map((tag, index) => (
                   <View key={index} style={styles.popupTag}>
                     <Text style={styles.popupTagText}>{tag}</Text>
                   </View>
@@ -583,12 +607,12 @@ export default function NearbyScreen() {
             <TouchableOpacity style={styles.notificationButton}>
               <Bell size={20} color="#6B7280" />
               <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>3</Text>
+                <Text style={styles.notificationBadgeText}>{nearbyUsers.length || 3}</Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity onPress={handleProfilePress}>
               <Image 
-                source={{ uri: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
+                source={{ uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
                 style={styles.profileImage} 
               />
             </TouchableOpacity>
@@ -618,8 +642,18 @@ export default function NearbyScreen() {
               <MapPin size={16} color="#FFFFFF" />
             </View>
             <View style={styles.notificationText}>
-              <Text style={styles.notificationTitle}>3 professionals near you are open to connect right now!</Text>
-              <Text style={styles.notificationSubtitle}>Coffee Central, Downtown • Tap pins to connect</Text>
+              <Text style={styles.notificationTitle}>
+                {nearbyUsers.length > 0 
+                  ? `${nearbyUsers.length} professionals near you are open to connect right now!`
+                  : '3 professionals near you are open to connect right now!'
+                }
+              </Text>
+              <Text style={styles.notificationSubtitle}>
+                {currentUserLocation 
+                  ? `Live location active • Tap pins to connect`
+                  : 'Enable location to find nearby professionals'
+                }
+              </Text>
             </View>
             <TouchableOpacity 
               style={styles.notificationClose}
@@ -640,7 +674,9 @@ export default function NearbyScreen() {
                 <Eye size={14} color="#3B82F6" />
               </View>
               <View>
-                <Text style={styles.statusTitle}>You and 3 others are visible</Text>
+                <Text style={styles.statusTitle}>
+                  You and {nearbyUsers.length || 3} others are visible
+                </Text>
                 <Text style={styles.statusSubtitle}>
                   {currentUserLocation 
                     ? `Live location tracking active • Accuracy: ${Math.round(currentUserLocation.accuracy)}m`
@@ -662,7 +698,9 @@ export default function NearbyScreen() {
         <View style={styles.metricsSection}>
           <View style={styles.metricsGrid}>
             <View style={styles.metricItem}>
-              <Text style={[styles.metricNumber, { color: '#6366F1' }]}>12</Text>
+              <Text style={[styles.metricNumber, { color: '#6366F1' }]}>
+                {nearbyUsers.length || 12}
+              </Text>
               <Text style={styles.metricLabel}>Nearby</Text>
             </View>
             <View style={styles.metricItem}>
@@ -775,8 +813,40 @@ export default function NearbyScreen() {
         </View>
       )}
 
-      {/* Colorful Map View */}
-      {viewMode === 'map' && <ColorfulMapView />}
+      {/* Interactive MapBox Map View */}
+      {viewMode === 'map' && (
+        <View style={styles.mapContainer}>
+          <MapBoxMap
+            userLocations={mapUserLocations}
+            currentUserLocation={currentUserLocation}
+            onUserPinPress={handleUserPinPress}
+            style={styles.mapView}
+          />
+
+          {/* Map Legend */}
+          <View style={styles.mapLegend}>
+            <Text style={styles.legendTitle}>Live Map</Text>
+            <View style={styles.legendItems}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#6366F1' }]} />
+                <Text style={styles.legendText}>You</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
+                <Text style={styles.legendText}>Open to chat</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} />
+                <Text style={styles.legendText}>Available</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
+                <Text style={styles.legendText}>Student</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* Quick Actions Bar - Only show in map view */}
       {viewMode === 'map' && (
@@ -826,7 +896,7 @@ export default function NearbyScreen() {
           )}
 
           <View style={styles.listContainer}>
-            {filteredPeople.map((person) => (
+            {(nearbyUsers.length > 0 ? nearbyUsers : filteredPeople).map((person) => (
               <PersonCard key={person.id} person={person} />
             ))}
           </View>
@@ -1201,100 +1271,8 @@ const styles = StyleSheet.create({
     height: 320,
     backgroundColor: '#E5E7EB',
   },
-  mapBackground: {
+  mapView: {
     flex: 1,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  mapPattern: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  gridLineHorizontal: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  gridLineVertical: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  currentUserPin: {
-    position: 'absolute',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ translateX: -30 }, { translateY: -30 }],
-  },
-  currentUserPinInner: {
-    width: 50,
-    height: 50,
-    backgroundColor: '#6366F1',
-    borderRadius: 25,
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  currentUserDot: {
-    width: 20,
-    height: 20,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-  },
-  userPin: {
-    position: 'absolute',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-    overflow: 'hidden',
-  },
-  pinUserImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  pinStatusDot: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 16,
-    height: 16,
-    backgroundColor: '#10B981',
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  mapDecoration: {
-    position: 'absolute',
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    opacity: 0.6,
   },
   mapLegend: {
     position: 'absolute',
