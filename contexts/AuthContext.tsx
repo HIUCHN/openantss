@@ -6,6 +6,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { IS_FORCE_LOGOUT } from '../constants';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
+type UserLocation = Database['public']['Tables']['user_location']['Row'];
 
 interface AuthContextType {
   session: Session | null;
@@ -23,6 +24,17 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: any }>;
   updateUserLocation: (latitude: number, longitude: number) => Promise<{ error: any }>;
+  storeUserLocation: (locationData: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    altitude?: number;
+    heading?: number;
+    speed?: number;
+    timestamp?: Date;
+  }) => Promise<{ error: any }>;
+  getUserLocationHistory: (limit?: number) => Promise<{ data: UserLocation[] | null; error: any }>;
+  getNearbyUsers: (radius?: number) => Promise<{ data: any[] | null; error: any }>;
   refreshSession: () => Promise<void>;
 }
 
@@ -324,6 +336,153 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const storeUserLocation = async (locationData: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    altitude?: number;
+    heading?: number;
+    speed?: number;
+    timestamp?: Date;
+  }) => {
+    if (!user) return { error: new Error('No user logged in') };
+
+    try {
+      console.log('📍 Storing user location in user_location table:', locationData);
+      
+      const locationRecord = {
+        user_id: user.id,
+        latitude: locationData.latitude,
+        longitude: locationData.longitude,
+        accuracy: locationData.accuracy || null,
+        altitude: locationData.altitude || null,
+        heading: locationData.heading || null,
+        speed: locationData.speed || null,
+        timestamp: (locationData.timestamp || new Date()).toISOString(),
+        is_active: true,
+      };
+
+      const { error } = await supabase
+        .from('user_location')
+        .insert(locationRecord);
+
+      if (!error) {
+        console.log('✅ User location stored successfully in user_location table');
+        
+        // Also update the profile table for backward compatibility
+        await updateUserLocation(locationData.latitude, locationData.longitude);
+      } else {
+        console.error('❌ Error storing user location in user_location table:', error);
+      }
+
+      return { error };
+    } catch (error) {
+      console.error('❌ Unexpected error storing user location:', error);
+      return { error };
+    }
+  };
+
+  const getUserLocationHistory = async (limit: number = 50) => {
+    if (!user) return { data: null, error: new Error('No user logged in') };
+
+    try {
+      console.log('📍 Fetching user location history...');
+      
+      const { data, error } = await supabase
+        .from('user_location')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('timestamp', { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        console.error('❌ Error fetching user location history:', error);
+      } else {
+        console.log('✅ User location history fetched successfully');
+      }
+
+      return { data, error };
+    } catch (error) {
+      console.error('❌ Unexpected error fetching location history:', error);
+      return { data: null, error };
+    }
+  };
+
+  const getNearbyUsers = async (radius: number = 1000) => {
+    if (!user || !profile?.latitude || !profile?.longitude) {
+      return { data: null, error: new Error('No user location available') };
+    }
+
+    try {
+      console.log('🔍 Fetching nearby users within', radius, 'meters...');
+      
+      // This is a simplified proximity search
+      // In production, you might want to use PostGIS for more accurate distance calculations
+      const { data, error } = await supabase
+        .from('user_location')
+        .select(`
+          *,
+          profiles!inner(
+            id,
+            username,
+            full_name,
+            avatar_url,
+            role,
+            company,
+            is_public
+          )
+        `)
+        .eq('is_active', true)
+        .neq('user_id', user.id)
+        .not('latitude', 'is', null)
+        .not('longitude', 'is', null);
+
+      if (error) {
+        console.error('❌ Error fetching nearby users:', error);
+        return { data: null, error };
+      }
+
+      // Filter by distance (simplified calculation)
+      const userLat = profile.latitude;
+      const userLng = profile.longitude;
+      
+      const nearbyUsers = data?.filter((location: any) => {
+        if (!location.profiles?.is_public) return false;
+        
+        const distance = calculateDistance(
+          userLat,
+          userLng,
+          location.latitude,
+          location.longitude
+        );
+        
+        return distance <= radius;
+      }) || [];
+
+      console.log('✅ Found', nearbyUsers.length, 'nearby users');
+      return { data: nearbyUsers, error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error fetching nearby users:', error);
+      return { data: null, error };
+    }
+  };
+
+  // Helper function to calculate distance between two points
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lng2 - lng1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c; // Distance in meters
+  };
+
   const value = {
     session,
     user,
@@ -335,6 +494,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signOut,
     updateProfile,
     updateUserLocation,
+    storeUserLocation,
+    getUserLocationHistory,
+    getNearbyUsers,
     refreshSession,
   };
 

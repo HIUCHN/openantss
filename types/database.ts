@@ -69,6 +69,47 @@ export interface Database {
           updated_at?: string;
         };
       };
+      user_location: {
+        Row: {
+          id: string;
+          user_id: string;
+          latitude: number;
+          longitude: number;
+          accuracy: number | null;
+          altitude: number | null;
+          heading: number | null;
+          speed: number | null;
+          timestamp: string;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          latitude: number;
+          longitude: number;
+          accuracy?: number | null;
+          altitude?: number | null;
+          heading?: number | null;
+          speed?: number | null;
+          timestamp: string;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          latitude?: number;
+          longitude?: number;
+          accuracy?: number | null;
+          altitude?: number | null;
+          heading?: number | null;
+          speed?: number | null;
+          timestamp?: string;
+          is_active?: boolean;
+          created_at?: string;
+        };
+      };
       connection_requests: {
         Row: {
           id: string;

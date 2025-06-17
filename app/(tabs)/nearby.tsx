@@ -135,7 +135,7 @@ const nearbyEvents = [
 const quickFilters = ['All', 'Within 100m', 'Open to Chat', 'Mentoring', 'Freelance'];
 
 export default function NearbyScreen() {
-  const { updateUserLocation } = useAuth();
+  const { storeUserLocation, getNearbyUsers, profile } = useAuth();
   const [isPublicMode, setIsPublicMode] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'map'
@@ -148,6 +148,8 @@ export default function NearbyScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredPeople, setFilteredPeople] = useState(nearbyPeople);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
+  const [nearbyUsers, setNearbyUsers] = useState([]);
+  const [loadingNearbyUsers, setLoadingNearbyUsers] = useState(false);
   
   // Location tracking state
   const [currentUserLocation, setCurrentUserLocation] = useState(null);
@@ -185,6 +187,13 @@ export default function NearbyScreen() {
       }
     };
   }, []);
+
+  // Auto-refresh nearby users when location changes
+  useEffect(() => {
+    if (autoRefresh && currentUserLocation) {
+      fetchNearbyUsers();
+    }
+  }, [currentUserLocation, autoRefresh]);
 
   const requestLocationPermission = async () => {
     try {
@@ -226,14 +235,19 @@ export default function NearbyScreen() {
         latitude: initialLocation.coords.latitude,
         longitude: initialLocation.coords.longitude,
         accuracy: initialLocation.coords.accuracy,
-        timestamp: initialLocation.coords.timestamp,
+        timestamp: new Date(initialLocation.timestamp),
       };
 
       setCurrentUserLocation(initialCoords);
       console.log('📍 Initial location obtained:', initialCoords);
 
-      // Update location in database
-      await updateUserLocation(initialCoords.latitude, initialCoords.longitude);
+      // Store location in database
+      await storeUserLocation({
+        latitude: initialCoords.latitude,
+        longitude: initialCoords.longitude,
+        accuracy: initialCoords.accuracy,
+        timestamp: initialCoords.timestamp,
+      });
 
       // Start watching position for real-time updates
       const watcher = await Location.watchPositionAsync(
@@ -247,14 +261,22 @@ export default function NearbyScreen() {
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
             accuracy: location.coords.accuracy,
-            timestamp: location.coords.timestamp,
+            timestamp: new Date(location.timestamp),
           };
           
           setCurrentUserLocation(newCoords);
           console.log('📍 Location updated:', newCoords);
 
-          // Update location in database
-          await updateUserLocation(newCoords.latitude, newCoords.longitude);
+          // Store updated location in database
+          await storeUserLocation({
+            latitude: newCoords.latitude,
+            longitude: newCoords.longitude,
+            accuracy: newCoords.accuracy,
+            altitude: location.coords.altitude,
+            heading: location.coords.heading,
+            speed: location.coords.speed,
+            timestamp: newCoords.timestamp,
+          });
         }
       );
 
@@ -264,6 +286,26 @@ export default function NearbyScreen() {
     } catch (error) {
       console.error('❌ Error starting location tracking:', error);
       Alert.alert('Location Error', 'Failed to get your current location. Please check your location settings.');
+    }
+  };
+
+  const fetchNearbyUsers = async () => {
+    try {
+      setLoadingNearbyUsers(true);
+      console.log('🔍 Fetching nearby users...');
+      
+      const { data, error } = await getNearbyUsers(1000); // 1km radius
+      
+      if (error) {
+        console.error('❌ Error fetching nearby users:', error);
+      } else {
+        console.log('✅ Nearby users fetched:', data?.length || 0);
+        setNearbyUsers(data || []);
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error fetching nearby users:', error);
+    } finally {
+      setLoadingNearbyUsers(false);
     }
   };
 
@@ -542,8 +584,15 @@ export default function NearbyScreen() {
               <MapPin size={16} color="#FFFFFF" />
             </View>
             <View style={styles.notificationText}>
-              <Text style={styles.notificationTitle}>3 professionals near you are open to connect right now!</Text>
-              <Text style={styles.notificationSubtitle}>Coffee Central, Downtown • Tap pins to connect</Text>
+              <Text style={styles.notificationTitle}>
+                {loadingNearbyUsers ? 'Finding nearby professionals...' : `${nearbyUsers.length} professionals near you are open to connect right now!`}
+              </Text>
+              <Text style={styles.notificationSubtitle}>
+                {currentUserLocation 
+                  ? `Live location active • Tap pins to connect`
+                  : 'Enable location to find nearby professionals'
+                }
+              </Text>
             </View>
             <TouchableOpacity 
               style={styles.notificationClose}
@@ -564,7 +613,9 @@ export default function NearbyScreen() {
                 <Eye size={14} color="#3B82F6" />
               </View>
               <View>
-                <Text style={styles.statusTitle}>You and 3 others are visible</Text>
+                <Text style={styles.statusTitle}>
+                  You and {nearbyUsers.length} others are visible
+                </Text>
                 <Text style={styles.statusSubtitle}>
                   {currentUserLocation 
                     ? `Live location tracking active • Accuracy: ${Math.round(currentUserLocation.accuracy)}m`
@@ -586,7 +637,9 @@ export default function NearbyScreen() {
         <View style={styles.metricsSection}>
           <View style={styles.metricsGrid}>
             <View style={styles.metricItem}>
-              <Text style={[styles.metricNumber, { color: '#6366F1' }]}>12</Text>
+              <Text style={[styles.metricNumber, { color: '#6366F1' }]}>
+                {loadingNearbyUsers ? '...' : nearbyUsers.length}
+              </Text>
               <Text style={styles.metricLabel}>Nearby</Text>
             </View>
             <View style={styles.metricItem}>
