@@ -151,10 +151,12 @@ export default function NearbyScreen() {
   const [nearbyUsers, setNearbyUsers] = useState([]);
   const [loadingNearbyUsers, setLoadingNearbyUsers] = useState(false);
   
-  // Location tracking state
+  // Enhanced location tracking state
   const [currentUserLocation, setCurrentUserLocation] = useState(null);
   const [locationPermission, setLocationPermission] = useState(null);
   const [locationWatcher, setLocationWatcher] = useState(null);
+  const [locationHistory, setLocationHistory] = useState([]); // For filtering
+  const [isLocationStable, setIsLocationStable] = useState(false);
 
   useEffect(() => {
     // Pulse animation for user's location pin
@@ -193,10 +195,10 @@ export default function NearbyScreen() {
 
   // Auto-refresh nearby users when location changes - only when user is authenticated
   useEffect(() => {
-    if (autoRefresh && currentUserLocation && user) {
+    if (autoRefresh && currentUserLocation && user && isLocationStable) {
       fetchNearbyUsers();
     }
-  }, [currentUserLocation, autoRefresh, user]); // Add user as dependency
+  }, [currentUserLocation, autoRefresh, user, isLocationStable]); // Add user as dependency
 
   const requestLocationPermission = async () => {
     try {
@@ -227,11 +229,63 @@ export default function NearbyScreen() {
     }
   };
 
+  // Enhanced location filtering function
+  const filterLocation = (newLocation) => {
+    const { latitude, longitude, accuracy } = newLocation;
+    
+    // Reject locations with very poor accuracy (> 100 meters)
+    if (accuracy > 100) {
+      console.log('🚫 Rejecting location with poor accuracy:', accuracy);
+      return null;
+    }
+    
+    // If we have location history, apply smoothing
+    if (locationHistory.length > 0) {
+      const lastLocation = locationHistory[locationHistory.length - 1];
+      
+      // Calculate distance from last known good location
+      const distance = calculateDistance(
+        lastLocation.latitude,
+        lastLocation.longitude,
+        latitude,
+        longitude
+      );
+      
+      // Reject locations that are too far from the last known position
+      // (likely GPS errors causing jumps)
+      if (distance > 200) { // 200 meters threshold
+        console.log('🚫 Rejecting location jump of', distance, 'meters');
+        return null;
+      }
+      
+      // Apply weighted average for smoothing (reduce jitter)
+      if (locationHistory.length >= 3) {
+        const recentLocations = locationHistory.slice(-3);
+        const avgLat = recentLocations.reduce((sum, loc) => sum + loc.latitude, 0) / recentLocations.length;
+        const avgLng = recentLocations.reduce((sum, loc) => sum + loc.longitude, 0) / recentLocations.length;
+        
+        // Blend current location with recent average (70% current, 30% average)
+        const smoothedLat = latitude * 0.7 + avgLat * 0.3;
+        const smoothedLng = longitude * 0.7 + avgLng * 0.3;
+        
+        return {
+          ...newLocation,
+          latitude: smoothedLat,
+          longitude: smoothedLng,
+        };
+      }
+    }
+    
+    return newLocation;
+  };
+
   const startLocationTracking = async () => {
     try {
-      // Get initial location
+      // Get initial location with high accuracy
       const initialLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy
+        maximumAge: 10000, // Accept cached location up to 10 seconds old
+        timeout: 15000, // 15 second timeout
       });
 
       const initialCoords = {
@@ -241,25 +295,32 @@ export default function NearbyScreen() {
         timestamp: new Date(initialLocation.timestamp),
       };
 
-      setCurrentUserLocation(initialCoords);
-      console.log('📍 Initial location obtained:', initialCoords);
+      // Apply filtering to initial location
+      const filteredInitialCoords = filterLocation(initialCoords);
+      
+      if (filteredInitialCoords) {
+        setCurrentUserLocation(filteredInitialCoords);
+        setLocationHistory([filteredInitialCoords]);
+        console.log('📍 Initial location obtained:', filteredInitialCoords);
 
-      // Store location in database - only if user is authenticated
-      if (user) {
-        await storeUserLocation({
-          latitude: initialCoords.latitude,
-          longitude: initialCoords.longitude,
-          accuracy: initialCoords.accuracy,
-          timestamp: initialCoords.timestamp,
-        });
+        // Store location in database - only if user is authenticated
+        if (user) {
+          await storeUserLocation({
+            latitude: filteredInitialCoords.latitude,
+            longitude: filteredInitialCoords.longitude,
+            accuracy: filteredInitialCoords.accuracy,
+            timestamp: filteredInitialCoords.timestamp,
+          });
+        }
       }
 
-      // Start watching position for real-time updates
+      // Start watching position for real-time updates with enhanced settings
       const watcher = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 30000, // Update every 30 seconds
-          distanceInterval: 50, // Update when moved 50 meters
+          accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy
+          timeInterval: 10000, // Update every 10 seconds (more frequent)
+          distanceInterval: 10, // Update when moved 10 meters (more sensitive)
+          mayShowUserSettingsDialog: true, // Allow showing settings dialog
         },
         async (location) => {
           const newCoords = {
@@ -269,30 +330,49 @@ export default function NearbyScreen() {
             timestamp: new Date(location.timestamp),
           };
           
-          setCurrentUserLocation(newCoords);
-          console.log('📍 Location updated:', newCoords);
-
-          // Store updated location in database - only if user is authenticated
-          if (user) {
-            await storeUserLocation({
-              latitude: newCoords.latitude,
-              longitude: newCoords.longitude,
-              accuracy: newCoords.accuracy,
-              altitude: location.coords.altitude,
-              heading: location.coords.heading,
-              speed: location.coords.speed,
-              timestamp: newCoords.timestamp,
+          // Apply filtering to new location
+          const filteredCoords = filterLocation(newCoords);
+          
+          if (filteredCoords) {
+            setCurrentUserLocation(filteredCoords);
+            
+            // Update location history (keep last 10 locations)
+            setLocationHistory(prev => {
+              const updated = [...prev, filteredCoords];
+              return updated.slice(-10);
             });
+            
+            // Mark location as stable after we have enough history
+            if (locationHistory.length >= 3) {
+              setIsLocationStable(true);
+            }
+            
+            console.log('📍 Location updated (filtered):', filteredCoords);
+
+            // Store updated location in database - only if user is authenticated
+            if (user) {
+              await storeUserLocation({
+                latitude: filteredCoords.latitude,
+                longitude: filteredCoords.longitude,
+                accuracy: filteredCoords.accuracy,
+                altitude: location.coords.altitude,
+                heading: location.coords.heading,
+                speed: location.coords.speed,
+                timestamp: filteredCoords.timestamp,
+              });
+            }
+          } else {
+            console.log('📍 Location filtered out due to poor quality');
           }
         }
       );
 
       setLocationWatcher(watcher);
-      console.log('✅ Real-time location tracking started');
+      console.log('✅ Enhanced location tracking started');
       
     } catch (error) {
       console.error('❌ Error starting location tracking:', error);
-      Alert.alert('Location Error', 'Failed to get your current location. Please check your location settings.');
+      Alert.alert('Location Error', 'Failed to get your current location. Please check your location settings and try again.');
     }
   };
 
@@ -320,6 +400,22 @@ export default function NearbyScreen() {
     } finally {
       setLoadingNearbyUsers(false);
     }
+  };
+
+  // Helper function to calculate distance between two points
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lng2 - lng1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c; // Distance in meters
   };
 
   const handleSearch = (query: string) => {
@@ -602,7 +698,7 @@ export default function NearbyScreen() {
               </Text>
               <Text style={styles.notificationSubtitle}>
                 {currentUserLocation 
-                  ? `Live location active • Tap pins to connect`
+                  ? `High accuracy GPS active • ${Math.round(currentUserLocation.accuracy)}m precision`
                   : 'Enable location to find nearby professionals'
                 }
               </Text>
@@ -631,15 +727,15 @@ export default function NearbyScreen() {
                 </Text>
                 <Text style={styles.statusSubtitle}>
                   {currentUserLocation 
-                    ? `Live location tracking active • Accuracy: ${Math.round(currentUserLocation.accuracy)}m`
+                    ? `Enhanced GPS tracking • ${isLocationStable ? 'Stable' : 'Stabilizing'} • ${Math.round(currentUserLocation.accuracy)}m accuracy`
                     : 'Location tracking disabled'
                   }
                 </Text>
               </View>
             </View>
             <View style={styles.statusRight}>
-              <View style={[styles.onlineStatus, { backgroundColor: currentUserLocation ? '#10B981' : '#EF4444' }]} />
-              <Text style={styles.onlineText}>{currentUserLocation ? 'Live' : 'Offline'}</Text>
+              <View style={[styles.onlineStatus, { backgroundColor: currentUserLocation && isLocationStable ? '#10B981' : '#F59E0B' }]} />
+              <Text style={styles.onlineText}>{currentUserLocation && isLocationStable ? 'Live' : 'Syncing'}</Text>
             </View>
           </View>
         </View>
@@ -684,11 +780,11 @@ export default function NearbyScreen() {
               </View>
               <View>
                 <Text style={styles.publicModeText}>
-                  {currentUserLocation ? 'Live Location Active' : 'Location Disabled'}
+                  {currentUserLocation ? 'Enhanced GPS Active' : 'Location Disabled'}
                 </Text>
                 <Text style={styles.locationSubtext}>
                   {currentUserLocation 
-                    ? `Lat: ${currentUserLocation.latitude.toFixed(4)}, Lng: ${currentUserLocation.longitude.toFixed(4)}`
+                    ? `${Math.round(currentUserLocation.accuracy)}m accuracy • ${isLocationStable ? 'Stable tracking' : 'Stabilizing...'}`
                     : 'Enable location to find nearby professionals'
                   }
                 </Text>
