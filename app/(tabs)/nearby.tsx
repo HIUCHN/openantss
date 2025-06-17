@@ -708,28 +708,6 @@ export default function NearbyScreen() {
             onUserPinPress={handleUserPinPress}
             style={styles.mapView}
           />
-
-          {/* Map Legend - Removed "Live Map" title */}
-          <View style={styles.mapLegend}>
-            <View style={styles.legendItems}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#6366F1' }]} />
-                <Text style={styles.legendText}>You</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
-                <Text style={styles.legendText}>Open to chat</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} />
-                <Text style={styles.legendText}>Available</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
-                <Text style={styles.legendText}>Student</Text>
-              </View>
-            </View>
-          </View>
         </View>
       )}
 
@@ -1158,37 +1136,6 @@ const styles = StyleSheet.create({
   },
   mapView: {
     flex: 1,
-  },
-  mapLegend: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    padding: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  legendItems: {
-    gap: 4,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  legendText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
   },
   quickActionsBar: {
     backgroundColor: '#FFFFFF',
