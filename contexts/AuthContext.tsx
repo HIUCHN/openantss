@@ -36,6 +36,8 @@ interface AuthContextType {
   getUserLocationHistory: (limit?: number) => Promise<{ data: UserLocation[] | null; error: any }>;
   getNearbyUsers: (radius?: number) => Promise<{ data: any[] | null; error: any }>;
   refreshSession: () => Promise<void>;
+  togglePublicMode: (isPublic: boolean) => Promise<{ error: any }>;
+  clearUserLocation: () => Promise<{ error: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -347,6 +349,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }) => {
     if (!user) return { error: new Error('No user logged in') };
 
+    // Check if user has public mode enabled
+    if (!profile?.is_public) {
+      console.log('📍 Location sharing disabled - user is in private mode');
+      return { error: null }; // Not an error, just not sharing location
+    }
+
     try {
       console.log('📍 Storing user location in user_location table:', locationData);
       
@@ -467,6 +475,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const togglePublicMode = async (isPublic: boolean) => {
+    if (!user) return { error: new Error('No user logged in') };
+
+    try {
+      console.log('🔄 Toggling public mode to:', isPublic);
+
+      // Update profile with new public mode setting
+      const { error } = await updateProfile({ is_public: isPublic });
+
+      if (!error) {
+        console.log('✅ Public mode updated successfully');
+        
+        // If turning off public mode, clear location data
+        if (!isPublic) {
+          await clearUserLocation();
+        }
+      }
+
+      return { error };
+    } catch (error) {
+      console.error('❌ Unexpected error toggling public mode:', error);
+      return { error };
+    }
+  };
+
+  const clearUserLocation = async () => {
+    if (!user) return { error: new Error('No user logged in') };
+
+    try {
+      console.log('🗑️ Clearing user location data...');
+
+      // Set all user locations to inactive
+      const { error: locationError } = await supabase
+        .from('user_location')
+        .update({ is_active: false })
+        .eq('user_id', user.id);
+
+      if (locationError) {
+        console.error('❌ Error clearing user location data:', locationError);
+      }
+
+      // Clear location from profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ 
+          latitude: null, 
+          longitude: null, 
+          last_location_update: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      if (profileError) {
+        console.error('❌ Error clearing profile location:', profileError);
+      }
+
+      // Update local profile state
+      if (profile) {
+        setProfile({
+          ...profile,
+          latitude: null,
+          longitude: null,
+          last_location_update: null,
+        });
+      }
+
+      console.log('✅ User location data cleared successfully');
+      return { error: locationError || profileError };
+    } catch (error) {
+      console.error('❌ Unexpected error clearing location:', error);
+      return { error };
+    }
+  };
+
   // Helper function to calculate distance between two points
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
     const R = 6371e3; // Earth's radius in meters
@@ -498,6 +580,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     getUserLocationHistory,
     getNearbyUsers,
     refreshSession,
+    togglePublicMode,
+    clearUserLocation,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

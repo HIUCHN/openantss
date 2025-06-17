@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, Bell, MessageCircle, ChevronRight, Briefcase, Users, QrCode, UserPlus, X, Check, Settings } from 'lucide-react-native';
@@ -9,6 +9,7 @@ import { router } from 'expo-router';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
 import DebugPanel from '@/components/DebugPanel';
 import { IS_DEBUG } from '@/constants';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Debug mode toggle - set to true to show debug information
 const smartMatches = [
@@ -115,7 +116,8 @@ const recentConnections = [
 ];
 
 export default function HomeScreen() {
-  const [isPublicMode, setIsPublicMode] = useState(true);
+  const { profile, togglePublicMode } = useAuth();
+  const [isPublicMode, setIsPublicMode] = useState(profile?.is_public ?? true);
   const [searchQuery, setSearchQuery] = useState('');
   const [requests, setRequests] = useState(connectionRequests);
   const [filteredMatches, setFilteredMatches] = useState(smartMatches);
@@ -123,6 +125,14 @@ export default function HomeScreen() {
   const [showAllRequests, setShowAllRequests] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [isTogglingPublicMode, setIsTogglingPublicMode] = useState(false);
+
+  // Update local state when profile changes
+  React.useEffect(() => {
+    if (profile) {
+      setIsPublicMode(profile.is_public);
+    }
+  }, [profile]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -188,6 +198,58 @@ export default function HomeScreen() {
 
   const handleProfilePress = () => {
     setShowAccountSettings(true);
+  };
+
+  const handlePublicModeToggle = async (value: boolean) => {
+    if (isTogglingPublicMode) return; // Prevent multiple simultaneous toggles
+
+    setIsTogglingPublicMode(true);
+    
+    try {
+      console.log('🔄 Toggling public mode from', isPublicMode, 'to', value);
+      
+      const { error } = await togglePublicMode(value);
+      
+      if (error) {
+        console.error('❌ Error toggling public mode:', error);
+        Alert.alert(
+          'Error', 
+          'Failed to update location sharing settings. Please try again.',
+          [{ text: 'OK' }]
+        );
+        // Revert the switch state on error
+        return;
+      }
+      
+      // Update local state
+      setIsPublicMode(value);
+      
+      // Show feedback to user
+      if (value) {
+        Alert.alert(
+          'Location Sharing Enabled', 
+          'Your location is now being shared with nearby professionals. You can find and be found by others in your area.',
+          [{ text: 'Got it' }]
+        );
+      } else {
+        Alert.alert(
+          'Location Sharing Disabled', 
+          'Your location is no longer being shared. You won\'t appear to nearby professionals and your location data has been cleared.',
+          [{ text: 'Got it' }]
+        );
+      }
+      
+      console.log('✅ Public mode toggled successfully to:', value);
+    } catch (error) {
+      console.error('❌ Unexpected error toggling public mode:', error);
+      Alert.alert(
+        'Error', 
+        'An unexpected error occurred. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsTogglingPublicMode(false);
+    }
   };
 
   const StatCard = ({ number, label, color = '#6366F1', onPress }) => (
@@ -386,7 +448,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
             <TouchableOpacity onPress={handleProfilePress}>
               <Image 
-                source={{ uri: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
+                source={{ uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
                 style={styles.profileImage} 
               />
             </TouchableOpacity>
@@ -410,20 +472,39 @@ export default function HomeScreen() {
       >
         <View style={styles.locationContent}>
           <View style={styles.locationLeft}>
-            <View style={styles.locationIcon}>
+            <View style={[styles.locationIcon, { backgroundColor: isPublicMode ? '#10B981' : '#EF4444' }]}>
               <MapPin size={16} color="#FFFFFF" />
             </View>
             <View>
-              <Text style={styles.publicModeText}>Public Mode</Text>
-              <Text style={styles.locationText}>Coffee Central, Downtown</Text>
+              <Text style={styles.publicModeText}>
+                {isPublicMode ? 'Public Mode' : 'Private Mode'}
+              </Text>
+              <Text style={styles.locationText}>
+                {isPublicMode 
+                  ? 'Location sharing enabled' 
+                  : 'Location sharing disabled'
+                }
+              </Text>
             </View>
           </View>
-          <Switch
-            value={isPublicMode}
-            onValueChange={setIsPublicMode}
-            trackColor={{ false: '#FFFFFF40', true: '#10B981' }}
-            thumbColor="#FFFFFF"
-          />
+          <View style={styles.switchContainer}>
+            {isTogglingPublicMode && (
+              <View style={styles.loadingIndicator}>
+                <View style={styles.spinner} />
+              </View>
+            )}
+            <Switch
+              value={isPublicMode}
+              onValueChange={handlePublicModeToggle}
+              trackColor={{ false: '#FFFFFF40', true: '#10B981' }}
+              thumbColor="#FFFFFF"
+              disabled={isTogglingPublicMode}
+              style={[
+                styles.switch,
+                isTogglingPublicMode && styles.switchDisabled
+              ]}
+            />
+          </View>
         </View>
       </LinearGradient>
 
@@ -629,11 +710,11 @@ const styles = StyleSheet.create({
   locationLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   locationIcon: {
     width: 40,
     height: 40,
-    backgroundColor: '#FFFFFF20',
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
@@ -648,6 +729,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter-Regular',
     color: '#FFFFFF80',
+  },
+  switchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingIndicator: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spinner: {
+    width: 16,
+    height: 16,
+    borderWidth: 2,
+    borderColor: '#FFFFFF40',
+    borderTopColor: '#FFFFFF',
+    borderRadius: 8,
+    // Note: In a real app, you'd use react-native-reanimated for the spinning animation
+  },
+  switch: {
+    transform: [{ scaleX: 1 }, { scaleY: 1 }],
+  },
+  switchDisabled: {
+    opacity: 0.6,
   },
   statsSection: {
     backgroundColor: '#FFFFFF',

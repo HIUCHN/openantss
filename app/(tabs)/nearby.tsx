@@ -136,7 +136,7 @@ const quickFilters = ['All', 'Within 100m', 'Open to Chat', 'Mentoring', 'Freela
 
 export default function NearbyScreen() {
   const { storeUserLocation, getNearbyUsers, profile, user } = useAuth();
-  const [isPublicMode, setIsPublicMode] = useState(true);
+  const [isPublicMode, setIsPublicMode] = useState(profile?.is_public ?? true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'map'
   const [openToChat, setOpenToChat] = useState(false);
@@ -151,12 +151,20 @@ export default function NearbyScreen() {
   const [nearbyUsers, setNearbyUsers] = useState([]);
   const [loadingNearbyUsers, setLoadingNearbyUsers] = useState(false);
   
-  // Enhanced location tracking state
+  // Location tracking state
   const [currentUserLocation, setCurrentUserLocation] = useState(null);
   const [locationPermission, setLocationPermission] = useState(null);
   const [locationWatcher, setLocationWatcher] = useState(null);
-  const [locationHistory, setLocationHistory] = useState([]); // For filtering
-  const [isLocationStable, setIsLocationStable] = useState(false);
+  const [locationHistory, setLocationHistory] = useState([]);
+  const [locationStable, setLocationStable] = useState(false);
+  const [locationAccuracy, setLocationAccuracy] = useState(null);
+
+  // Update local state when profile changes
+  useEffect(() => {
+    if (profile) {
+      setIsPublicMode(profile.is_public);
+    }
+  }, [profile]);
 
   useEffect(() => {
     // Pulse animation for user's location pin
@@ -178,11 +186,13 @@ export default function NearbyScreen() {
     return () => pulse.stop();
   }, []);
 
-  // Request location permissions and start tracking - only when user is authenticated
+  // Request location permissions and start tracking only if user is authenticated and in public mode
   useEffect(() => {
-    // Only start location tracking if user is authenticated
-    if (user) {
+    if (user && isPublicMode) {
       requestLocationPermission();
+    } else {
+      // Stop location tracking if user is not authenticated or not in public mode
+      stopLocationTracking();
     }
     
     // Cleanup location watcher on unmount
@@ -191,14 +201,31 @@ export default function NearbyScreen() {
         locationWatcher.remove();
       }
     };
-  }, [user]); // Add user as dependency
+  }, [user, isPublicMode]);
 
-  // Auto-refresh nearby users when location changes - only when user is authenticated
+  // Auto-refresh nearby users when location changes and is stable
   useEffect(() => {
-    if (autoRefresh && currentUserLocation && user && isLocationStable) {
+    if (autoRefresh && currentUserLocation && locationStable && isPublicMode) {
       fetchNearbyUsers();
     }
-  }, [currentUserLocation, autoRefresh, user, isLocationStable]); // Add user as dependency
+  }, [currentUserLocation, autoRefresh, locationStable, isPublicMode]);
+
+  const stopLocationTracking = () => {
+    console.log('🛑 Stopping location tracking...');
+    
+    if (locationWatcher) {
+      locationWatcher.remove();
+      setLocationWatcher(null);
+    }
+    
+    setCurrentUserLocation(null);
+    setLocationHistory([]);
+    setLocationStable(false);
+    setLocationAccuracy(null);
+    setNearbyUsers([]);
+    
+    console.log('✅ Location tracking stopped');
+  };
 
   const requestLocationPermission = async () => {
     try {
@@ -229,150 +256,152 @@ export default function NearbyScreen() {
     }
   };
 
-  // Enhanced location filtering function
-  const filterLocation = (newLocation) => {
-    const { latitude, longitude, accuracy } = newLocation;
+  const filterLocation = (location) => {
+    const { latitude, longitude, accuracy } = location.coords;
     
-    // Reject locations with very poor accuracy (> 100 meters)
+    // Reject poor accuracy locations
     if (accuracy > 100) {
       console.log('🚫 Rejecting location with poor accuracy:', accuracy);
       return null;
     }
     
-    // If we have location history, apply smoothing
+    // Check for GPS jumps
     if (locationHistory.length > 0) {
       const lastLocation = locationHistory[locationHistory.length - 1];
-      
-      // Calculate distance from last known good location
       const distance = calculateDistance(
-        lastLocation.latitude,
-        lastLocation.longitude,
-        latitude,
-        longitude
+        latitude, longitude,
+        lastLocation.latitude, lastLocation.longitude
       );
       
-      // Reject locations that are too far from the last known position
-      // (likely GPS errors causing jumps)
-      if (distance > 200) { // 200 meters threshold
-        console.log('🚫 Rejecting location jump of', distance, 'meters');
+      // Reject jumps greater than 200 meters
+      if (distance > 200) {
+        console.log('🚫 Rejecting GPS jump of', distance, 'meters');
         return null;
-      }
-      
-      // Apply weighted average for smoothing (reduce jitter)
-      if (locationHistory.length >= 3) {
-        const recentLocations = locationHistory.slice(-3);
-        const avgLat = recentLocations.reduce((sum, loc) => sum + loc.latitude, 0) / recentLocations.length;
-        const avgLng = recentLocations.reduce((sum, loc) => sum + loc.longitude, 0) / recentLocations.length;
-        
-        // Blend current location with recent average (70% current, 30% average)
-        const smoothedLat = latitude * 0.7 + avgLat * 0.3;
-        const smoothedLng = longitude * 0.7 + avgLng * 0.3;
-        
-        return {
-          ...newLocation,
-          latitude: smoothedLat,
-          longitude: smoothedLng,
-        };
       }
     }
     
-    return newLocation;
+    // Apply smoothing if we have recent locations
+    if (locationHistory.length >= 3) {
+      const recentLocations = locationHistory.slice(-3);
+      const avgLat = recentLocations.reduce((sum, loc) => sum + loc.latitude, 0) / recentLocations.length;
+      const avgLng = recentLocations.reduce((sum, loc) => sum + loc.longitude, 0) / recentLocations.length;
+      
+      // Weighted average: 70% current, 30% recent average
+      const smoothedLat = latitude * 0.7 + avgLat * 0.3;
+      const smoothedLng = longitude * 0.7 + avgLng * 0.3;
+      
+      return {
+        latitude: smoothedLat,
+        longitude: smoothedLng,
+        accuracy,
+        timestamp: new Date(location.timestamp),
+      };
+    }
+    
+    return {
+      latitude,
+      longitude,
+      accuracy,
+      timestamp: new Date(location.timestamp),
+    };
+  };
+
+  const calculateDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lng2 - lng1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c; // Distance in meters
   };
 
   const startLocationTracking = async () => {
     try {
       // Get initial location with high accuracy
       const initialLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy
-        maximumAge: 10000, // Accept cached location up to 10 seconds old
-        timeout: 15000, // 15 second timeout
+        accuracy: Location.Accuracy.BestForNavigation,
+        maximumAge: 10000,
+        timeout: 15000,
       });
 
-      const initialCoords = {
-        latitude: initialLocation.coords.latitude,
-        longitude: initialLocation.coords.longitude,
-        accuracy: initialLocation.coords.accuracy,
-        timestamp: new Date(initialLocation.timestamp),
-      };
+      const filteredLocation = filterLocation(initialLocation);
+      if (!filteredLocation) return;
 
-      // Apply filtering to initial location
-      const filteredInitialCoords = filterLocation(initialCoords);
+      setCurrentUserLocation(filteredLocation);
+      setLocationAccuracy(filteredLocation.accuracy);
+      setLocationHistory([filteredLocation]);
       
-      if (filteredInitialCoords) {
-        setCurrentUserLocation(filteredInitialCoords);
-        setLocationHistory([filteredInitialCoords]);
-        console.log('📍 Initial location obtained:', filteredInitialCoords);
+      console.log('📍 Initial location obtained:', filteredLocation);
 
-        // Store location in database - only if user is authenticated
-        if (user) {
-          await storeUserLocation({
-            latitude: filteredInitialCoords.latitude,
-            longitude: filteredInitialCoords.longitude,
-            accuracy: filteredInitialCoords.accuracy,
-            timestamp: filteredInitialCoords.timestamp,
-          });
-        }
+      // Store location in database only if user is authenticated and in public mode
+      if (user && isPublicMode) {
+        await storeUserLocation({
+          latitude: filteredLocation.latitude,
+          longitude: filteredLocation.longitude,
+          accuracy: filteredLocation.accuracy,
+          timestamp: filteredLocation.timestamp,
+        });
       }
 
-      // Start watching position for real-time updates with enhanced settings
+      // Start watching position for real-time updates
       const watcher = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy
-          timeInterval: 10000, // Update every 10 seconds (more frequent)
-          distanceInterval: 10, // Update when moved 10 meters (more sensitive)
-          mayShowUserSettingsDialog: true, // Allow showing settings dialog
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 10000, // Update every 10 seconds
+          distanceInterval: 10, // Update when moved 10 meters
+          maximumAge: 10000,
+          timeout: 15000,
         },
         async (location) => {
-          const newCoords = {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            accuracy: location.coords.accuracy,
-            timestamp: new Date(location.timestamp),
-          };
+          const filteredLocation = filterLocation(location);
+          if (!filteredLocation) return;
           
-          // Apply filtering to new location
-          const filteredCoords = filterLocation(newCoords);
+          setCurrentUserLocation(filteredLocation);
+          setLocationAccuracy(filteredLocation.accuracy);
           
-          if (filteredCoords) {
-            setCurrentUserLocation(filteredCoords);
+          // Update location history (keep last 10 locations)
+          setLocationHistory(prev => {
+            const newHistory = [...prev, filteredLocation].slice(-10);
             
-            // Update location history (keep last 10 locations)
-            setLocationHistory(prev => {
-              const updated = [...prev, filteredCoords];
-              return updated.slice(-10);
-            });
-            
-            // Mark location as stable after we have enough history
-            if (locationHistory.length >= 3) {
-              setIsLocationStable(true);
+            // Check if location is stable (accuracy < 50m and consistent for 3+ readings)
+            if (newHistory.length >= 3) {
+              const recentAccuracies = newHistory.slice(-3).map(loc => loc.accuracy);
+              const avgAccuracy = recentAccuracies.reduce((sum, acc) => sum + acc, 0) / recentAccuracies.length;
+              setLocationStable(avgAccuracy < 50);
             }
             
-            console.log('📍 Location updated (filtered):', filteredCoords);
+            return newHistory;
+          });
+          
+          console.log('📍 Location updated:', filteredLocation);
 
-            // Store updated location in database - only if user is authenticated
-            if (user) {
-              await storeUserLocation({
-                latitude: filteredCoords.latitude,
-                longitude: filteredCoords.longitude,
-                accuracy: filteredCoords.accuracy,
-                altitude: location.coords.altitude,
-                heading: location.coords.heading,
-                speed: location.coords.speed,
-                timestamp: filteredCoords.timestamp,
-              });
-            }
-          } else {
-            console.log('📍 Location filtered out due to poor quality');
+          // Store updated location in database only if user is authenticated and in public mode
+          if (user && isPublicMode) {
+            await storeUserLocation({
+              latitude: filteredLocation.latitude,
+              longitude: filteredLocation.longitude,
+              accuracy: filteredLocation.accuracy,
+              altitude: location.coords.altitude,
+              heading: location.coords.heading,
+              speed: location.coords.speed,
+              timestamp: filteredLocation.timestamp,
+            });
           }
         }
       );
 
       setLocationWatcher(watcher);
-      console.log('✅ Enhanced location tracking started');
+      console.log('✅ Real-time location tracking started');
       
     } catch (error) {
       console.error('❌ Error starting location tracking:', error);
-      Alert.alert('Location Error', 'Failed to get your current location. Please check your location settings and try again.');
+      Alert.alert('Location Error', 'Failed to get your current location. Please check your location settings.');
     }
   };
 
@@ -380,12 +409,6 @@ export default function NearbyScreen() {
     try {
       setLoadingNearbyUsers(true);
       console.log('🔍 Fetching nearby users...');
-      
-      // Only fetch if user is authenticated and location is available
-      if (!user || !currentUserLocation) {
-        console.log('❌ Cannot fetch nearby users: user not authenticated or location not available');
-        return;
-      }
       
       const { data, error } = await getNearbyUsers(1000); // 1km radius
       
@@ -400,22 +423,6 @@ export default function NearbyScreen() {
     } finally {
       setLoadingNearbyUsers(false);
     }
-  };
-
-  // Helper function to calculate distance between two points
-  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-    const R = 6371e3; // Earth's radius in meters
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180;
-    const Δλ = (lng2 - lng1) * Math.PI / 180;
-
-    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-    return R * c; // Distance in meters
   };
 
   const handleSearch = (query: string) => {
@@ -663,7 +670,7 @@ export default function NearbyScreen() {
             </TouchableOpacity>
             <TouchableOpacity onPress={handleProfilePress}>
               <Image 
-                source={{ uri: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
+                source={{ uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
                 style={styles.profileImage} 
               />
             </TouchableOpacity>
@@ -685,7 +692,7 @@ export default function NearbyScreen() {
       {/* Notification Banner - Only show in map view */}
       {viewMode === 'map' && showNotificationBanner && (
         <LinearGradient
-          colors={['#10B981', '#059669']}
+          colors={isPublicMode ? ['#10B981', '#059669'] : ['#EF4444', '#DC2626']}
           style={styles.notificationBanner}
         >
           <View style={styles.notificationContent}>
@@ -694,12 +701,19 @@ export default function NearbyScreen() {
             </View>
             <View style={styles.notificationText}>
               <Text style={styles.notificationTitle}>
-                {loadingNearbyUsers ? 'Finding nearby professionals...' : `${nearbyUsers.length} professionals near you are open to connect right now!`}
+                {!isPublicMode 
+                  ? 'Location sharing is disabled'
+                  : loadingNearbyUsers 
+                    ? 'Finding nearby professionals...' 
+                    : `${nearbyUsers.length} professionals near you are open to connect right now!`
+                }
               </Text>
               <Text style={styles.notificationSubtitle}>
-                {currentUserLocation 
-                  ? `High accuracy GPS active • ${Math.round(currentUserLocation.accuracy)}m precision`
-                  : 'Enable location to find nearby professionals'
+                {!isPublicMode
+                  ? 'Enable Public Mode to find and be found by nearby professionals'
+                  : currentUserLocation 
+                    ? `Live location active • Tap pins to connect`
+                    : 'Enable location to find nearby professionals'
                 }
               </Text>
             </View>
@@ -719,23 +733,36 @@ export default function NearbyScreen() {
           <View style={styles.statusContent}>
             <View style={styles.statusLeft}>
               <View style={styles.statusIcon}>
-                <Eye size={14} color="#3B82F6" />
+                {isPublicMode ? (
+                  <Eye size={14} color="#3B82F6" />
+                ) : (
+                  <EyeOff size={14} color="#EF4444" />
+                )}
               </View>
               <View>
                 <Text style={styles.statusTitle}>
-                  You and {nearbyUsers.length} others are visible
+                  {isPublicMode 
+                    ? `You and ${nearbyUsers.length} others are visible`
+                    : 'You are in private mode'
+                  }
                 </Text>
                 <Text style={styles.statusSubtitle}>
-                  {currentUserLocation 
-                    ? `Enhanced GPS tracking • ${isLocationStable ? 'Stable' : 'Stabilizing'} • ${Math.round(currentUserLocation.accuracy)}m accuracy`
-                    : 'Location tracking disabled'
+                  {!isPublicMode
+                    ? 'Enable Public Mode to share your location'
+                    : currentUserLocation 
+                      ? `Live location tracking active • Accuracy: ${Math.round(locationAccuracy || 0)}m • ${locationStable ? 'Stable' : 'Stabilizing'}`
+                      : 'Location tracking disabled'
                   }
                 </Text>
               </View>
             </View>
             <View style={styles.statusRight}>
-              <View style={[styles.onlineStatus, { backgroundColor: currentUserLocation && isLocationStable ? '#10B981' : '#F59E0B' }]} />
-              <Text style={styles.onlineText}>{currentUserLocation && isLocationStable ? 'Live' : 'Syncing'}</Text>
+              <View style={[styles.onlineStatus, { 
+                backgroundColor: !isPublicMode ? '#EF4444' : currentUserLocation ? '#10B981' : '#EF4444' 
+              }]} />
+              <Text style={styles.onlineText}>
+                {!isPublicMode ? 'Private' : currentUserLocation ? 'Live' : 'Offline'}
+              </Text>
             </View>
           </View>
         </View>
@@ -747,20 +774,26 @@ export default function NearbyScreen() {
           <View style={styles.metricsGrid}>
             <View style={styles.metricItem}>
               <Text style={[styles.metricNumber, { color: '#6366F1' }]}>
-                {loadingNearbyUsers ? '...' : nearbyUsers.length}
+                {!isPublicMode ? '0' : loadingNearbyUsers ? '...' : nearbyUsers.length}
               </Text>
               <Text style={styles.metricLabel}>Nearby</Text>
             </View>
             <View style={styles.metricItem}>
-              <Text style={[styles.metricNumber, { color: '#10B981' }]}>4</Text>
+              <Text style={[styles.metricNumber, { color: '#10B981' }]}>
+                {!isPublicMode ? '0' : '4'}
+              </Text>
               <Text style={styles.metricLabel}>Hiring</Text>
             </View>
             <View style={styles.metricItem}>
-              <Text style={[styles.metricNumber, { color: '#3B82F6' }]}>7</Text>
+              <Text style={[styles.metricNumber, { color: '#3B82F6' }]}>
+                {!isPublicMode ? '0' : '7'}
+              </Text>
               <Text style={styles.metricLabel}>Open to Chat</Text>
             </View>
             <View style={styles.metricItem}>
-              <Text style={[styles.metricNumber, { color: '#8B5CF6' }]}>6</Text>
+              <Text style={[styles.metricNumber, { color: '#8B5CF6' }]}>
+                {!isPublicMode ? '0' : '6'}
+              </Text>
               <Text style={styles.metricLabel}>Mutual tags</Text>
             </View>
           </View>
@@ -770,7 +803,7 @@ export default function NearbyScreen() {
       {/* Location Banner - Only show in list view */}
       {viewMode === 'list' && (
         <LinearGradient
-          colors={['#6366F1', '#8B5CF6']}
+          colors={isPublicMode ? ['#6366F1', '#8B5CF6'] : ['#6B7280', '#4B5563']}
           style={styles.locationBanner}
         >
           <View style={styles.locationContent}>
@@ -780,12 +813,17 @@ export default function NearbyScreen() {
               </View>
               <View>
                 <Text style={styles.publicModeText}>
-                  {currentUserLocation ? 'Enhanced GPS Active' : 'Location Disabled'}
+                  {isPublicMode 
+                    ? (currentUserLocation ? 'Live Location Active' : 'Location Disabled')
+                    : 'Private Mode Active'
+                  }
                 </Text>
                 <Text style={styles.locationSubtext}>
-                  {currentUserLocation 
-                    ? `${Math.round(currentUserLocation.accuracy)}m accuracy • ${isLocationStable ? 'Stable tracking' : 'Stabilizing...'}`
-                    : 'Enable location to find nearby professionals'
+                  {!isPublicMode
+                    ? 'Location sharing is disabled'
+                    : currentUserLocation 
+                      ? `Lat: ${currentUserLocation.latitude.toFixed(4)}, Lng: ${currentUserLocation.longitude.toFixed(4)}`
+                      : 'Enable location to find nearby professionals'
                   }
                 </Text>
               </View>
@@ -920,23 +958,41 @@ export default function NearbyScreen() {
             </View>
           )}
 
-          <View style={styles.listContainer}>
-            {filteredPeople.map((person) => (
-              <PersonCard key={person.id} person={person} />
-            ))}
-          </View>
+          {/* Show message when public mode is disabled */}
+          {!isPublicMode && (
+            <View style={styles.privateModeBanner}>
+              <View style={styles.privateModeContent}>
+                <EyeOff size={24} color="#6B7280" />
+                <Text style={styles.privateModeTitle}>Private Mode Active</Text>
+                <Text style={styles.privateModeSubtitle}>
+                  Enable Public Mode in the location banner above to find and be found by nearby professionals.
+                </Text>
+              </View>
+            </View>
+          )}
 
-          {/* Hide other sections when searching */}
-          {searchQuery.trim() === '' && (
+          {/* Only show content if public mode is enabled */}
+          {isPublicMode && (
             <>
-              <CrossedPathsSection />
-
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Upcoming Events Nearby</Text>
-                {nearbyEvents.map((event) => (
-                  <EventCard key={event.id} event={event} />
+              <View style={styles.listContainer}>
+                {filteredPeople.map((person) => (
+                  <PersonCard key={person.id} person={person} />
                 ))}
               </View>
+
+              {/* Hide other sections when searching */}
+              {searchQuery.trim() === '' && (
+                <>
+                  <CrossedPathsSection />
+
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Upcoming Events Nearby</Text>
+                    {nearbyEvents.map((event) => (
+                      <EventCard key={event.id} event={event} />
+                    ))}
+                  </View>
+                </>
+              )}
             </>
           )}
 
@@ -1057,6 +1113,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#9CA3AF',
+  },
+  privateModeBanner: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    paddingHorizontal: 16,
+    paddingVertical: 32,
+  },
+  privateModeContent: {
+    alignItems: 'center',
+    gap: 12,
+  },
+  privateModeTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#374151',
+  },
+  privateModeSubtitle: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   notificationBanner: {
     paddingHorizontal: 16,
