@@ -3,8 +3,6 @@ import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import { AppState, AppStateStatus } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
 import { IS_FORCE_LOGOUT } from '../constants';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -29,8 +27,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const SESSION_KEY = 'supabase.auth.token';
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -40,204 +36,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     'connecting' | 'connected' | 'disconnected' | 'refreshing'
   >('connecting');
 
-  // Store session securely in device storage
-  const storeSession = async (session: Session | null) => {
+  // Manual refresh session function (simplified)
+  const refreshSession = async () => {
     try {
-      console.log('anhnq1 - session: ', session);
-      if (session) {
-        const sessionData = JSON.stringify({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-          expires_at: session.expires_at,
-          expires_in: session.expires_in,
-          token_type: session.token_type,
-          user: session.user,
-        });
-
-        console.log('anhnq1 - ', Platform.OS);
-        if (Platform.OS === 'web') {
-          localStorage.setItem(SESSION_KEY, sessionData);
-        } else {
-          await SecureStore.setItemAsync(SESSION_KEY, sessionData);
-        }
-        console.log('✅ Session stored securely in device storage');
-      } else {
-        // Remove session when null
-        if (Platform.OS === 'web') {
-          localStorage.removeItem(SESSION_KEY);
-        } else {
-          await SecureStore.deleteItemAsync(SESSION_KEY);
-        }
-        console.log('🗑️ Session removed from device storage');
-      }
-    } catch (error) {
-      console.error('❌ Error storing session:', error);
-    }
-  };
-
-  // Check if session is expired or about to expire (within 5 minutes)
-  const isSessionExpired = (session: Session): boolean => {
-    if (!session.expires_at) return false;
-    const expirationTime = session.expires_at * 1000; // Convert to milliseconds
-    const currentTime = Date.now();
-    const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
-
-    return expirationTime - currentTime <= fiveMinutes;
-  };
-
-  // Refresh session using refresh token
-  const refreshSessionWithToken = async (
-    refreshToken: string
-  ): Promise<Session | null> => {
-    try {
-      console.log('🔄 Refreshing session with refresh token...');
       setConnectionStatus('refreshing');
-
-      const { data, error } = await supabase.auth.refreshSession({
-        refresh_token: refreshToken,
-      });
-
+      const { data, error } = await supabase.auth.refreshSession();
+      
       if (error) {
         console.error('❌ Error refreshing session:', error);
         setConnectionStatus('disconnected');
-        return null;
-      }
-
-      if (data.session) {
-        console.log(
-          '✅ Session refreshed successfully - Database connection restored'
-        );
-        await storeSession(data.session);
+      } else if (data.session) {
+        console.log('✅ Session refreshed successfully');
         setConnectionStatus('connected');
-        return data.session;
-      }
-
-      return null;
-    } catch (error) {
-      console.error('💥 Unexpected error refreshing session:', error);
-      setConnectionStatus('disconnected');
-      return null;
-    }
-  };
-
-  // Restore session from device storage with auto-refresh
-  const restoreSession = async () => {
-    try {
-      setConnectionStatus('connecting');
-      let storedSession: string | null = null;
-
-      if (Platform.OS === 'web') {
-        storedSession = localStorage.getItem(SESSION_KEY);
-      } else {
-        storedSession = await SecureStore.getItemAsync(SESSION_KEY);
-      }
-
-      if (storedSession) {
-        const sessionData = JSON.parse(storedSession);
-        console.log('🔄 Restoring session from device storage...');
-
-        // Create a session object
-        const restoredSession: Session = {
-          access_token: sessionData.access_token,
-          refresh_token: sessionData.refresh_token,
-          expires_at: sessionData.expires_at,
-          expires_in: sessionData.expires_in,
-          token_type: sessionData.token_type || 'bearer',
-          user: sessionData.user,
-        };
-
-        // Check if session is expired or about to expire
-        if (isSessionExpired(restoredSession)) {
-          console.log('⏰ Session expired or about to expire, refreshing...');
-          const newSession = await refreshSessionWithToken(
-            restoredSession.refresh_token
-          );
-
-          if (newSession) {
-            setSession(newSession);
-            setUser(newSession.user);
-            await fetchProfile(newSession.user.id);
-          } else {
-            // Refresh failed, clear stored session
-            await storeSession(null);
-            setConnectionStatus('disconnected');
-          }
-        } else {
-          // Session is still valid, set it in Supabase
-          const { data, error } = await supabase.auth.setSession({
-            access_token: restoredSession.access_token,
-            refresh_token: restoredSession.refresh_token,
-          });
-
-          if (error) {
-            console.error('❌ Error setting restored session:', error);
-            // Try to refresh the session
-            const newSession = await refreshSessionWithToken(
-              restoredSession.refresh_token
-            );
-            if (newSession) {
-              setSession(newSession);
-              setUser(newSession.user);
-              await fetchProfile(newSession.user.id);
-            } else {
-              await storeSession(null);
-              setConnectionStatus('disconnected');
-            }
-          } else if (data.session) {
-            console.log(
-              '✅ Session restored - Database connection established'
-            );
-            setSession(data.session);
-            setUser(data.session.user);
-            await fetchProfile(data.session.user.id);
-            setConnectionStatus('connected');
-          }
-        }
-      } else {
-        console.log('📭 No stored session found');
-        setConnectionStatus('disconnected');
       }
     } catch (error) {
-      console.error('❌ Error restoring session:', error);
-      // Clean up corrupted session data
-      try {
-        if (Platform.OS === 'web') {
-          localStorage.removeItem(SESSION_KEY);
-        } else {
-          await SecureStore.deleteItemAsync(SESSION_KEY);
-        }
-      } catch (cleanupError) {
-        console.error('Error cleaning up session:', cleanupError);
-      }
+      console.error('❌ Unexpected error refreshing session:', error);
       setConnectionStatus('disconnected');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Manual refresh session function
-  const refreshSession = async () => {
-    if (!session?.refresh_token) {
-      console.log('❌ No refresh token available');
-      return;
-    }
-
-    const newSession = await refreshSessionWithToken(session.refresh_token);
-    if (newSession) {
-      setSession(newSession);
-      setUser(newSession.user);
-      if (newSession.user && !profile) {
-        await fetchProfile(newSession.user.id);
-      }
     }
   };
 
   useEffect(() => {
-    // Initialize authentication and database connection
+    // Initialize authentication
     const initializeAuth = async () => {
-      console.log('🚀 Initializing authentication and database connection...');
+      console.log('🚀 Initializing authentication...');
+      setConnectionStatus('connecting');
 
-      // First try to get current session
+      // Get current session from Supabase (handles restoration automatically)
       const {
         data: { session: currentSession },
       } = await supabase.auth.getSession();
@@ -247,119 +71,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(currentSession);
         setUser(currentSession.user);
         await fetchProfile(currentSession.user.id);
-        await storeSession(currentSession);
         setConnectionStatus('connected');
       } else {
-        console.log(
-          '🔍 No current session, trying to restore from device storage...'
-        );
-        await restoreSession();
+        console.log('📭 No current session found');
+        setConnectionStatus('disconnected');
       }
+      
+      setLoading(false);
     };
 
     initializeAuth();
 
-    // Listen for auth changes and maintain database connection
+    // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log(
-        '🔄 Auth state changed:',
-        event,
-        session
-          ? 'Session exists - DB connected'
-          : 'No session - DB disconnected'
-      );
+      console.log('🔄 Auth state changed:', event, session ? 'Session exists' : 'No session');
 
       setSession(session);
       setUser(session?.user ?? null);
 
-      // Store or remove session in device storage
-      await storeSession(session);
-
       if (session?.user) {
-        console.log(
-          '🔗 Database connection established for user:',
-          session.user.email
-        );
+        console.log('🔗 Database connection established for user:', session.user.email);
         await fetchProfile(session.user.id);
         setConnectionStatus('connected');
       } else {
         console.log('🔌 Database connection closed');
         setProfile(null);
         setConnectionStatus('disconnected');
-        setLoading(false);
       }
+      
+      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // Handle app state changes (foreground/background) to maintain connection
+  // Handle app state changes
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active' && session) {
         if (IS_FORCE_LOGOUT) {
           await supabase.auth.signOut();
-
         } else {
-          console.log(
-            '📱 App came to foreground, checking database connection...'
-          );
-
-          // Check if session is expired or about to expire
-          if (isSessionExpired(session)) {
-            console.log('⏰ Session expired, refreshing...');
-            await refreshSession();
-          } else {
-            // Try to refresh the current session to maintain database connection
-            const { data, error } = await supabase.auth.refreshSession();
-
-            if (error) {
-              console.log(
-                '🔄 Session refresh failed, trying manual refresh...'
-              );
-              await refreshSession();
-            } else if (data.session) {
-              console.log(
-                '✅ Session refreshed - Database connection maintained'
-              );
-              setSession(data.session);
-              setUser(data.session.user);
-              await storeSession(data.session);
-              setConnectionStatus('connected');
-
-              if (data.session.user && !profile) {
-                await fetchProfile(data.session.user.id);
-              }
-            }
-          }
+          console.log('📱 App came to foreground, checking connection...');
+          // Let Supabase handle session refresh automatically
+          setConnectionStatus('connected');
         }
       }
     };
 
-    const subscription = AppState.addEventListener(
-      'change',
-      handleAppStateChange
-    );
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription?.remove();
-  }, [session, profile]);
-
-  // Auto-refresh session before expiration
-  useEffect(() => {
-    if (!session) return;
-
-    const checkAndRefreshSession = () => {
-      if (isSessionExpired(session)) {
-        console.log('⏰ Session about to expire, auto-refreshing...');
-        refreshSession();
-      }
-    };
-
-    // Check every minute
-    const interval = setInterval(checkAndRefreshSession, 60000);
-
-    return () => clearInterval(interval);
   }, [session]);
 
   const fetchProfile = async (userId: string) => {
@@ -381,14 +144,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error('❌ Error fetching profile from database:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
   const signIn = async (email: string, password: string) => {
     try {
-      console.log('🔐 Attempting sign in and database connection for:', email);
+      console.log('🔐 Attempting sign in for:', email);
       setConnectionStatus('connecting');
 
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -400,8 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('❌ Sign in error:', error);
         setConnectionStatus('disconnected');
       } else if (data.session) {
-        console.log('✅ Sign in successful - Database connection established');
-        // Session will be automatically stored via auth state change
+        console.log('✅ Sign in successful');
         setConnectionStatus('connected');
       }
 
@@ -420,12 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     fullName: string
   ) => {
     try {
-      console.log(
-        '📝 Attempting sign up and database setup for:',
-        email,
-        'with username:',
-        username
-      );
+      console.log('📝 Attempting sign up for:', email, 'with username:', username);
       setConnectionStatus('connecting');
 
       // First check if username is already taken
@@ -439,8 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setConnectionStatus('disconnected');
         return {
           error: {
-            message:
-              'Username is already taken. Please choose a different one.',
+            message: 'Username is already taken. Please choose a different one.',
           },
         };
       }
@@ -497,18 +251,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
-      console.log('🚪 Signing out and closing database connection...');
+      console.log('🚪 Signing out...');
       setConnectionStatus('disconnected');
 
       const { error } = await supabase.auth.signOut();
 
-      // Clear stored session from device storage
-      await storeSession(null);
-
       if (error) {
         console.error('❌ Error signing out:', error);
       } else {
-        console.log('✅ Sign out successful - Database connection closed');
+        console.log('✅ Sign out successful');
       }
     } catch (error) {
       console.error('❌ Unexpected sign out error:', error);
