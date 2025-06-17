@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch, Modal, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch, Modal, Animated, Dimensions, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { 
@@ -25,6 +25,7 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react-native';
+import * as Location from 'expo-location';
 import SearchBar from '@/components/SearchBar';
 import OpenAntsLogo from '@/components/OpenAntsLogo';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
@@ -145,6 +146,11 @@ export default function NearbyScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredPeople, setFilteredPeople] = useState(nearbyPeople);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
+  
+  // Location tracking state
+  const [currentUserLocation, setCurrentUserLocation] = useState(null);
+  const [locationPermission, setLocationPermission] = useState(null);
+  const [locationWatcher, setLocationWatcher] = useState(null);
 
   useEffect(() => {
     // Pulse animation for user's location pin
@@ -165,6 +171,93 @@ export default function NearbyScreen() {
     pulse.start();
     return () => pulse.stop();
   }, []);
+
+  // Request location permissions and start tracking
+  useEffect(() => {
+    requestLocationPermission();
+    
+    // Cleanup location watcher on unmount
+    return () => {
+      if (locationWatcher) {
+        locationWatcher.remove();
+      }
+    };
+  }, []);
+
+  const requestLocationPermission = async () => {
+    try {
+      console.log('📍 Requesting location permissions...');
+      
+      // Request foreground location permissions
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermission(status === 'granted');
+      
+      if (status !== 'granted') {
+        Alert.alert(
+          'Location Permission Required',
+          'To show your location on the map and find nearby professionals, please enable location access.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Settings', onPress: () => Location.requestForegroundPermissionsAsync() }
+          ]
+        );
+        return;
+      }
+
+      console.log('✅ Location permission granted, starting location tracking...');
+      startLocationTracking();
+      
+    } catch (error) {
+      console.error('❌ Error requesting location permission:', error);
+      Alert.alert('Error', 'Failed to request location permission. Please try again.');
+    }
+  };
+
+  const startLocationTracking = async () => {
+    try {
+      // Get initial location
+      const initialLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      const initialCoords = {
+        latitude: initialLocation.coords.latitude,
+        longitude: initialLocation.coords.longitude,
+        accuracy: initialLocation.coords.accuracy,
+        timestamp: initialLocation.timestamp,
+      };
+
+      setCurrentUserLocation(initialCoords);
+      console.log('📍 Initial location obtained:', initialCoords);
+
+      // Start watching position for real-time updates
+      const watcher = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 10000, // Update every 10 seconds
+          distanceInterval: 10, // Update when moved 10 meters
+        },
+        (location) => {
+          const newCoords = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            accuracy: location.coords.accuracy,
+            timestamp: location.timestamp,
+          };
+          
+          setCurrentUserLocation(newCoords);
+          console.log('📍 Location updated:', newCoords);
+        }
+      );
+
+      setLocationWatcher(watcher);
+      console.log('✅ Real-time location tracking started');
+      
+    } catch (error) {
+      console.error('❌ Error starting location tracking:', error);
+      Alert.alert('Location Error', 'Failed to get your current location. Please check your location settings.');
+    }
+  };
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -464,12 +557,17 @@ export default function NearbyScreen() {
               </View>
               <View>
                 <Text style={styles.statusTitle}>You and 3 others are visible</Text>
-                <Text style={styles.statusSubtitle}>Live in Zone B – Coffee Area • 2 mutual interests</Text>
+                <Text style={styles.statusSubtitle}>
+                  {currentUserLocation 
+                    ? `Live location tracking active • Accuracy: ${Math.round(currentUserLocation.accuracy)}m`
+                    : 'Location tracking disabled'
+                  }
+                </Text>
               </View>
             </View>
             <View style={styles.statusRight}>
-              <View style={styles.onlineStatus} />
-              <Text style={styles.onlineText}>Online</Text>
+              <View style={[styles.onlineStatus, { backgroundColor: currentUserLocation ? '#10B981' : '#EF4444' }]} />
+              <Text style={styles.onlineText}>{currentUserLocation ? 'Live' : 'Offline'}</Text>
             </View>
           </View>
         </View>
@@ -511,8 +609,15 @@ export default function NearbyScreen() {
                 <MapPin size={16} color="#FFFFFF" />
               </View>
               <View>
-                <Text style={styles.publicModeText}>Coffee Central, Downtown</Text>
-                <Text style={styles.locationSubtext}>Trending venue • 12 connections made this week</Text>
+                <Text style={styles.publicModeText}>
+                  {currentUserLocation ? 'Live Location Active' : 'Location Disabled'}
+                </Text>
+                <Text style={styles.locationSubtext}>
+                  {currentUserLocation 
+                    ? `Lat: ${currentUserLocation.latitude.toFixed(4)}, Lng: ${currentUserLocation.longitude.toFixed(4)}`
+                    : 'Enable location to find nearby professionals'
+                  }
+                </Text>
               </View>
             </View>
             <Switch
@@ -591,6 +696,7 @@ export default function NearbyScreen() {
         <View style={styles.mapContainer}>
           <MapBoxMap
             userLocations={mapUserLocations}
+            currentUserLocation={currentUserLocation}
             onUserPinPress={handleUserPinPress}
             style={styles.mapView}
           />
