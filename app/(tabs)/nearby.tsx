@@ -28,6 +28,7 @@ import {
 import SearchBar from '@/components/SearchBar';
 import OpenAntsLogo from '@/components/OpenAntsLogo';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
+import MapBoxMap from '@/components/MapBoxMap';
 
 const { width, height } = Dimensions.get('window');
 
@@ -46,7 +47,8 @@ const nearbyPeople = [
     status: 'available',
     lookingFor: 'Looking for mentorship in design leadership',
     isOnline: true,
-    mapPosition: { top: '35%', left: '60%' },
+    latitude: 51.5074,
+    longitude: -0.1278,
     pinColor: '#10B981',
     statusText: 'Open to chat',
     lastActive: '2 mins ago',
@@ -66,7 +68,8 @@ const nearbyPeople = [
     status: 'available',
     lookingFor: null,
     isOnline: true,
-    mapPosition: { top: '65%', left: '40%' },
+    latitude: 51.5084,
+    longitude: -0.1268,
     pinColor: '#3B82F6',
     statusText: 'Manager at Adobe',
     lastActive: '5 mins ago',
@@ -86,7 +89,8 @@ const nearbyPeople = [
     status: 'student',
     lookingFor: 'Looking for internship opportunities',
     isOnline: true,
-    mapPosition: { top: '45%', left: '75%' },
+    latitude: 51.5064,
+    longitude: -0.1288,
     pinColor: '#F59E0B',
     statusText: 'MSc Student at UCL',
     lastActive: '1 min ago',
@@ -199,46 +203,17 @@ export default function NearbyScreen() {
     setShowAccountSettings(true);
   };
 
-  const MapPinComponent = ({ user, onPress, isCurrentUser = false }) => {
-    const topPercentage = parseFloat(user.mapPosition.top.replace('%', ''));
-    const leftPercentage = parseFloat(user.mapPosition.left.replace('%', ''));
-    
-    return (
-      <TouchableOpacity 
-        style={[
-          styles.mapPin,
-          {
-            top: `${topPercentage}%`,
-            left: `${leftPercentage}%`,
-          }
-        ]}
-        onPress={() => !isCurrentUser && onPress(user)}
-        activeOpacity={isCurrentUser ? 1 : 0.7}
-      >
-        <View style={styles.pinContainer}>
-          {isCurrentUser ? (
-            <Animated.View 
-              style={[
-                styles.userPin,
-                { opacity: pulseAnimation }
-              ]}
-            >
-              <Image source={{ uri: user.image }} style={styles.userPinImage} />
-            </Animated.View>
-          ) : (
-            <View style={[styles.otherUserPin, { backgroundColor: user.pinColor }]}>
-              <Image source={{ uri: user.image }} style={styles.otherUserPinImage} />
-            </View>
-          )}
-          <View style={[styles.pinLabel, { backgroundColor: user.pinColor }]}>
-            <Text style={styles.pinLabelText}>
-              {isCurrentUser ? 'You' : user.statusText}
-            </Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
+  // Convert nearby people to map format
+  const mapUserLocations = filteredPeople.map(person => ({
+    id: person.id.toString(),
+    name: person.name,
+    latitude: person.latitude,
+    longitude: person.longitude,
+    pinColor: person.pinColor,
+    statusText: person.statusText,
+    image: person.image,
+    ...person // Include all other properties
+  }));
 
   const PersonCard = ({ person }) => (
     <View style={styles.personCard}>
@@ -611,34 +586,14 @@ export default function NearbyScreen() {
         </View>
       )}
 
-      {/* Interactive Map View */}
+      {/* Interactive MapBox Map View */}
       {viewMode === 'map' && (
         <View style={styles.mapContainer}>
-          <Image 
-            source={{ uri: 'https://images.pexels.com/photos/3184291/pexels-photo-3184291.jpeg?auto=compress&cs=tinysrgb&w=800' }}
-            style={styles.mapImage}
+          <MapBoxMap
+            userLocations={mapUserLocations}
+            onUserPinPress={handleUserPinPress}
+            style={styles.mapView}
           />
-          
-          {/* Current User Pin */}
-          <MapPinComponent 
-            user={{
-              ...nearbyPeople[0],
-              mapPosition: { top: '50%', left: '50%' },
-              image: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
-              pinColor: '#6366F1'
-            }}
-            onPress={() => {}}
-            isCurrentUser={true}
-          />
-
-          {/* Other User Pins */}
-          {nearbyPeople.map((user) => (
-            <MapPinComponent 
-              key={user.id}
-              user={user}
-              onPress={handleUserPinPress}
-            />
-          ))}
 
           {/* Map Legend */}
           <View style={styles.mapLegend}>
@@ -661,19 +616,6 @@ export default function NearbyScreen() {
                 <Text style={styles.legendText}>Student</Text>
               </View>
             </View>
-          </View>
-
-          {/* Map Controls */}
-          <View style={styles.mapControls}>
-            <TouchableOpacity style={styles.mapControlButton}>
-              <Plus size={16} color="#6B7280" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.mapControlButton}>
-              <Minus size={16} color="#6B7280" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.mapControlButton}>
-              <Crosshair size={16} color="#6B7280" />
-            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -1101,69 +1043,8 @@ const styles = StyleSheet.create({
     height: 320,
     backgroundColor: '#E5E7EB',
   },
-  mapImage: {
-    width: '100%',
-    height: '100%',
-  },
-  mapPin: {
-    position: 'absolute',
-    transform: [{ translateX: -20 }, { translateY: -40 }],
-  },
-  pinContainer: {
-    alignItems: 'center',
-  },
-  userPin: {
-    width: 48,
-    height: 48,
-    backgroundColor: '#6366F1',
-    borderRadius: 24,
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  userPinImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-  },
-  otherUserPin: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  otherUserPinImage: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-  },
-  pinLabel: {
-    position: 'absolute',
-    top: -32,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    minWidth: 60,
-    alignItems: 'center',
-  },
-  pinLabelText: {
-    fontSize: 10,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
+  mapView: {
+    flex: 1,
   },
   mapLegend: {
     position: 'absolute',
@@ -1201,22 +1082,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
-  },
-  mapControls: {
-    position: 'absolute',
-    bottom: 16,
-    right: 16,
-    gap: 8,
-  },
-  mapControlButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    padding: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   quickActionsBar: {
     backgroundColor: '#FFFFFF',
