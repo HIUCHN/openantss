@@ -2,23 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  Edit, 
-  Plus, 
-  Trash2, 
-  MapPin, 
-  Calendar, 
-  Users, 
-  Eye, 
-  Heart, 
-  MessageCircle, 
-  Share, 
-  MoreHorizontal,
-  GraduationCap,
-  Briefcase,
-  Settings,
-  Bell
-} from 'lucide-react-native';
+import { CreditCard as Edit, Plus, Trash2, MapPin, Calendar, Users, Eye, Heart, MessageCircle, Share, MoveHorizontal as MoreHorizontal, GraduationCap, Briefcase, Settings, Bell } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
