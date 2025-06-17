@@ -135,7 +135,7 @@ const nearbyEvents = [
 const quickFilters = ['All', 'Within 100m', 'Open to Chat', 'Mentoring', 'Freelance'];
 
 export default function NearbyScreen() {
-  const { storeUserLocation, getNearbyUsers, profile } = useAuth();
+  const { storeUserLocation, getNearbyUsers, profile, user } = useAuth();
   const [isPublicMode, setIsPublicMode] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'map'
@@ -176,9 +176,12 @@ export default function NearbyScreen() {
     return () => pulse.stop();
   }, []);
 
-  // Request location permissions and start tracking
+  // Request location permissions and start tracking - only when user is authenticated
   useEffect(() => {
-    requestLocationPermission();
+    // Only start location tracking if user is authenticated
+    if (user) {
+      requestLocationPermission();
+    }
     
     // Cleanup location watcher on unmount
     return () => {
@@ -186,14 +189,14 @@ export default function NearbyScreen() {
         locationWatcher.remove();
       }
     };
-  }, []);
+  }, [user]); // Add user as dependency
 
-  // Auto-refresh nearby users when location changes
+  // Auto-refresh nearby users when location changes - only when user is authenticated
   useEffect(() => {
-    if (autoRefresh && currentUserLocation) {
+    if (autoRefresh && currentUserLocation && user) {
       fetchNearbyUsers();
     }
-  }, [currentUserLocation, autoRefresh]);
+  }, [currentUserLocation, autoRefresh, user]); // Add user as dependency
 
   const requestLocationPermission = async () => {
     try {
@@ -241,13 +244,15 @@ export default function NearbyScreen() {
       setCurrentUserLocation(initialCoords);
       console.log('📍 Initial location obtained:', initialCoords);
 
-      // Store location in database
-      await storeUserLocation({
-        latitude: initialCoords.latitude,
-        longitude: initialCoords.longitude,
-        accuracy: initialCoords.accuracy,
-        timestamp: initialCoords.timestamp,
-      });
+      // Store location in database - only if user is authenticated
+      if (user) {
+        await storeUserLocation({
+          latitude: initialCoords.latitude,
+          longitude: initialCoords.longitude,
+          accuracy: initialCoords.accuracy,
+          timestamp: initialCoords.timestamp,
+        });
+      }
 
       // Start watching position for real-time updates
       const watcher = await Location.watchPositionAsync(
@@ -267,16 +272,18 @@ export default function NearbyScreen() {
           setCurrentUserLocation(newCoords);
           console.log('📍 Location updated:', newCoords);
 
-          // Store updated location in database
-          await storeUserLocation({
-            latitude: newCoords.latitude,
-            longitude: newCoords.longitude,
-            accuracy: newCoords.accuracy,
-            altitude: location.coords.altitude,
-            heading: location.coords.heading,
-            speed: location.coords.speed,
-            timestamp: newCoords.timestamp,
-          });
+          // Store updated location in database - only if user is authenticated
+          if (user) {
+            await storeUserLocation({
+              latitude: newCoords.latitude,
+              longitude: newCoords.longitude,
+              accuracy: newCoords.accuracy,
+              altitude: location.coords.altitude,
+              heading: location.coords.heading,
+              speed: location.coords.speed,
+              timestamp: newCoords.timestamp,
+            });
+          }
         }
       );
 
@@ -293,6 +300,12 @@ export default function NearbyScreen() {
     try {
       setLoadingNearbyUsers(true);
       console.log('🔍 Fetching nearby users...');
+      
+      // Only fetch if user is authenticated and location is available
+      if (!user || !currentUserLocation) {
+        console.log('❌ Cannot fetch nearby users: user not authenticated or location not available');
+        return;
+      }
       
       const { data, error } = await getNearbyUsers(1000); // 1km radius
       
