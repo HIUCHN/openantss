@@ -136,8 +136,6 @@ const quickFilters = ['All', 'Within 100m', 'Open to Chat', 'Mentoring', 'Freela
 
 export default function NearbyScreen() {
   const { storeUserLocation, getNearbyUsers, profile, user } = useAuth();
-  const [isPublicMode, setIsPublicMode] = useState(profile?.is_public ?? true);
-  const [activeFilter, setActiveFilter] = useState('All');
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'map'
   const [openToChat, setOpenToChat] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -155,16 +153,10 @@ export default function NearbyScreen() {
   const [currentUserLocation, setCurrentUserLocation] = useState(null);
   const [locationPermission, setLocationPermission] = useState(null);
   const [locationWatcher, setLocationWatcher] = useState(null);
-  const [locationHistory, setLocationHistory] = useState([]);
-  const [locationStable, setLocationStable] = useState(false);
-  const [locationAccuracy, setLocationAccuracy] = useState(null);
+  const [isLocationTracking, setIsLocationTracking] = useState(false);
 
-  // Update local state when profile changes
-  useEffect(() => {
-    if (profile) {
-      setIsPublicMode(profile.is_public);
-    }
-  }, [profile]);
+  // Get current public mode status
+  const isPublicMode = profile?.is_public ?? false;
 
   useEffect(() => {
     // Pulse animation for user's location pin
@@ -186,14 +178,9 @@ export default function NearbyScreen() {
     return () => pulse.stop();
   }, []);
 
-  // Request location permissions and start tracking only if user is authenticated and in public mode
+  // Request location permissions when component mounts
   useEffect(() => {
-    if (user && isPublicMode) {
-      requestLocationPermission();
-    } else {
-      // Stop location tracking if user is not authenticated or not in public mode
-      stopLocationTracking();
-    }
+    requestLocationPermission();
     
     // Cleanup location watcher on unmount
     return () => {
@@ -201,31 +188,32 @@ export default function NearbyScreen() {
         locationWatcher.remove();
       }
     };
-  }, [user, isPublicMode]);
+  }, []);
 
-  // Auto-refresh nearby users when location changes and is stable
+  // Start/stop location tracking based on authentication and public mode
   useEffect(() => {
-    if (autoRefresh && currentUserLocation && locationStable && isPublicMode) {
+    console.log('🔄 Location tracking effect triggered:', {
+      user: !!user,
+      isPublicMode,
+      locationPermission,
+      isLocationTracking
+    });
+
+    if (user && isPublicMode && locationPermission && !isLocationTracking) {
+      console.log('🚀 Starting location tracking...');
+      startLocationTracking();
+    } else if ((!user || !isPublicMode) && isLocationTracking) {
+      console.log('🛑 Stopping location tracking...');
+      stopLocationTracking();
+    }
+  }, [user, isPublicMode, locationPermission]);
+
+  // Auto-refresh nearby users when location changes and public mode is on
+  useEffect(() => {
+    if (autoRefresh && currentUserLocation && isPublicMode) {
       fetchNearbyUsers();
     }
-  }, [currentUserLocation, autoRefresh, locationStable, isPublicMode]);
-
-  const stopLocationTracking = () => {
-    console.log('🛑 Stopping location tracking...');
-    
-    if (locationWatcher) {
-      locationWatcher.remove();
-      setLocationWatcher(null);
-    }
-    
-    setCurrentUserLocation(null);
-    setLocationHistory([]);
-    setLocationStable(false);
-    setLocationAccuracy(null);
-    setNearbyUsers([]);
-    
-    console.log('✅ Location tracking stopped');
-  };
+  }, [currentUserLocation, autoRefresh, isPublicMode]);
 
   const requestLocationPermission = async () => {
     try {
@@ -247,8 +235,7 @@ export default function NearbyScreen() {
         return;
       }
 
-      console.log('✅ Location permission granted, starting location tracking...');
-      startLocationTracking();
+      console.log('✅ Location permission granted');
       
     } catch (error) {
       console.error('❌ Error requesting location permission:', error);
@@ -256,143 +243,73 @@ export default function NearbyScreen() {
     }
   };
 
-  const filterLocation = (location) => {
-    const { latitude, longitude, accuracy } = location.coords;
-    
-    // Reject poor accuracy locations
-    if (accuracy > 100) {
-      console.log('🚫 Rejecting location with poor accuracy:', accuracy);
-      return null;
-    }
-    
-    // Check for GPS jumps
-    if (locationHistory.length > 0) {
-      const lastLocation = locationHistory[locationHistory.length - 1];
-      const distance = calculateDistance(
-        latitude, longitude,
-        lastLocation.latitude, lastLocation.longitude
-      );
-      
-      // Reject jumps greater than 200 meters
-      if (distance > 200) {
-        console.log('🚫 Rejecting GPS jump of', distance, 'meters');
-        return null;
-      }
-    }
-    
-    // Apply smoothing if we have recent locations
-    if (locationHistory.length >= 3) {
-      const recentLocations = locationHistory.slice(-3);
-      const avgLat = recentLocations.reduce((sum, loc) => sum + loc.latitude, 0) / recentLocations.length;
-      const avgLng = recentLocations.reduce((sum, loc) => sum + loc.longitude, 0) / recentLocations.length;
-      
-      // Weighted average: 70% current, 30% recent average
-      const smoothedLat = latitude * 0.7 + avgLat * 0.3;
-      const smoothedLng = longitude * 0.7 + avgLng * 0.3;
-      
-      return {
-        latitude: smoothedLat,
-        longitude: smoothedLng,
-        accuracy,
-        timestamp: new Date(location.timestamp),
-      };
-    }
-    
-    return {
-      latitude,
-      longitude,
-      accuracy,
-      timestamp: new Date(location.timestamp),
-    };
-  };
-
-  const calculateDistance = (lat1, lng1, lat2, lng2) => {
-    const R = 6371e3; // Earth's radius in meters
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180;
-    const Δλ = (lng2 - lng1) * Math.PI / 180;
-
-    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-    return R * c; // Distance in meters
-  };
-
   const startLocationTracking = async () => {
+    if (isLocationTracking) {
+      console.log('📍 Location tracking already active');
+      return;
+    }
+
     try {
-      // Get initial location with high accuracy
+      console.log('🚀 Starting location tracking...');
+      setIsLocationTracking(true);
+
+      // Get initial location
       const initialLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation,
-        maximumAge: 10000,
-        timeout: 15000,
+        accuracy: Location.Accuracy.High,
       });
 
-      const filteredLocation = filterLocation(initialLocation);
-      if (!filteredLocation) return;
+      const initialCoords = {
+        latitude: initialLocation.coords.latitude,
+        longitude: initialLocation.coords.longitude,
+        accuracy: initialLocation.coords.accuracy,
+        timestamp: new Date(initialLocation.timestamp),
+      };
 
-      setCurrentUserLocation(filteredLocation);
-      setLocationAccuracy(filteredLocation.accuracy);
-      setLocationHistory([filteredLocation]);
-      
-      console.log('📍 Initial location obtained:', filteredLocation);
+      setCurrentUserLocation(initialCoords);
+      console.log('📍 Initial location obtained:', initialCoords);
 
-      // Store location in database only if user is authenticated and in public mode
-      if (user && isPublicMode) {
-        await storeUserLocation({
-          latitude: filteredLocation.latitude,
-          longitude: filteredLocation.longitude,
-          accuracy: filteredLocation.accuracy,
-          timestamp: filteredLocation.timestamp,
-        });
-      }
+      // Store location in database
+      await storeUserLocation({
+        latitude: initialCoords.latitude,
+        longitude: initialCoords.longitude,
+        accuracy: initialCoords.accuracy,
+        timestamp: initialCoords.timestamp,
+      });
 
       // Start watching position for real-time updates
       const watcher = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 10000, // Update every 10 seconds
-          distanceInterval: 10, // Update when moved 10 meters
-          maximumAge: 10000,
-          timeout: 15000,
+          accuracy: Location.Accuracy.High,
+          timeInterval: 30000, // Update every 30 seconds
+          distanceInterval: 50, // Update when moved 50 meters
         },
         async (location) => {
-          const filteredLocation = filterLocation(location);
-          if (!filteredLocation) return;
-          
-          setCurrentUserLocation(filteredLocation);
-          setLocationAccuracy(filteredLocation.accuracy);
-          
-          // Update location history (keep last 10 locations)
-          setLocationHistory(prev => {
-            const newHistory = [...prev, filteredLocation].slice(-10);
-            
-            // Check if location is stable (accuracy < 50m and consistent for 3+ readings)
-            if (newHistory.length >= 3) {
-              const recentAccuracies = newHistory.slice(-3).map(loc => loc.accuracy);
-              const avgAccuracy = recentAccuracies.reduce((sum, acc) => sum + acc, 0) / recentAccuracies.length;
-              setLocationStable(avgAccuracy < 50);
-            }
-            
-            return newHistory;
-          });
-          
-          console.log('📍 Location updated:', filteredLocation);
-
-          // Store updated location in database only if user is authenticated and in public mode
-          if (user && isPublicMode) {
-            await storeUserLocation({
-              latitude: filteredLocation.latitude,
-              longitude: filteredLocation.longitude,
-              accuracy: filteredLocation.accuracy,
-              altitude: location.coords.altitude,
-              heading: location.coords.heading,
-              speed: location.coords.speed,
-              timestamp: filteredLocation.timestamp,
-            });
+          // Only update if still in public mode
+          if (!profile?.is_public) {
+            console.log('📍 Location update skipped - user is in private mode');
+            return;
           }
+
+          const newCoords = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            accuracy: location.coords.accuracy,
+            timestamp: new Date(location.timestamp),
+          };
+          
+          setCurrentUserLocation(newCoords);
+          console.log('📍 Location updated:', newCoords);
+
+          // Store updated location in database
+          await storeUserLocation({
+            latitude: newCoords.latitude,
+            longitude: newCoords.longitude,
+            accuracy: newCoords.accuracy,
+            altitude: location.coords.altitude,
+            heading: location.coords.heading,
+            speed: location.coords.speed,
+            timestamp: newCoords.timestamp,
+          });
         }
       );
 
@@ -401,7 +318,28 @@ export default function NearbyScreen() {
       
     } catch (error) {
       console.error('❌ Error starting location tracking:', error);
+      setIsLocationTracking(false);
       Alert.alert('Location Error', 'Failed to get your current location. Please check your location settings.');
+    }
+  };
+
+  const stopLocationTracking = async () => {
+    try {
+      console.log('🛑 Stopping location tracking...');
+      
+      // Remove location watcher
+      if (locationWatcher) {
+        locationWatcher.remove();
+        setLocationWatcher(null);
+      }
+      
+      // Clear current location
+      setCurrentUserLocation(null);
+      setIsLocationTracking(false);
+      
+      console.log('✅ Location tracking stopped');
+    } catch (error) {
+      console.error('❌ Error stopping location tracking:', error);
     }
   };
 
@@ -642,6 +580,28 @@ export default function NearbyScreen() {
     );
   };
 
+  // Private Mode Banner Component
+  const PrivateModeBanner = () => (
+    <View style={styles.privateModeContainer}>
+      <LinearGradient
+        colors={['#EF4444', '#DC2626']}
+        style={styles.privateModeBanner}
+      >
+        <View style={styles.privateModeContent}>
+          <View style={styles.privateModeIcon}>
+            <EyeOff size={24} color="#FFFFFF" />
+          </View>
+          <View style={styles.privateModeText}>
+            <Text style={styles.privateModeTitle}>Private Mode Active</Text>
+            <Text style={styles.privateModeSubtitle}>
+              Your location is not being shared. Enable Public Mode in the Home tab to find nearby professionals.
+            </Text>
+          </View>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -678,8 +638,11 @@ export default function NearbyScreen() {
         </View>
       </View>
 
-      {/* Search Bar - Only show in list view */}
-      {viewMode === 'list' && (
+      {/* Show Private Mode Banner if not in public mode */}
+      {!isPublicMode && <PrivateModeBanner />}
+
+      {/* Search Bar - Only show in list view and when in public mode */}
+      {viewMode === 'list' && isPublicMode && (
         <SearchBar
           placeholder="Search people, skills, companies..."
           onSearch={handleSearch}
@@ -689,10 +652,10 @@ export default function NearbyScreen() {
         />
       )}
 
-      {/* Notification Banner - Only show in map view */}
-      {viewMode === 'map' && showNotificationBanner && (
+      {/* Notification Banner - Only show in map view and when in public mode */}
+      {viewMode === 'map' && isPublicMode && showNotificationBanner && (
         <LinearGradient
-          colors={isPublicMode ? ['#10B981', '#059669'] : ['#EF4444', '#DC2626']}
+          colors={['#10B981', '#059669']}
           style={styles.notificationBanner}
         >
           <View style={styles.notificationContent}>
@@ -701,19 +664,12 @@ export default function NearbyScreen() {
             </View>
             <View style={styles.notificationText}>
               <Text style={styles.notificationTitle}>
-                {!isPublicMode 
-                  ? 'Location sharing is disabled'
-                  : loadingNearbyUsers 
-                    ? 'Finding nearby professionals...' 
-                    : `${nearbyUsers.length} professionals near you are open to connect right now!`
-                }
+                {loadingNearbyUsers ? 'Finding nearby professionals...' : `${nearbyUsers.length} professionals near you are open to connect right now!`}
               </Text>
               <Text style={styles.notificationSubtitle}>
-                {!isPublicMode
-                  ? 'Enable Public Mode to find and be found by nearby professionals'
-                  : currentUserLocation 
-                    ? `Live location active • Tap pins to connect`
-                    : 'Enable location to find nearby professionals'
+                {currentUserLocation 
+                  ? `Live location active • Tap pins to connect`
+                  : 'Getting your location...'
                 }
               </Text>
             </View>
@@ -727,83 +683,64 @@ export default function NearbyScreen() {
         </LinearGradient>
       )}
 
-      {/* Status Panel - Only show in map view */}
-      {viewMode === 'map' && (
+      {/* Status Panel - Only show in map view and when in public mode */}
+      {viewMode === 'map' && isPublicMode && (
         <View style={styles.statusPanel}>
           <View style={styles.statusContent}>
             <View style={styles.statusLeft}>
               <View style={styles.statusIcon}>
-                {isPublicMode ? (
-                  <Eye size={14} color="#3B82F6" />
-                ) : (
-                  <EyeOff size={14} color="#EF4444" />
-                )}
+                <Eye size={14} color="#3B82F6" />
               </View>
               <View>
                 <Text style={styles.statusTitle}>
-                  {isPublicMode 
-                    ? `You and ${nearbyUsers.length} others are visible`
-                    : 'You are in private mode'
-                  }
+                  You and {nearbyUsers.length} others are visible
                 </Text>
                 <Text style={styles.statusSubtitle}>
-                  {!isPublicMode
-                    ? 'Enable Public Mode to share your location'
-                    : currentUserLocation 
-                      ? `Live location tracking active • Accuracy: ${Math.round(locationAccuracy || 0)}m • ${locationStable ? 'Stable' : 'Stabilizing'}`
-                      : 'Location tracking disabled'
+                  {currentUserLocation 
+                    ? `Live location tracking active • Accuracy: ${Math.round(currentUserLocation.accuracy)}m`
+                    : 'Getting location...'
                   }
                 </Text>
               </View>
             </View>
             <View style={styles.statusRight}>
-              <View style={[styles.onlineStatus, { 
-                backgroundColor: !isPublicMode ? '#EF4444' : currentUserLocation ? '#10B981' : '#EF4444' 
-              }]} />
-              <Text style={styles.onlineText}>
-                {!isPublicMode ? 'Private' : currentUserLocation ? 'Live' : 'Offline'}
-              </Text>
+              <View style={[styles.onlineStatus, { backgroundColor: currentUserLocation ? '#10B981' : '#EF4444' }]} />
+              <Text style={styles.onlineText}>{currentUserLocation ? 'Live' : 'Offline'}</Text>
             </View>
           </View>
         </View>
       )}
 
-      {/* Live Metrics Bar - Only show in list view */}
-      {viewMode === 'list' && (
+      {/* Live Metrics Bar - Only show in list view and when in public mode */}
+      {viewMode === 'list' && isPublicMode && (
         <View style={styles.metricsSection}>
           <View style={styles.metricsGrid}>
             <View style={styles.metricItem}>
               <Text style={[styles.metricNumber, { color: '#6366F1' }]}>
-                {!isPublicMode ? '0' : loadingNearbyUsers ? '...' : nearbyUsers.length}
+                {loadingNearbyUsers ? '...' : nearbyUsers.length}
               </Text>
               <Text style={styles.metricLabel}>Nearby</Text>
             </View>
             <View style={styles.metricItem}>
-              <Text style={[styles.metricNumber, { color: '#10B981' }]}>
-                {!isPublicMode ? '0' : '4'}
-              </Text>
+              <Text style={[styles.metricNumber, { color: '#10B981' }]}>4</Text>
               <Text style={styles.metricLabel}>Hiring</Text>
             </View>
             <View style={styles.metricItem}>
-              <Text style={[styles.metricNumber, { color: '#3B82F6' }]}>
-                {!isPublicMode ? '0' : '7'}
-              </Text>
+              <Text style={[styles.metricNumber, { color: '#3B82F6' }]}>7</Text>
               <Text style={styles.metricLabel}>Open to Chat</Text>
             </View>
             <View style={styles.metricItem}>
-              <Text style={[styles.metricNumber, { color: '#8B5CF6' }]}>
-                {!isPublicMode ? '0' : '6'}
-              </Text>
+              <Text style={[styles.metricNumber, { color: '#8B5CF6' }]}>6</Text>
               <Text style={styles.metricLabel}>Mutual tags</Text>
             </View>
           </View>
         </View>
       )}
 
-      {/* Location Banner - Only show in list view */}
-      {viewMode === 'list' && (
+      {/* Location Banner - Only show in list view and when in public mode */}
+      {viewMode === 'list' && isPublicMode && (
         <LinearGradient
-          colors={isPublicMode ? ['#6366F1', '#8B5CF6'] : ['#6B7280', '#4B5563']}
+          colors={['#6366F1', '#8B5CF6']}
           style={styles.locationBanner}
         >
           <View style={styles.locationContent}>
@@ -813,27 +750,20 @@ export default function NearbyScreen() {
               </View>
               <View>
                 <Text style={styles.publicModeText}>
-                  {isPublicMode 
-                    ? (currentUserLocation ? 'Live Location Active' : 'Location Disabled')
-                    : 'Private Mode Active'
-                  }
+                  {currentUserLocation ? 'Live Location Active' : 'Getting Location...'}
                 </Text>
                 <Text style={styles.locationSubtext}>
-                  {!isPublicMode
-                    ? 'Location sharing is disabled'
-                    : currentUserLocation 
-                      ? `Lat: ${currentUserLocation.latitude.toFixed(4)}, Lng: ${currentUserLocation.longitude.toFixed(4)}`
-                      : 'Enable location to find nearby professionals'
+                  {currentUserLocation 
+                    ? `Lat: ${currentUserLocation.latitude.toFixed(4)}, Lng: ${currentUserLocation.longitude.toFixed(4)}`
+                    : 'Locating nearby professionals...'
                   }
                 </Text>
               </View>
             </View>
-            <Switch
-              value={isPublicMode}
-              onValueChange={setIsPublicMode}
-              trackColor={{ false: '#FFFFFF40', true: '#10B981' }}
-              thumbColor="#FFFFFF"
-            />
+            <View style={styles.locationStatus}>
+              <View style={[styles.statusDot, { backgroundColor: currentUserLocation ? '#10B981' : '#F59E0B' }]} />
+              <Text style={styles.statusText}>{currentUserLocation ? 'Active' : 'Locating'}</Text>
+            </View>
           </View>
           
           <View style={styles.viewToggleContainer}>
@@ -861,8 +791,8 @@ export default function NearbyScreen() {
         </LinearGradient>
       )}
 
-      {/* Enhanced Filters - Only show in list view */}
-      {viewMode === 'list' && (
+      {/* Enhanced Filters - Only show in list view and when in public mode */}
+      {viewMode === 'list' && isPublicMode && (
         <View style={styles.filtersSection}>
           <View style={styles.filtersHeader}>
             <Text style={styles.filtersTitle}>Quick Filters</Text>
@@ -883,13 +813,13 @@ export default function NearbyScreen() {
                 key={filter}
                 style={[
                   styles.quickFilter,
-                  activeFilter === filter && styles.activeQuickFilter
+                  // activeFilter === filter && styles.activeQuickFilter
                 ]}
-                onPress={() => setActiveFilter(filter)}
+                // onPress={() => setActiveFilter(filter)}
               >
                 <Text style={[
                   styles.quickFilterText,
-                  activeFilter === filter && styles.activeQuickFilterText
+                  // activeFilter === filter && styles.activeQuickFilterText
                 ]}>
                   {filter}
                 </Text>
@@ -899,8 +829,8 @@ export default function NearbyScreen() {
         </View>
       )}
 
-      {/* Interactive MapBox Map View */}
-      {viewMode === 'map' && (
+      {/* Interactive MapBox Map View - Only show when in public mode */}
+      {viewMode === 'map' && isPublicMode && (
         <View style={styles.mapContainer}>
           <MapBoxMap
             userLocations={mapUserLocations}
@@ -911,8 +841,8 @@ export default function NearbyScreen() {
         </View>
       )}
 
-      {/* Quick Actions Bar - Only show in map view */}
-      {viewMode === 'map' && (
+      {/* Quick Actions Bar - Only show in map view and when in public mode */}
+      {viewMode === 'map' && isPublicMode && (
         <View style={styles.quickActionsBar}>
           <View style={styles.quickActionsLeft}>
             <TouchableOpacity 
@@ -940,8 +870,8 @@ export default function NearbyScreen() {
         </View>
       )}
 
-      {/* List View Content */}
-      {viewMode === 'list' && (
+      {/* List View Content - Only show when in public mode */}
+      {viewMode === 'list' && isPublicMode && (
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Search Results Header */}
           {searchQuery.trim() !== '' && (
@@ -958,41 +888,23 @@ export default function NearbyScreen() {
             </View>
           )}
 
-          {/* Show message when public mode is disabled */}
-          {!isPublicMode && (
-            <View style={styles.privateModeBanner}>
-              <View style={styles.privateModeContent}>
-                <EyeOff size={24} color="#6B7280" />
-                <Text style={styles.privateModeTitle}>Private Mode Active</Text>
-                <Text style={styles.privateModeSubtitle}>
-                  Enable Public Mode in the location banner above to find and be found by nearby professionals.
-                </Text>
-              </View>
-            </View>
-          )}
+          <View style={styles.listContainer}>
+            {filteredPeople.map((person) => (
+              <PersonCard key={person.id} person={person} />
+            ))}
+          </View>
 
-          {/* Only show content if public mode is enabled */}
-          {isPublicMode && (
+          {/* Hide other sections when searching */}
+          {searchQuery.trim() === '' && (
             <>
-              <View style={styles.listContainer}>
-                {filteredPeople.map((person) => (
-                  <PersonCard key={person.id} person={person} />
+              <CrossedPathsSection />
+
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Upcoming Events Nearby</Text>
+                {nearbyEvents.map((event) => (
+                  <EventCard key={event.id} event={event} />
                 ))}
               </View>
-
-              {/* Hide other sections when searching */}
-              {searchQuery.trim() === '' && (
-                <>
-                  <CrossedPathsSection />
-
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Upcoming Events Nearby</Text>
-                    {nearbyEvents.map((event) => (
-                      <EventCard key={event.id} event={event} />
-                    ))}
-                  </View>
-                </>
-              )}
             </>
           )}
 
@@ -1086,6 +998,42 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 16,
   },
+  privateModeContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  privateModeBanner: {
+    borderRadius: 12,
+    padding: 16,
+  },
+  privateModeContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  privateModeIcon: {
+    width: 48,
+    height: 48,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  privateModeText: {
+    flex: 1,
+  },
+  privateModeTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-Bold',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  privateModeSubtitle: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: 'rgba(255, 255, 255, 0.9)',
+    lineHeight: 20,
+  },
   searchResults: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -1113,29 +1061,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#9CA3AF',
-  },
-  privateModeBanner: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-    paddingHorizontal: 16,
-    paddingVertical: 32,
-  },
-  privateModeContent: {
-    alignItems: 'center',
-    gap: 12,
-  },
-  privateModeTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
-    color: '#374151',
-  },
-  privateModeSubtitle: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 20,
   },
   notificationBanner: {
     paddingHorizontal: 16,
@@ -1257,6 +1182,7 @@ const styles = StyleSheet.create({
   locationLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   locationIcon: {
     width: 40,
@@ -1276,6 +1202,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter-Regular',
     color: '#FFFFFF80',
+  },
+  locationStatus: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
+    fontSize: 10,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
   },
   viewToggleContainer: {
     flexDirection: 'row',
