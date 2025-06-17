@@ -2,14 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Eye, EyeOff, Mail, Lock, ArrowRight } from 'lucide-react-native';
+import { Eye, EyeOff, Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import DebugPanel from '@/components/DebugPanel';
 import { IS_DEBUG } from '@/constants';
 
-
-// Debug mode toggle - set to true to show debug information
 export default function LoginScreen() {
   const params = useLocalSearchParams();
   const [email, setEmail] = useState(params.email as string || '');
@@ -17,16 +15,34 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { signIn } = useAuth();
 
+  // Clear error message when user starts typing
+  useEffect(() => {
+    if (errorMessage && (email || password)) {
+      setErrorMessage(null);
+    }
+  }, [email, password, errorMessage]);
+
   const handleLogin = async () => {
+    // Clear any previous error messages
+    setErrorMessage(null);
+
     if (!email.trim()) {
-      Alert.alert('Validation Error', 'Email is required');
+      setErrorMessage('Email is required');
       return;
     }
 
     if (!password) {
-      Alert.alert('Validation Error', 'Password is required');
+      setErrorMessage('Password is required');
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      setErrorMessage('Please enter a valid email address');
       return;
     }
 
@@ -40,15 +56,19 @@ export default function LoginScreen() {
       if (error) {
         console.error('Login error:', error);
         
-        // Handle specific error cases
-        if (error.message?.includes('Invalid login credentials')) {
-          Alert.alert('Login Failed', 'Invalid email or password. Please check your credentials and try again.');
-        } else if (error.message?.includes('Email not confirmed')) {
-          Alert.alert('Email Not Verified', 'Please check your email and click the verification link before signing in.');
-        } else if (error.message?.includes('Too many requests')) {
-          Alert.alert('Too Many Attempts', 'Too many login attempts. Please wait a few minutes before trying again.');
+        // Handle specific error cases with more helpful messages
+        if (error.message?.includes('Invalid login credentials') || error.message?.includes('invalid_credentials')) {
+          setErrorMessage('The email or password you entered is incorrect. Please check your credentials and try again.');
+        } else if (error.message?.includes('Email not confirmed') || error.message?.includes('email_not_confirmed')) {
+          setErrorMessage('Please check your email and click the verification link before signing in.');
+        } else if (error.message?.includes('Too many requests') || error.message?.includes('rate_limit')) {
+          setErrorMessage('Too many login attempts. Please wait a few minutes before trying again.');
+        } else if (error.message?.includes('User not found') || error.message?.includes('user_not_found')) {
+          setErrorMessage('No account found with this email address. Please check your email or sign up for a new account.');
+        } else if (error.message?.includes('network') || error.message?.includes('fetch')) {
+          setErrorMessage('Network error. Please check your internet connection and try again.');
         } else {
-          Alert.alert('Login Failed', error.message || 'An unexpected error occurred. Please try again.');
+          setErrorMessage(error.message || 'An unexpected error occurred. Please try again.');
         }
       } else {
         console.log('Login successful');
@@ -56,7 +76,7 @@ export default function LoginScreen() {
       }
     } catch (error) {
       console.error('Unexpected error during login:', error);
-      Alert.alert('Error', 'An unexpected error occurred. Please check your internet connection and try again.');
+      setErrorMessage('An unexpected error occurred. Please check your internet connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -107,10 +127,18 @@ export default function LoginScreen() {
               <Text style={styles.welcomeSubtitle}>Sign in to continue networking</Text>
             </View>
 
+            {/* Error Message Display */}
+            {errorMessage && (
+              <View style={styles.errorContainer}>
+                <AlertCircle size={20} color="#EF4444" style={styles.errorIcon} />
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              </View>
+            )}
+
             <View style={styles.form}>
               <View style={styles.inputContainer}>
                 <Text style={styles.inputLabel}>Email Address</Text>
-                <View style={styles.inputWrapper}>
+                <View style={[styles.inputWrapper, errorMessage && (errorMessage.includes('email') || errorMessage.includes('Email')) && styles.inputWrapperError]}>
                   <Mail size={20} color="#9CA3AF" style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
@@ -129,7 +157,7 @@ export default function LoginScreen() {
 
               <View style={styles.inputContainer}>
                 <Text style={styles.inputLabel}>Password</Text>
-                <View style={styles.inputWrapper}>
+                <View style={[styles.inputWrapper, errorMessage && errorMessage.includes('password') && styles.inputWrapperError]}>
                   <Lock size={20} color="#9CA3AF" style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
@@ -283,6 +311,27 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
   },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 24,
+  },
+  errorIcon: {
+    marginRight: 12,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#DC2626',
+    lineHeight: 20,
+  },
   form: {
     flex: 1,
     marginBottom: 32,
@@ -306,6 +355,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     minHeight: 56,
+  },
+  inputWrapperError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
   },
   inputIcon: {
     marginRight: 12,
