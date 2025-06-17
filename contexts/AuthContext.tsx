@@ -22,6 +22,7 @@ interface AuthContextType {
   ) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: any }>;
+  updateUserLocation: (latitude: number, longitude: number) => Promise<{ error: any }>;
   refreshSession: () => Promise<void>;
 }
 
@@ -290,6 +291,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const updateUserLocation = async (latitude: number, longitude: number) => {
+    if (!user) return { error: new Error('No user logged in') };
+
+    try {
+      console.log('📍 Updating user location in database:', { latitude, longitude });
+      
+      const locationUpdate = {
+        latitude,
+        longitude,
+        last_location_update: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(locationUpdate)
+        .eq('id', user.id);
+
+      if (!error && profile) {
+        setProfile({ ...profile, ...locationUpdate });
+        console.log('✅ User location updated successfully in database');
+      } else if (error) {
+        console.error('❌ Error updating user location in database:', error);
+      }
+
+      return { error };
+    } catch (error) {
+      console.error('❌ Unexpected location update error:', error);
+      return { error };
+    }
+  };
+
   const value = {
     session,
     user,
@@ -300,6 +333,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signUp,
     signOut,
     updateProfile,
+    updateUserLocation,
     refreshSession,
   };
 

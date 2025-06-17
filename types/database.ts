@@ -18,6 +18,9 @@ export interface Database {
           is_public: boolean;
           proximity_alerts: boolean;
           direct_messages: boolean;
+          latitude: number | null;
+          longitude: number | null;
+          last_location_update: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -37,6 +40,9 @@ export interface Database {
           is_public?: boolean;
           proximity_alerts?: boolean;
           direct_messages?: boolean;
+          latitude?: number | null;
+          longitude?: number | null;
+          last_location_update?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -56,6 +62,9 @@ export interface Database {
           is_public?: boolean;
           proximity_alerts?: boolean;
           direct_messages?: boolean;
+          latitude?: number | null;
+          longitude?: number | null;
+          last_location_update?: string | null;
           created_at?: string;
           updated_at?: string;
         };
