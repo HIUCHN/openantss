@@ -154,6 +154,7 @@ export default function NearbyScreen() {
   const [locationPermission, setLocationPermission] = useState(null);
   const [locationWatcher, setLocationWatcher] = useState(null);
   const [isLocationTracking, setIsLocationTracking] = useState(false);
+  const [locationStatus, setLocationStatus] = useState('idle'); // 'idle', 'requesting', 'tracking', 'error'
 
   // Get current public mode status
   const isPublicMode = profile?.is_public ?? false;
@@ -196,7 +197,8 @@ export default function NearbyScreen() {
       user: !!user,
       isPublicMode,
       locationPermission,
-      isLocationTracking
+      isLocationTracking,
+      locationStatus
     });
 
     if (user && isPublicMode && locationPermission && !isLocationTracking) {
@@ -218,12 +220,14 @@ export default function NearbyScreen() {
   const requestLocationPermission = async () => {
     try {
       console.log('📍 Requesting location permissions...');
+      setLocationStatus('requesting');
       
       // Request foreground location permissions
       const { status } = await Location.requestForegroundPermissionsAsync();
       setLocationPermission(status === 'granted');
       
       if (status !== 'granted') {
+        setLocationStatus('error');
         Alert.alert(
           'Location Permission Required',
           'To show your location on the map and find nearby professionals, please enable location access.',
@@ -236,9 +240,11 @@ export default function NearbyScreen() {
       }
 
       console.log('✅ Location permission granted');
+      setLocationStatus('idle');
       
     } catch (error) {
       console.error('❌ Error requesting location permission:', error);
+      setLocationStatus('error');
       Alert.alert('Error', 'Failed to request location permission. Please try again.');
     }
   };
@@ -252,10 +258,13 @@ export default function NearbyScreen() {
     try {
       console.log('🚀 Starting location tracking...');
       setIsLocationTracking(true);
+      setLocationStatus('tracking');
 
-      // Get initial location
+      // Get initial location with high accuracy
       const initialLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.BestForNavigation,
+        maximumAge: 10000, // Accept cached location up to 10 seconds old
+        timeout: 15000, // 15 second timeout
       });
 
       const initialCoords = {
@@ -268,25 +277,27 @@ export default function NearbyScreen() {
       setCurrentUserLocation(initialCoords);
       console.log('📍 Initial location obtained:', initialCoords);
 
-      // Store location in database
-      await storeUserLocation({
-        latitude: initialCoords.latitude,
-        longitude: initialCoords.longitude,
-        accuracy: initialCoords.accuracy,
-        timestamp: initialCoords.timestamp,
-      });
+      // Store location in database only if user is still in public mode
+      if (profile?.is_public) {
+        await storeUserLocation({
+          latitude: initialCoords.latitude,
+          longitude: initialCoords.longitude,
+          accuracy: initialCoords.accuracy,
+          timestamp: initialCoords.timestamp,
+        });
+      }
 
       // Start watching position for real-time updates
       const watcher = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 30000, // Update every 30 seconds
-          distanceInterval: 50, // Update when moved 50 meters
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 10000, // Update every 10 seconds (more frequent)
+          distanceInterval: 10, // Update when moved 10 meters (more sensitive)
         },
         async (location) => {
-          // Only update if still in public mode
-          if (!profile?.is_public) {
-            console.log('📍 Location update skipped - user is in private mode');
+          // Only update if still in public mode and tracking
+          if (!profile?.is_public || !isLocationTracking) {
+            console.log('📍 Location update skipped - user is in private mode or tracking stopped');
             return;
           }
 
@@ -319,7 +330,16 @@ export default function NearbyScreen() {
     } catch (error) {
       console.error('❌ Error starting location tracking:', error);
       setIsLocationTracking(false);
-      Alert.alert('Location Error', 'Failed to get your current location. Please check your location settings.');
+      setLocationStatus('error');
+      
+      // More specific error handling
+      if (error.code === 'E_LOCATION_TIMEOUT') {
+        Alert.alert('Location Timeout', 'Unable to get your location. Please make sure GPS is enabled and try again.');
+      } else if (error.code === 'E_LOCATION_UNAVAILABLE') {
+        Alert.alert('Location Unavailable', 'Location services are not available. Please check your device settings.');
+      } else {
+        Alert.alert('Location Error', 'Failed to get your current location. Please check your location settings and try again.');
+      }
     }
   };
 
@@ -336,6 +356,7 @@ export default function NearbyScreen() {
       // Clear current location
       setCurrentUserLocation(null);
       setIsLocationTracking(false);
+      setLocationStatus('idle');
       
       console.log('✅ Location tracking stopped');
     } catch (error) {
@@ -602,6 +623,30 @@ export default function NearbyScreen() {
     </View>
   );
 
+  // Get location status text and color
+  const getLocationStatusInfo = () => {
+    if (!isPublicMode) {
+      return { text: 'Private Mode', color: '#EF4444' };
+    }
+    
+    switch (locationStatus) {
+      case 'requesting':
+        return { text: 'Requesting Permission...', color: '#F59E0B' };
+      case 'tracking':
+        if (currentUserLocation) {
+          return { text: 'Location Active', color: '#10B981' };
+        } else {
+          return { text: 'Getting Location...', color: '#F59E0B' };
+        }
+      case 'error':
+        return { text: 'Location Error', color: '#EF4444' };
+      default:
+        return { text: 'Location Disabled', color: '#6B7280' };
+    }
+  };
+
+  const locationStatusInfo = getLocationStatusInfo();
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -669,7 +714,7 @@ export default function NearbyScreen() {
               <Text style={styles.notificationSubtitle}>
                 {currentUserLocation 
                   ? `Live location active • Tap pins to connect`
-                  : 'Getting your location...'
+                  : locationStatusInfo.text
                 }
               </Text>
             </View>
@@ -698,13 +743,13 @@ export default function NearbyScreen() {
                 <Text style={styles.statusSubtitle}>
                   {currentUserLocation 
                     ? `Live location tracking active • Accuracy: ${Math.round(currentUserLocation.accuracy)}m`
-                    : 'Getting location...'
+                    : locationStatusInfo.text
                   }
                 </Text>
               </View>
             </View>
             <View style={styles.statusRight}>
-              <View style={[styles.onlineStatus, { backgroundColor: currentUserLocation ? '#10B981' : '#EF4444' }]} />
+              <View style={[styles.onlineStatus, { backgroundColor: locationStatusInfo.color }]} />
               <Text style={styles.onlineText}>{currentUserLocation ? 'Live' : 'Offline'}</Text>
             </View>
           </View>
@@ -750,7 +795,7 @@ export default function NearbyScreen() {
               </View>
               <View>
                 <Text style={styles.publicModeText}>
-                  {currentUserLocation ? 'Live Location Active' : 'Getting Location...'}
+                  {locationStatusInfo.text}
                 </Text>
                 <Text style={styles.locationSubtext}>
                   {currentUserLocation 
@@ -761,8 +806,10 @@ export default function NearbyScreen() {
               </View>
             </View>
             <View style={styles.locationStatus}>
-              <View style={[styles.statusDot, { backgroundColor: currentUserLocation ? '#10B981' : '#F59E0B' }]} />
-              <Text style={styles.statusText}>{currentUserLocation ? 'Active' : 'Locating'}</Text>
+              <View style={[styles.statusDot, { backgroundColor: locationStatusInfo.color }]} />
+              <Text style={styles.statusText}>
+                {currentUserLocation ? 'Active' : 'Locating'}
+              </Text>
             </View>
           </View>
           
