@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Eye, EyeOff, Mail, Lock, ArrowRight, CircleAlert as AlertCircle, Info } from 'lucide-react-native';
+import { Eye, EyeOff, Mail, Lock, ArrowRight, CircleAlert as AlertCircle } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import DebugPanel from '@/components/DebugPanel';
@@ -16,7 +16,6 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [showCredentialTips, setShowCredentialTips] = useState(false);
   const { signIn } = useAuth();
 
   // Clear error message when user starts typing
@@ -26,16 +25,9 @@ export default function LoginScreen() {
     }
   }, [email, password, errorMessage]);
 
-  const handleEmailChange = (text: string) => {
-    // Remove any leading/trailing spaces and convert to lowercase
-    const cleanedEmail = text.trim().toLowerCase();
-    setEmail(cleanedEmail);
-  };
-
   const handleLogin = async () => {
     // Clear any previous error messages
     setErrorMessage(null);
-    setShowCredentialTips(false);
 
     if (!email.trim()) {
       setErrorMessage('Email is required');
@@ -67,7 +59,6 @@ export default function LoginScreen() {
         // Handle specific error cases with more helpful messages
         if (error.message?.includes('Invalid login credentials') || error.message?.includes('invalid_credentials')) {
           setErrorMessage('The email or password you entered is incorrect. Please check your credentials and try again.');
-          setShowCredentialTips(true);
         } else if (error.message?.includes('Email not confirmed') || error.message?.includes('email_not_confirmed')) {
           setErrorMessage('Please check your email and click the verification link before signing in.');
         } else if (error.message?.includes('Too many requests') || error.message?.includes('rate_limit')) {
@@ -144,20 +135,6 @@ export default function LoginScreen() {
               </View>
             )}
 
-            {/* Credential Tips - Show when login fails */}
-            {showCredentialTips && (
-              <View style={styles.tipsContainer}>
-                <Info size={16} color="#3B82F6" style={styles.tipsIcon} />
-                <View style={styles.tipsContent}>
-                  <Text style={styles.tipsTitle}>Login Tips:</Text>
-                  <Text style={styles.tipsText}>• Double-check your email address for typos</Text>
-                  <Text style={styles.tipsText}>• Ensure your password is entered correctly</Text>
-                  <Text style={styles.tipsText}>• Remember that passwords are case-sensitive</Text>
-                  <Text style={styles.tipsText}>• Make sure you've verified your email address</Text>
-                </View>
-              </View>
-            )}
-
             <View style={styles.form}>
               <View style={styles.inputContainer}>
                 <Text style={styles.inputLabel}>Email Address</Text>
@@ -168,19 +145,14 @@ export default function LoginScreen() {
                     placeholder="Enter your email address"
                     placeholderTextColor="#9CA3AF"
                     value={email}
-                    onChangeText={handleEmailChange}
+                    onChangeText={(text) => setEmail(text.toLowerCase().trim())}
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
                     returnKeyType="next"
                     blurOnSubmit={false}
-                    textContentType="emailAddress"
-                    autoComplete="email"
                   />
                 </View>
-                {email && !email.includes('@') && (
-                  <Text style={styles.inputHint}>Please enter a complete email address</Text>
-                )}
               </View>
 
               <View style={styles.inputContainer}>
@@ -198,8 +170,6 @@ export default function LoginScreen() {
                     autoCorrect={false}
                     returnKeyType="done"
                     onSubmitEditing={handleLogin}
-                    textContentType="password"
-                    autoComplete="password"
                   />
                   <TouchableOpacity
                     style={styles.eyeButton}
@@ -212,9 +182,6 @@ export default function LoginScreen() {
                     )}
                   </TouchableOpacity>
                 </View>
-                {password && password.length < 6 && (
-                  <Text style={styles.inputHint}>Password should be at least 6 characters</Text>
-                )}
               </View>
 
               <TouchableOpacity
@@ -353,7 +320,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    marginBottom: 16,
+    marginBottom: 24,
   },
   errorIcon: {
     marginRight: 12,
@@ -364,36 +331,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     color: '#DC2626',
     lineHeight: 20,
-  },
-  tipsContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 24,
-  },
-  tipsIcon: {
-    marginRight: 12,
-    marginTop: 2,
-  },
-  tipsContent: {
-    flex: 1,
-  },
-  tipsTitle: {
-    fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-    color: '#1E40AF',
-    marginBottom: 4,
-  },
-  tipsText: {
-    fontSize: 13,
-    fontFamily: 'Inter-Regular',
-    color: '#1E40AF',
-    lineHeight: 18,
-    marginBottom: 2,
   },
   form: {
     flex: 1,
@@ -432,13 +369,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: '#111827',
     minHeight: 24,
-  },
-  inputHint: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    marginTop: 4,
-    marginLeft: 4,
   },
   eyeButton: {
     padding: 4,
