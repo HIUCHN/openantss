@@ -424,7 +424,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('🔍 Fetching nearby users within', radius, 'meters...');
       
-      // Enhanced query to get nearby users with their profile information
+      // This is a simplified proximity search
+      // In production, you might want to use PostGIS for more accurate distance calculations
       const { data, error } = await supabase
         .from('user_location')
         .select(`
@@ -449,12 +450,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { data: null, error };
       }
 
-      // Filter by distance and public visibility
+      // Filter by distance (simplified calculation)
       const userLat = profile.latitude;
       const userLng = profile.longitude;
       
       const nearbyUsers = data?.filter((location: any) => {
-        // Only show users who have public mode enabled
         if (!location.profiles?.is_public) return false;
         
         const distance = calculateDistance(
