@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, Switch, Modal, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, MoveVertical as MoreVertical, CircleCheck as CheckCircle, Users, Heart, Eye, TrendingUp, MapPin, Calendar, Building, GraduationCap, Plus, CreditCard as Edit3, Trash2, RefreshCw, Briefcase, Award, Target, Clock, Share, MessageCircle, UserPlus, Settings, Camera, X, Save, Bold, Italic, Link, MoveHorizontal as MoreHorizontal } from 'lucide-react-native';
+import { ArrowLeft, MoveVertical as MoreVertical, CircleCheck as CheckCircle, Users, Heart, Eye, TrendingUp, MapPin, Calendar, Building, GraduationCap, Plus, CreditCard as Edit3, Trash2, RefreshCw, Briefcase, Award, Target, Clock, Share, MessageCircle, UserPlus, Settings } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import EducationForm from '@/components/EducationForm';
 import ExperienceForm from '@/components/ExperienceForm';
-import ContinuousTextInput from '@/components/ContinuousTextInput';
 import { useFocusEffect } from '@react-navigation/native';
 
 type UserEducation = Database['public']['Tables']['user_education']['Row'];
@@ -32,43 +31,37 @@ const getUserData = () => ({
     followers: '1.3K',
     views: 89,
     liveMatches: 32,
+    locations: 9,
+    crossedPaths: 156
   },
   skills: [
-    { id: 1, name: 'UI/UX Design', color: '#3B82F6', level: 95 },
-    { id: 2, name: 'Product Strategy', color: '#8B5CF6', level: 88 },
-    { id: 3, name: 'User Research', color: '#10B981', level: 92 },
-    { id: 4, name: 'Prototyping', color: '#F59E0B', level: 85 },
-    { id: 5, name: 'Design Systems', color: '#EF4444', level: 90 },
-    { id: 6, name: 'Mentoring', color: '#6366F1', level: 87 }
+    { name: 'UI/UX Design', color: '#3B82F6', level: 95 },
+    { name: 'Product Strategy', color: '#8B5CF6', level: 88 },
+    { name: 'User Research', color: '#10B981', level: 92 },
+    { name: 'Prototyping', color: '#F59E0B', level: 85 },
+    { name: 'Design Systems', color: '#EF4444', level: 90 },
+    { name: 'Mentoring', color: '#6366F1', level: 87 }
   ],
   goals: [
-    { id: 1, text: 'Collaboration Partners', icon: UserPlus, color: '#6366F1' },
-    { id: 2, text: 'Mentorship Opportunities', icon: Award, color: '#10B981' },
-    { id: 3, text: 'Speaking Engagements', icon: MessageCircle, color: '#F59E0B' }
+    { text: 'Collaboration Partners', icon: UserPlus, color: '#6366F1' },
+    { text: 'Mentorship Opportunities', icon: Award, color: '#10B981' },
+    { text: 'Speaking Engagements', icon: MessageCircle, color: '#F59E0B' }
   ],
-  interests: [
-    { id: 1, name: '#FinTech' },
-    { id: 2, name: '#HealthTech' },
-    { id: 3, name: '#EdTech' },
-    { id: 4, name: '#AI/ML' }
-  ],
+  interests: ['#FinTech', '#HealthTech', '#EdTech', '#AI/ML'],
   portfolio: [
     {
-      id: 1,
       title: 'Design System 2.0',
       description: 'Component library redesign',
       image: 'https://images.pexels.com/photos/196644/pexels-photo-196644.jpeg?auto=compress&cs=tinysrgb&w=400',
       gradient: ['#3B82F6', '#8B5CF6']
     },
     {
-      id: 2,
       title: 'Mobile App Redesign',
       description: 'E-commerce platform',
       image: 'https://images.pexels.com/photos/267350/pexels-photo-267350.jpeg?auto=compress&cs=tinysrgb&w=400',
       gradient: ['#10B981', '#3B82F6']
     },
     {
-      id: 3,
       title: 'Dashboard Analytics',
       description: 'B2B SaaS product',
       image: 'https://images.pexels.com/photos/590020/pexels-photo-590020.jpeg?auto=compress&cs=tinysrgb&w=400',
@@ -77,7 +70,6 @@ const getUserData = () => ({
   ],
   posts: [
     {
-      id: 1,
       content: 'Just wrapped up an incredible design sprint at Tech Summit! The energy around AI-powered design tools was amazing. Can\'t wait to implement some of these ideas 🚀',
       timestamp: '2d ago',
       likes: 12,
@@ -94,9 +86,6 @@ const getUserData = () => ({
 
 export default function ProfileScreen() {
   const { user, profile, loading: authLoading } = useAuth();
-  const [userData, setUserData] = useState(getUserData());
-  
-  // Education state
   const [educationList, setEducationList] = useState<UserEducation[]>([]);
   const [educationLoading, setEducationLoading] = useState(false);
   const [educationError, setEducationError] = useState<string | null>(null);
@@ -109,27 +98,12 @@ export default function ProfileScreen() {
   const [showExperienceForm, setShowExperienceForm] = useState(false);
   const [editingExperience, setEditingExperience] = useState<Experience | null>(null);
   
-  // Modal states
-  const [showPhotoModal, setShowPhotoModal] = useState(false);
-  const [showCreatePostModal, setShowCreatePostModal] = useState(false);
-  const [showSkillModal, setShowSkillModal] = useState(false);
-  
-  // Editing states
-  const [editingField, setEditingField] = useState<string | null>(null);
-  const [editingValues, setEditingValues] = useState<{[key: string]: string}>({});
-  
-  // Post creation state
-  const [newPostContent, setNewPostContent] = useState('');
-  const [postTags, setPostTags] = useState('');
-  
-  // Skill management state
-  const [newSkillName, setNewSkillName] = useState('');
-  const [newSkillLevel, setNewSkillLevel] = useState('85');
-  
   // Use refs to prevent unnecessary re-fetching
   const isFetchingEducationRef = useRef(false);
   const isFetchingExperienceRef = useRef(false);
   const mountedRef = useRef(true);
+
+  const userData = getUserData();
 
   // Cleanup on unmount
   useEffect(() => {
@@ -279,21 +253,23 @@ export default function ProfileScreen() {
 
               if (error) {
                 console.error('❌ Error deleting education:', error);
-                Alert.alert('Error', 'Failed to delete education record');
+                Alert.alert('Error', 'Failed to delete education record. Please try again.');
               } else {
                 console.log('✅ Education record deleted successfully');
+                // Update local state immediately for better UX
                 setEducationList(prev => prev.filter(edu => edu.id !== educationId));
                 Alert.alert('Success', 'Education record deleted successfully');
                 
+                // Refresh data from server to ensure consistency
                 if (user) {
                   setTimeout(() => {
                     fetchEducationData(user.id, true);
                   }, 300);
                 }
               }
-            } catch (error) {
+            } catch (error: any) {
               console.error('💥 Unexpected error deleting education:', error);
-              Alert.alert('Error', 'An unexpected error occurred');
+              Alert.alert('Error', 'An unexpected error occurred while deleting the education record.');
             }
           }
         }
@@ -355,179 +331,28 @@ export default function ProfileScreen() {
 
               if (error) {
                 console.error('❌ Error deleting experience:', error);
-                Alert.alert('Error', 'Failed to delete experience record');
+                Alert.alert('Error', 'Failed to delete experience record. Please try again.');
               } else {
                 console.log('✅ Experience record deleted successfully');
+                // Update local state immediately for better UX
                 setExperienceList(prev => prev.filter(exp => exp.id !== experienceId));
                 Alert.alert('Success', 'Experience record deleted successfully');
                 
+                // Refresh data from server to ensure consistency
                 if (user) {
                   setTimeout(() => {
                     fetchExperienceData(user.id, true);
                   }, 300);
                 }
               }
-            } catch (error) {
+            } catch (error: any) {
               console.error('💥 Unexpected error deleting experience:', error);
-              Alert.alert('Error', 'An unexpected error occurred');
+              Alert.alert('Error', 'An unexpected error occurred while deleting the experience record.');
             }
           }
         }
       ]
     );
-  };
-
-  // Delete handlers for other sections
-  const handleDeleteSkill = (skillId: number) => {
-    Alert.alert(
-      'Remove Skill',
-      'Are you sure you want to remove this skill?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Remove', 
-          style: 'destructive',
-          onPress: () => {
-            setUserData(prev => ({
-              ...prev,
-              skills: prev.skills.filter(skill => skill.id !== skillId)
-            }));
-          }
-        }
-      ]
-    );
-  };
-
-  const handleDeleteGoal = (goalId: number) => {
-    Alert.alert(
-      'Remove Goal',
-      'Are you sure you want to remove this goal?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Remove', 
-          style: 'destructive',
-          onPress: () => {
-            setUserData(prev => ({
-              ...prev,
-              goals: prev.goals.filter(goal => goal.id !== goalId)
-            }));
-          }
-        }
-      ]
-    );
-  };
-
-  const handleDeleteInterest = (interestId: number) => {
-    Alert.alert(
-      'Remove Interest',
-      'Are you sure you want to remove this interest?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Remove', 
-          style: 'destructive',
-          onPress: () => {
-            setUserData(prev => ({
-              ...prev,
-              interests: prev.interests.filter(interest => interest.id !== interestId)
-            }));
-          }
-        }
-      ]
-    );
-  };
-
-  const handleDeletePortfolioItem = (portfolioId: number) => {
-    Alert.alert(
-      'Delete Project',
-      'Are you sure you want to delete this portfolio project?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: () => {
-            setUserData(prev => ({
-              ...prev,
-              portfolio: prev.portfolio.filter(item => item.id !== portfolioId)
-            }));
-          }
-        }
-      ]
-    );
-  };
-
-  const handleDeletePost = (postId: number) => {
-    Alert.alert(
-      'Delete Post',
-      'Are you sure you want to delete this post?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: () => {
-            setUserData(prev => ({
-              ...prev,
-              posts: prev.posts.filter(post => post.id !== postId)
-            }));
-          }
-        }
-      ]
-    );
-  };
-
-  // Add handlers
-  const handleAddSkill = () => {
-    if (!newSkillName.trim()) {
-      Alert.alert('Error', 'Please enter a skill name');
-      return;
-    }
-
-    const newSkill = {
-      id: Date.now(),
-      name: newSkillName.trim(),
-      color: '#6366F1',
-      level: parseInt(newSkillLevel)
-    };
-
-    setUserData(prev => ({
-      ...prev,
-      skills: [...prev.skills, newSkill]
-    }));
-
-    setNewSkillName('');
-    setNewSkillLevel('85');
-    setShowSkillModal(false);
-  };
-
-  const handleCreatePost = () => {
-    if (!newPostContent.trim()) {
-      Alert.alert('Error', 'Please write something for your post');
-      return;
-    }
-
-    const tags = postTags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
-    
-    const newPost = {
-      id: Date.now(),
-      content: newPostContent.trim(),
-      timestamp: 'now',
-      likes: 0,
-      comments: 0,
-      tags: tags.map(tag => tag.startsWith('#') ? tag : `#${tag}`)
-    };
-
-    setUserData(prev => ({
-      ...prev,
-      posts: [newPost, ...prev.posts]
-    }));
-
-    setNewPostContent('');
-    setPostTags('');
-    setShowCreatePostModal(false);
-    Alert.alert('Success', 'Post created successfully!');
   };
 
   const handleManualRefresh = async () => {
@@ -542,29 +367,6 @@ export default function ProfileScreen() {
 
   const handleBack = () => {
     router.back();
-  };
-
-  // Editing functions
-  const startEditing = (field: string, currentValue: string) => {
-    setEditingField(field);
-    setEditingValues({ [field]: currentValue });
-  };
-
-  const saveEdit = (field: string) => {
-    const newValue = editingValues[field];
-    if (newValue !== undefined) {
-      setUserData(prev => ({
-        ...prev,
-        [field]: newValue
-      }));
-    }
-    setEditingField(null);
-    setEditingValues({});
-  };
-
-  const cancelEdit = () => {
-    setEditingField(null);
-    setEditingValues({});
   };
 
   // Show loading state while auth is loading
@@ -606,19 +408,11 @@ export default function ProfileScreen() {
     </View>
   );
 
-  const SkillBar = ({ skill, onDelete }) => (
+  const SkillBar = ({ skill }) => (
     <View style={styles.skillContainer}>
       <View style={styles.skillHeader}>
         <Text style={styles.skillName}>{skill.name}</Text>
-        <View style={styles.skillActions}>
-          <Text style={styles.skillPercentage}>{skill.level}%</Text>
-          <TouchableOpacity 
-            style={styles.deleteSkillButton}
-            onPress={() => onDelete(skill.id)}
-          >
-            <X size={14} color="#EF4444" />
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.skillPercentage}>{skill.level}%</Text>
       </View>
       <View style={styles.skillBarBackground}>
         <View 
@@ -631,43 +425,20 @@ export default function ProfileScreen() {
     </View>
   );
 
-  const PortfolioCard = ({ project, onDelete }) => {
-    const [showActions, setShowActions] = useState(false);
-
-    return (
-      <TouchableOpacity 
-        style={styles.portfolioCard}
-        onPress={() => setShowActions(!showActions)}
-        activeOpacity={0.8}
+  const PortfolioCard = ({ project, index }) => (
+    <View style={styles.portfolioCard}>
+      <LinearGradient
+        colors={project.gradient}
+        style={styles.portfolioGradient}
       >
-        <LinearGradient
-          colors={project.gradient}
-          style={styles.portfolioGradient}
-        >
-          <View style={styles.portfolioOverlay} />
-        </LinearGradient>
-        
-        {showActions && (
-          <View style={styles.portfolioActions}>
-            <TouchableOpacity 
-              style={styles.portfolioActionButton}
-              onPress={() => onDelete(project.id)}
-            >
-              <Trash2 size={16} color="#FFFFFF" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.portfolioActionButton}>
-              <Edit3 size={16} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-        )}
-        
-        <View style={styles.portfolioContent}>
-          <Text style={styles.portfolioTitle}>{project.title}</Text>
-          <Text style={styles.portfolioDescription}>{project.description}</Text>
-        </View>
-      </TouchableOpacity>
-    );
-  };
+        <View style={styles.portfolioOverlay} />
+      </LinearGradient>
+      <View style={styles.portfolioContent}>
+        <Text style={styles.portfolioTitle}>{project.title}</Text>
+        <Text style={styles.portfolioDescription}>{project.description}</Text>
+      </View>
+    </View>
+  );
 
   const ExperienceCard = ({ experience }) => (
     <View style={styles.experienceCard}>
@@ -707,172 +478,6 @@ export default function ProfileScreen() {
     </View>
   );
 
-  // Photo Upload Modal
-  const PhotoUploadModal = () => (
-    <Modal
-      visible={showPhotoModal}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setShowPhotoModal(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.photoModalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Change Profile Photo</Text>
-            <TouchableOpacity onPress={() => setShowPhotoModal(false)}>
-              <X size={24} color="#6B7280" />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.photoOptions}>
-            <TouchableOpacity style={styles.photoOption}>
-              <Camera size={24} color="#6366F1" />
-              <Text style={styles.photoOptionText}>Take Photo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.photoOption}>
-              <Image 
-                source={{ uri: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }}
-                style={{ width: 24, height: 24, borderRadius: 4 }}
-              />
-              <Text style={styles.photoOptionText}>Choose from Gallery</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  // Create Post Modal
-  const CreatePostModal = () => (
-    <Modal
-      visible={showCreatePostModal}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setShowCreatePostModal(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.createPostModalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Create Post</Text>
-            <TouchableOpacity onPress={() => setShowCreatePostModal(false)}>
-              <X size={24} color="#6B7280" />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.postEditor}>
-            <TextInput
-              style={styles.postTextInput}
-              placeholder="What's on your mind?"
-              value={newPostContent}
-              onChangeText={setNewPostContent}
-              multiline
-              numberOfLines={6}
-              textAlignVertical="top"
-            />
-            
-            <View style={styles.postToolbar}>
-              <TouchableOpacity style={styles.toolbarButton}>
-                <Bold size={18} color="#6B7280" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.toolbarButton}>
-                <Italic size={18} color="#6B7280" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.toolbarButton}>
-                <Link size={18} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-            
-            <TextInput
-              style={styles.tagsInput}
-              placeholder="Tags (comma separated)"
-              value={postTags}
-              onChangeText={setPostTags}
-            />
-            
-            <Text style={styles.characterCount}>
-              {newPostContent.length}/500 characters
-            </Text>
-          </View>
-          
-          <View style={styles.modalActions}>
-            <TouchableOpacity 
-              style={styles.cancelButton}
-              onPress={() => setShowCreatePostModal(false)}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.publishButton}
-              onPress={handleCreatePost}
-            >
-              <Text style={styles.publishButtonText}>Publish</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  // Add Skill Modal
-  const AddSkillModal = () => (
-    <Modal
-      visible={showSkillModal}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setShowSkillModal(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.skillModalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Add Skill</Text>
-            <TouchableOpacity onPress={() => setShowSkillModal(false)}>
-              <X size={24} color="#6B7280" />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.skillForm}>
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Skill Name</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="e.g., React Native"
-                value={newSkillName}
-                onChangeText={setNewSkillName}
-              />
-            </View>
-            
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Proficiency Level (%)</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="85"
-                value={newSkillLevel}
-                onChangeText={setNewSkillLevel}
-                keyboardType="numeric"
-                maxLength={3}
-              />
-            </View>
-          </View>
-          
-          <View style={styles.modalActions}>
-            <TouchableOpacity 
-              style={styles.cancelButton}
-              onPress={() => setShowSkillModal(false)}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.addButton}
-              onPress={handleAddSkill}
-            >
-              <Text style={styles.addButtonText}>Add Skill</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -893,142 +498,52 @@ export default function ProfileScreen() {
           style={styles.coverSection}
         >
           <View style={styles.profileHeaderContent}>
-            <TouchableOpacity 
-              style={styles.avatarContainer}
-              onPress={() => setShowPhotoModal(true)}
-            >
+            <View style={styles.avatarContainer}>
               <Image source={{ uri: userData.image }} style={styles.avatar} />
-              <View style={styles.cameraOverlay}>
-                <Camera size={16} color="#FFFFFF" />
-              </View>
               <View style={styles.verifiedBadge}>
                 <CheckCircle size={12} color="#FFFFFF" fill="#10B981" />
               </View>
-            </TouchableOpacity>
-            
-            {/* Editable Name */}
-            {editingField === 'name' ? (
-              <View style={styles.editingContainer}>
-                <TextInput
-                  style={styles.editInput}
-                  value={editingValues.name}
-                  onChangeText={(text) => setEditingValues(prev => ({ ...prev, name: text }))}
-                  autoFocus
-                />
-                <View style={styles.editActions}>
-                  <TouchableOpacity onPress={() => saveEdit('name')} style={styles.saveButton}>
-                    <Save size={16} color="#FFFFFF" />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={cancelEdit} style={styles.cancelEditButton}>
-                    <X size={16} color="#6B7280" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity 
-                style={styles.editableField}
-                onPress={() => startEditing('name', userData.name)}
-              >
-                <Text style={styles.userName}>{userData.name}</Text>
-                <Edit3 size={14} color="rgba(255, 255, 255, 0.7)" />
-              </TouchableOpacity>
-            )}
-            
-            {/* Editable Role */}
-            {editingField === 'role' ? (
-              <View style={styles.editingContainer}>
-                <TextInput
-                  style={styles.editInput}
-                  value={editingValues.role}
-                  onChangeText={(text) => setEditingValues(prev => ({ ...prev, role: text }))}
-                  autoFocus
-                />
-                <View style={styles.editActions}>
-                  <TouchableOpacity onPress={() => saveEdit('role')} style={styles.saveButton}>
-                    <Save size={16} color="#FFFFFF" />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={cancelEdit} style={styles.cancelEditButton}>
-                    <X size={16} color="#6B7280" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity 
-                style={styles.editableField}
-                onPress={() => startEditing('role', `${userData.role} at ${userData.company}`)}
-              >
-                <Text style={styles.userRole}>{userData.role} at {userData.company}</Text>
-                <Edit3 size={12} color="rgba(255, 255, 255, 0.6)" />
-              </TouchableOpacity>
-            )}
-            
-            {/* Editable Status */}
-            {editingField === 'status' ? (
-              <View style={styles.editingContainer}>
-                <TextInput
-                  style={styles.editInput}
-                  value={editingValues.status}
-                  onChangeText={(text) => setEditingValues(prev => ({ ...prev, status: text }))}
-                  autoFocus
-                />
-                <View style={styles.editActions}>
-                  <TouchableOpacity onPress={() => saveEdit('status')} style={styles.saveButton}>
-                    <Save size={16} color="#FFFFFF" />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={cancelEdit} style={styles.cancelEditButton}>
-                    <X size={16} color="#6B7280" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity 
-                style={[styles.editableField, styles.statusContainer]}
-                onPress={() => startEditing('status', userData.status)}
-              >
-                <View style={styles.statusDot} />
-                <Text style={styles.statusText}>{userData.status}</Text>
-                <Edit3 size={12} color="rgba(255, 255, 255, 0.6)" />
-              </TouchableOpacity>
-            )}
+            </View>
+            <Text style={styles.userName}>{userData.name}</Text>
+            <Text style={styles.userRole}>{userData.role} at {userData.company}</Text>
+            <View style={styles.statusContainer}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>{userData.status}</Text>
+            </View>
           </View>
         </LinearGradient>
 
-        {/* Metrics Grid - Updated to 4 metrics only */}
+        {/* Metrics Grid */}
         <View style={styles.metricsSection}>
           <View style={styles.metricsGrid}>
             <MetricCard icon={Users} value={userData.metrics.connections} label="Connections" color="#6366F1" />
             <MetricCard icon={Heart} value={userData.metrics.followers} label="Followers" color="#EF4444" />
-            <MetricCard icon={Eye} value={userData.metrics.views} label="Views" color="#3B82F6" />
+            <MetricCard icon={Eye} value={userData.metrics.views} label="Views (Week)" color="#3B82F6" />
+          </View>
+          <View style={styles.metricsGrid}>
             <MetricCard icon={TrendingUp} value={userData.metrics.liveMatches} label="Live Matches" color="#10B981" />
+            <MetricCard icon={MapPin} value={userData.metrics.locations} label="Locations" color="#F59E0B" />
+            <MetricCard icon={Users} value={userData.metrics.crossedPaths} label="Crossed Paths" color="#8B5CF6" />
           </View>
         </View>
 
         {/* Bio Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About Me</Text>
-          <ContinuousTextInput
-            placeholder="Tell us about yourself..."
-            initialValue={userData.bio}
-            onSave={(text) => setUserData(prev => ({ ...prev, bio: text }))}
-            maxLength={500}
-            showWordCount={true}
-          />
+          <Text style={styles.bioText}>{userData.bio}</Text>
         </View>
 
         {/* Posts & Activity */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Posts & Activity</Text>
-            <TouchableOpacity 
-              style={styles.createPostButton}
-              onPress={() => setShowCreatePostModal(true)}
-            >
+            <TouchableOpacity style={styles.createPostButton}>
               <Text style={styles.createPostText}>Create Post</Text>
             </TouchableOpacity>
           </View>
           
-          {userData.posts.map((post) => (
-            <View key={post.id} style={styles.postCard}>
+          {userData.posts.map((post, index) => (
+            <View key={index} style={styles.postCard}>
               <View style={styles.postHeader}>
                 <Image source={{ uri: userData.image }} style={styles.postAvatar} />
                 <View style={styles.postInfo}>
@@ -1037,9 +552,6 @@ export default function ProfileScreen() {
                     <Text style={styles.postTimestamp}>{post.timestamp}</Text>
                   </View>
                 </View>
-                <TouchableOpacity style={styles.postMenuButton}>
-                  <MoreHorizontal size={16} color="#6B7280" />
-                </TouchableOpacity>
               </View>
               <Text style={styles.postContent}>{post.content}</Text>
               <View style={styles.postTags}>
@@ -1064,18 +576,16 @@ export default function ProfileScreen() {
                   <MessageCircle size={14} color="#6B7280" />
                   <Text style={styles.postActionText}>{post.comments}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.deletePostButton}
-                  onPress={() => handleDeletePost(post.id)}
-                >
-                  <Trash2 size={14} color="#EF4444" />
-                </TouchableOpacity>
               </View>
             </View>
           ))}
+          
+          <TouchableOpacity style={styles.showMoreButton}>
+            <Text style={styles.showMoreText}>Show More Posts</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Experience Section */}
+        {/* Experience Section - NEW IMPLEMENTATION */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Experience</Text>
@@ -1235,17 +745,14 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Skills & Expertise</Text>
-            <TouchableOpacity 
-              style={styles.editButton}
-              onPress={() => setShowSkillModal(true)}
-            >
-              <Plus size={16} color="#6366F1" />
-              <Text style={styles.editButtonText}>Add Skill</Text>
+            <TouchableOpacity style={styles.editButton}>
+              <Edit3 size={16} color="#6366F1" />
+              <Text style={styles.editButtonText}>Edit</Text>
             </TouchableOpacity>
           </View>
           
-          {userData.skills.map((skill) => (
-            <SkillBar key={skill.id} skill={skill} onDelete={handleDeleteSkill} />
+          {userData.skills.map((skill, index) => (
+            <SkillBar key={index} skill={skill} />
           ))}
           
           <View style={styles.endorsementInfo}>
@@ -1260,19 +767,20 @@ export default function ProfileScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Portfolio</Text>
             <TouchableOpacity style={styles.editButton}>
-              <Plus size={16} color="#6366F1" />
-              <Text style={styles.editButtonText}>Add Project</Text>
+              <Edit3 size={16} color="#6366F1" />
+              <Text style={styles.editButtonText}>Edit Project</Text>
             </TouchableOpacity>
           </View>
           
           <View style={styles.portfolioGrid}>
-            {userData.portfolio.map((project) => (
-              <PortfolioCard 
-                key={project.id} 
-                project={project} 
-                onDelete={handleDeletePortfolioItem}
-              />
+            {userData.portfolio.map((project, index) => (
+              <PortfolioCard key={index} project={project} index={index} />
             ))}
+            
+            <TouchableOpacity style={styles.addPortfolioCard}>
+              <Plus size={24} color="#9CA3AF" />
+              <Text style={styles.addPortfolioText}>Add Project</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -1287,18 +795,12 @@ export default function ProfileScreen() {
                 <Text style={styles.goalCategoryTitle}>Looking For</Text>
               </View>
               <View style={styles.goalTags}>
-                {userData.goals.map((goal) => {
+                {userData.goals.map((goal, index) => {
                   const IconComponent = goal.icon;
                   return (
-                    <View key={goal.id} style={[styles.goalTag, { backgroundColor: `${goal.color}20` }]}>
+                    <View key={index} style={[styles.goalTag, { backgroundColor: `${goal.color}20` }]}>
                       <IconComponent size={14} color={goal.color} />
                       <Text style={[styles.goalTagText, { color: goal.color }]}>{goal.text}</Text>
-                      <TouchableOpacity 
-                        style={styles.removeTagButton}
-                        onPress={() => handleDeleteGoal(goal.id)}
-                      >
-                        <X size={12} color={goal.color} />
-                      </TouchableOpacity>
                     </View>
                   );
                 })}
@@ -1311,15 +813,9 @@ export default function ProfileScreen() {
                 <Text style={styles.goalCategoryTitle}>Industries of Interest</Text>
               </View>
               <View style={styles.goalTags}>
-                {userData.interests.map((interest) => (
-                  <View key={interest.id} style={styles.interestTag}>
-                    <Text style={styles.interestTagText}>{interest.name}</Text>
-                    <TouchableOpacity 
-                      style={styles.removeTagButton}
-                      onPress={() => handleDeleteInterest(interest.id)}
-                    >
-                      <X size={12} color="#6B7280" />
-                    </TouchableOpacity>
+                {userData.interests.map((interest, index) => (
+                  <View key={index} style={styles.interestTag}>
+                    <Text style={styles.interestTagText}>{interest}</Text>
                   </View>
                 ))}
               </View>
@@ -1327,13 +823,85 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Activity Insights */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Activity Insights</Text>
+          
+          <View style={styles.insightsGrid}>
+            <View style={styles.insightCard}>
+              <View style={styles.insightIconContainer}>
+                <Calendar size={16} color="#3B82F6" />
+                <Text style={styles.insightValue}>6</Text>
+              </View>
+              <Text style={styles.insightLabel}>Events Attended</Text>
+            </View>
+            
+            <View style={styles.insightCard}>
+              <View style={styles.insightIconContainer}>
+                <MapPin size={16} color="#10B981" />
+                <Text style={styles.insightValue}>9</Text>
+              </View>
+              <Text style={styles.insightLabel}>Locations Active</Text>
+            </View>
+          </View>
+          
+          <View style={styles.lastActiveCard}>
+            <Clock size={16} color="#6366F1" />
+            <View style={styles.lastActiveInfo}>
+              <Text style={styles.lastActiveTitle}>Last Public Mode</Text>
+              <Text style={styles.lastActiveSubtitle}>Tech Summit – April 2025</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Privacy Settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Visibility & Privacy</Text>
+          
+          <View style={styles.privacySettings}>
+            <View style={styles.privacySetting}>
+              <View style={styles.privacyInfo}>
+                <Text style={styles.privacyTitle}>Public Mode</Text>
+                <Text style={styles.privacyDescription}>Show your profile to nearby professionals</Text>
+              </View>
+              <Switch
+                value={userData.privacy.publicMode}
+                onValueChange={() => {}}
+                trackColor={{ false: '#E5E7EB', true: '#6366F1' }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+            
+            <View style={styles.privacySetting}>
+              <View style={styles.privacyInfo}>
+                <Text style={styles.privacyTitle}>Proximity Alerts</Text>
+                <Text style={styles.privacyDescription}>Get notified about relevant connections nearby</Text>
+              </View>
+              <Switch
+                value={userData.privacy.proximityAlerts}
+                onValueChange={() => {}}
+                trackColor={{ false: '#E5E7EB', true: '#6366F1' }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+            
+            <View style={styles.privacySetting}>
+              <View style={styles.privacyInfo}>
+                <Text style={styles.privacyTitle}>Direct Messages</Text>
+                <Text style={styles.privacyDescription}>Allow others to message you directly</Text>
+              </View>
+              <Switch
+                value={userData.privacy.directMessages}
+                onValueChange={() => {}}
+                trackColor={{ false: '#E5E7EB', true: '#6366F1' }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          </View>
+        </View>
+
         <View style={styles.bottomPadding} />
       </ScrollView>
-
-      {/* Modals */}
-      <PhotoUploadModal />
-      <CreatePostModal />
-      <AddSkillModal />
     </SafeAreaView>
   );
 }
@@ -1389,17 +957,6 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: '#FFFFFF',
   },
-  cameraOverlay: {
-    position: 'absolute',
-    bottom: 8,
-    right: 8,
-    width: 32,
-    height: 32,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   verifiedBadge: {
     position: 'absolute',
     bottom: -2,
@@ -1413,55 +970,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  editableField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginBottom: 8,
-  },
-  editingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  editInput: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#111827',
-    minWidth: 200,
-  },
-  editActions: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  saveButton: {
-    backgroundColor: '#10B981',
-    borderRadius: 6,
-    padding: 8,
-  },
-  cancelEditButton: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 6,
-    padding: 8,
-  },
   userName: {
     fontSize: 24,
     fontFamily: 'Inter-Bold',
     color: '#FFFFFF',
+    marginBottom: 4,
   },
   userRole: {
     fontSize: 16,
     fontFamily: 'Inter-Regular',
     color: 'rgba(255, 255, 255, 0.9)',
+    marginBottom: 12,
   },
   statusContainer: {
     flexDirection: 'row',
@@ -1493,6 +1012,7 @@ const styles = StyleSheet.create({
   metricsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+    marginBottom: 12,
   },
   metricCard: {
     alignItems: 'center',
@@ -1578,6 +1098,12 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     color: '#6366F1',
   },
+  bioText: {
+    fontSize: 15,
+    fontFamily: 'Inter-Regular',
+    color: '#374151',
+    lineHeight: 22,
+  },
   postCard: {
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
@@ -1612,9 +1138,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
-  },
-  postMenuButton: {
-    padding: 4,
   },
   postContent: {
     fontSize: 14,
@@ -1652,7 +1175,6 @@ const styles = StyleSheet.create({
   postActions: {
     flexDirection: 'row',
     gap: 16,
-    alignItems: 'center',
   },
   postAction: {
     flexDirection: 'row',
@@ -1664,9 +1186,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
   },
-  deletePostButton: {
-    marginLeft: 'auto',
-    padding: 4,
+  showMoreButton: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  showMoreText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#6366F1',
   },
   experienceCard: {
     backgroundColor: '#F9FAFB',
@@ -1815,18 +1342,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     color: '#111827',
   },
-  skillActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
   skillPercentage: {
     fontSize: 12,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
-  },
-  deleteSkillButton: {
-    padding: 2,
   },
   skillBarBackground: {
     width: '100%',
@@ -1869,18 +1388,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
-  portfolioActions: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    flexDirection: 'row',
-    gap: 4,
-  },
-  portfolioActionButton: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: 6,
-    padding: 6,
-  },
   portfolioContent: {
     position: 'absolute',
     bottom: 12,
@@ -1897,6 +1404,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter-Regular',
     color: 'rgba(255, 255, 255, 0.8)',
+  },
+  addPortfolioCard: {
+    width: '48%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  addPortfolioText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
   },
   goalsContainer: {
     gap: 24,
@@ -1931,183 +1454,91 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Medium',
   },
-  removeTagButton: {
-    marginLeft: 4,
-    padding: 2,
-  },
   interestTag: {
     backgroundColor: '#F3F4F6',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
   },
   interestTagText: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#6B7280',
   },
-  // Modal styles
-  modalOverlay: {
+  insightsGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  insightCard: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
     alignItems: 'center',
   },
-  photoModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    margin: 32,
-    width: '80%',
-    maxWidth: 400,
+  insightIconContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
   },
-  createPostModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    margin: 32,
-    width: '90%',
-    maxWidth: 500,
-    maxHeight: '80%',
+  insightValue: {
+    fontSize: 24,
+    fontFamily: 'Inter-Bold',
+    color: '#111827',
   },
-  skillModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    margin: 32,
-    width: '80%',
-    maxWidth: 400,
+  insightLabel: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#6B7280',
+    textAlign: 'center',
   },
-  modalHeader: {
+  lastActiveCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
+  },
+  lastActiveInfo: {
+    flex: 1,
+  },
+  lastActiveTitle: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#1E40AF',
+    marginBottom: 2,
+  },
+  lastActiveSubtitle: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#3B82F6',
+  },
+  privacySettings: {
+    gap: 16,
+  },
+  privacySetting: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    paddingVertical: 8,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
-    color: '#111827',
+  privacyInfo: {
+    flex: 1,
+    marginRight: 16,
   },
-  photoOptions: {
-    gap: 16,
-  },
-  photoOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    gap: 12,
-  },
-  photoOptionText: {
+  privacyTitle: {
     fontSize: 16,
     fontFamily: 'Inter-Medium',
-    color: '#374151',
-  },
-  postEditor: {
-    marginBottom: 24,
-  },
-  postTextInput: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    fontFamily: 'Inter-Regular',
     color: '#111827',
-    textAlignVertical: 'top',
-    minHeight: 120,
-    marginBottom: 12,
+    marginBottom: 2,
   },
-  postToolbar: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
-  },
-  toolbarButton: {
-    padding: 8,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-  },
-  tagsInput: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    padding: 12,
+  privacyDescription: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  characterCount: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#9CA3AF',
-    textAlign: 'right',
-  },
-  skillForm: {
-    marginBottom: 24,
-  },
-  formGroup: {
-    marginBottom: 16,
-  },
-  formLabel: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-    marginBottom: 6,
-  },
-  formInput: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    color: '#111827',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-  },
-  publishButton: {
-    flex: 1,
-    backgroundColor: '#6366F1',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  publishButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  addButton: {
-    flex: 1,
-    backgroundColor: '#10B981',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  addButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
+    color: '#6B7280',
   },
   bottomPadding: {
     height: 100,
