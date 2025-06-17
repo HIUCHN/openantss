@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -117,7 +117,6 @@ const recentConnections = [
 
 export default function HomeScreen() {
   const { profile, togglePublicMode } = useAuth();
-  const [isPublicMode, setIsPublicMode] = useState(profile?.is_public ?? true);
   const [searchQuery, setSearchQuery] = useState('');
   const [requests, setRequests] = useState(connectionRequests);
   const [filteredMatches, setFilteredMatches] = useState(smartMatches);
@@ -127,12 +126,8 @@ export default function HomeScreen() {
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [isTogglingPublicMode, setIsTogglingPublicMode] = useState(false);
 
-  // Update local state when profile changes
-  React.useEffect(() => {
-    if (profile) {
-      setIsPublicMode(profile.is_public);
-    }
-  }, [profile]);
+  // Use profile.is_public directly, no local state needed
+  const isPublicMode = profile?.is_public ?? true;
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -201,7 +196,17 @@ export default function HomeScreen() {
   };
 
   const handlePublicModeToggle = async (value: boolean) => {
-    if (isTogglingPublicMode) return; // Prevent multiple simultaneous toggles
+    // Prevent multiple simultaneous toggles
+    if (isTogglingPublicMode) {
+      console.log('🚫 Toggle already in progress, ignoring...');
+      return;
+    }
+
+    // Prevent toggling if the value is the same as current state
+    if (value === isPublicMode) {
+      console.log('🚫 Value is same as current state, ignoring...');
+      return;
+    }
 
     setIsTogglingPublicMode(true);
     
@@ -217,27 +222,17 @@ export default function HomeScreen() {
           'Failed to update location sharing settings. Please try again.',
           [{ text: 'OK' }]
         );
-        // Revert the switch state on error
         return;
       }
       
-      // Update local state
-      setIsPublicMode(value);
-      
       // Show feedback to user
-      if (value) {
-        Alert.alert(
-          'Location Sharing Enabled', 
-          'Your location is now being shared with nearby professionals. You can find and be found by others in your area.',
-          [{ text: 'Got it' }]
-        );
-      } else {
-        Alert.alert(
-          'Location Sharing Disabled', 
-          'Your location is no longer being shared. You won\'t appear to nearby professionals and your location data has been cleared.',
-          [{ text: 'Got it' }]
-        );
-      }
+      const message = value 
+        ? 'Your location is now being shared with nearby professionals. You can find and be found by others in your area.'
+        : 'Your location is no longer being shared. You won\'t appear to nearby professionals and your location data has been cleared.';
+      
+      const title = value ? 'Location Sharing Enabled' : 'Location Sharing Disabled';
+      
+      Alert.alert(title, message, [{ text: 'Got it' }]);
       
       console.log('✅ Public mode toggled successfully to:', value);
     } catch (error) {
@@ -248,7 +243,10 @@ export default function HomeScreen() {
         [{ text: 'OK' }]
       );
     } finally {
-      setIsTogglingPublicMode(false);
+      // Add a small delay to prevent rapid toggles
+      setTimeout(() => {
+        setIsTogglingPublicMode(false);
+      }, 500);
     }
   };
 
@@ -467,12 +465,12 @@ export default function HomeScreen() {
 
       {/* Location Toggle Banner */}
       <LinearGradient
-        colors={['#6366F1', '#8B5CF6']}
+        colors={isPublicMode ? ['#10B981', '#059669'] : ['#EF4444', '#DC2626']}
         style={styles.locationBanner}
       >
         <View style={styles.locationContent}>
           <View style={styles.locationLeft}>
-            <View style={[styles.locationIcon, { backgroundColor: isPublicMode ? '#10B981' : '#EF4444' }]}>
+            <View style={[styles.locationIcon, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}>
               <MapPin size={16} color="#FFFFFF" />
             </View>
             <View>
@@ -496,7 +494,7 @@ export default function HomeScreen() {
             <Switch
               value={isPublicMode}
               onValueChange={handlePublicModeToggle}
-              trackColor={{ false: '#FFFFFF40', true: '#10B981' }}
+              trackColor={{ false: 'rgba(255, 255, 255, 0.3)', true: 'rgba(255, 255, 255, 0.3)' }}
               thumbColor="#FFFFFF"
               disabled={isTogglingPublicMode}
               style={[
