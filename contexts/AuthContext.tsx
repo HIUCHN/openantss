@@ -133,15 +133,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .limit(1);
 
-      if (error && error.code !== 'PGRST116') {
+      if (error) {
         console.error('❌ Error fetching profile from database:', error);
-      } else if (data) {
+      } else if (data && data.length > 0) {
         console.log('✅ Profile fetched successfully from database');
-        setProfile(data);
+        setProfile(data[0]);
       } else {
         console.log('👤 No profile found in database');
+        setProfile(null);
       }
     } catch (error) {
       console.error('❌ Error fetching profile from database:', error);
@@ -189,9 +190,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('profiles')
         .select('username')
         .eq('username', username)
-        .single();
+        .limit(1);
 
-      if (existingProfile) {
+      if (existingProfile && existingProfile.length > 0) {
         setConnectionStatus('disconnected');
         return {
           error: {
