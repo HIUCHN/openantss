@@ -7,10 +7,8 @@ import SearchBar from '@/components/SearchBar';
 import OpenAntsLogo from '@/components/OpenAntsLogo';
 import { router } from 'expo-router';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
-import LocationTracker from '@/components/LocationTracker';
 import DebugPanel from '@/components/DebugPanel';
 import { IS_DEBUG } from '@/constants';
-import { useLocationTracking } from '@/hooks/useLocationTracking';
 
 // Debug mode toggle - set to true to show debug information
 const smartMatches = [
@@ -125,12 +123,6 @@ export default function HomeScreen() {
   const [showAllRequests, setShowAllRequests] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
-
-  // Use location tracking hook
-  const { currentLocation, isTracking } = useLocationTracking({
-    autoStart: true,
-    enableHighAccuracy: true,
-  });
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -422,15 +414,8 @@ export default function HomeScreen() {
               <MapPin size={16} color="#FFFFFF" />
             </View>
             <View>
-              <Text style={styles.publicModeText}>
-                {isTracking ? 'Live Location Active' : 'Location Disabled'}
-              </Text>
-              <Text style={styles.locationText}>
-                {currentLocation 
-                  ? `Lat: ${currentLocation.latitude.toFixed(4)}, Lng: ${currentLocation.longitude.toFixed(4)}`
-                  : 'Enable location to find nearby professionals'
-                }
-              </Text>
+              <Text style={styles.publicModeText}>Public Mode</Text>
+              <Text style={styles.locationText}>Coffee Central, Downtown</Text>
             </View>
           </View>
           <Switch
@@ -481,12 +466,6 @@ export default function HomeScreen() {
             )}
           </View>
         )}
-
-        {/* Location Tracker Component - Silent mode */}
-        <LocationTracker 
-          autoStart={true}
-          showControls={false}
-        />
 
         {/* Smart Matches Section */}
         <View style={styles.section}>
