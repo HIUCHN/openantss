@@ -7,6 +7,7 @@ import SearchBar from '@/components/SearchBar';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
 import ContinuousTextInput from '@/components/ContinuousTextInput';
 import { useAuth } from '@/contexts/AuthContext';
+import { router } from 'expo-router';
 
 interface Comment {
   id: string;
@@ -453,15 +454,28 @@ export default function NewsfeedScreen() {
     setShowAccountSettings(true);
   };
 
+  const handleUserProfilePress = (userId: string) => {
+    // Don't navigate to own profile, show settings instead
+    if (userId === profile?.id) {
+      setShowAccountSettings(true);
+      return;
+    }
+    
+    // Navigate to user profile screen
+    router.push(`/user-profile/${userId}`);
+  };
+
   const CreatePostSection = () => (
     <View style={styles.createPostSection}>
       <View style={styles.createPostContainer}>
-        <Image 
-          source={{ 
-            uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' 
-          }} 
-          style={styles.userAvatar} 
-        />
+        <TouchableOpacity onPress={() => handleUserProfilePress(profile?.id || '')}>
+          <Image 
+            source={{ 
+              uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' 
+            }} 
+            style={styles.userAvatar} 
+          />
+        </TouchableOpacity>
         <View style={styles.createPostInput}>
           <ContinuousTextInput
             placeholder="Share a thought, update, question, or project..."
@@ -528,10 +542,14 @@ export default function NewsfeedScreen() {
         
         {comments.map((comment) => (
           <View key={comment.id} style={styles.commentItem}>
-            <Image source={{ uri: comment.author.avatar }} style={styles.commentAvatar} />
+            <TouchableOpacity onPress={() => handleUserProfilePress(comment.author.id)}>
+              <Image source={{ uri: comment.author.avatar }} style={styles.commentAvatar} />
+            </TouchableOpacity>
             <View style={styles.commentContent}>
               <View style={styles.commentHeader}>
-                <Text style={styles.commentAuthor}>{comment.author.name}</Text>
+                <TouchableOpacity onPress={() => handleUserProfilePress(comment.author.id)}>
+                  <Text style={styles.commentAuthor}>{comment.author.name}</Text>
+                </TouchableOpacity>
                 <Text style={styles.commentTimestamp}>{comment.timestamp}</Text>
               </View>
               <Text style={styles.commentText}>{comment.content}</Text>
@@ -583,12 +601,14 @@ export default function NewsfeedScreen() {
         ))}
         
         <View style={styles.addCommentSection}>
-          <Image 
-            source={{ 
-              uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' 
-            }} 
-            style={styles.commentAvatar} 
-          />
+          <TouchableOpacity onPress={() => handleUserProfilePress(profile?.id || '')}>
+            <Image 
+              source={{ 
+                uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' 
+              }} 
+              style={styles.commentAvatar} 
+            />
+          </TouchableOpacity>
           <View style={styles.addCommentInput}>
             <ContinuousTextInput
               placeholder="Write a comment..."
@@ -667,11 +687,17 @@ export default function NewsfeedScreen() {
     return (
       <View style={styles.postCard}>
         <View style={styles.postHeader}>
-          <Image source={{ uri: post.author.image }} style={styles.authorImage} />
-          <View style={styles.authorInfo}>
+          <TouchableOpacity onPress={() => handleUserProfilePress(post.author.id)}>
+            <Image source={{ uri: post.author.image }} style={styles.authorImage} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.authorInfo}
+            onPress={() => handleUserProfilePress(post.author.id)}
+            activeOpacity={0.7}
+          >
             <Text style={styles.authorName}>{post.author.name}</Text>
             <Text style={styles.authorRole}>{post.author.role} at {post.author.company}</Text>
-          </View>
+          </TouchableOpacity>
           <View style={styles.postMeta}>
             <Text style={styles.timestamp}>{post.timestamp}</Text>
             <View style={styles.postMenuContainer}>
