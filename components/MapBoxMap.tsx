@@ -75,7 +75,7 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/light-v11',
+      style: 'mapbox://styles/mapbox/light-v11', // Using the light style as requested
       center: [-0.1276, 51.5074], // London coordinates
       zoom: 15,
       attributionControl: false,
