@@ -126,6 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active' && session) {
+        console.log('📱 App came to foreground');
         if (IS_FORCE_LOGOUT) {
           await supabase.auth.signOut();
         } else if (IS_FORCE_LOGIN) {
@@ -136,7 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await signIn(email, password);
           }
         } else {
-          console.log('📱 App came to foreground, checking connection...');
+          console.log('checking connection...');
           // Let Supabase handle session refresh automatically
           setConnectionStatus('connected');
         }
