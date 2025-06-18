@@ -137,7 +137,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await supabase.auth.signOut();
           } else {
             console.log("must login")
-            await signIn(email, password);
+            await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
           }
         } else {
           console.log('checking connection...');
