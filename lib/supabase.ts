@@ -7,8 +7,8 @@ import { encode, decode } from 'base-64';
 console.log("anhnq1 create supabase")
 
 // Get environment variables with fallbacks for development
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseUrl = 'https://bduhknjzeuyjjscggzzq.supabase.co' || '';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkdWhrbmp6ZXV5ampzY2dnenpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAxNjQ5MDAsImV4cCI6MjA2NTc0MDkwMH0.E1GceD8S4tQcUefbEgzD8pb95CtTm1OWuY6ilgGvUcM' || '';
 
 // Validate that required environment variables are present
 if (!supabaseUrl) {
