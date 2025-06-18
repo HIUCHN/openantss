@@ -455,20 +455,27 @@ export default function NewsfeedScreen() {
   };
 
   const handleUserProfilePress = (userId: string) => {
+    console.log('🔍 Navigating to user profile:', userId, 'Current user:', profile?.id);
+    
     // Don't navigate to own profile, show settings instead
     if (userId === profile?.id) {
+      console.log('👤 Opening own profile settings');
       setShowAccountSettings(true);
       return;
     }
     
     // Navigate to user profile screen
+    console.log('🚀 Navigating to user profile screen for user:', userId);
     router.push(`/user-profile/${userId}`);
   };
 
   const CreatePostSection = () => (
     <View style={styles.createPostSection}>
       <View style={styles.createPostContainer}>
-        <TouchableOpacity onPress={() => handleUserProfilePress(profile?.id || '')}>
+        <TouchableOpacity 
+          onPress={() => handleUserProfilePress(profile?.id || '')}
+          activeOpacity={0.7}
+        >
           <Image 
             source={{ 
               uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' 
@@ -542,12 +549,18 @@ export default function NewsfeedScreen() {
         
         {comments.map((comment) => (
           <View key={comment.id} style={styles.commentItem}>
-            <TouchableOpacity onPress={() => handleUserProfilePress(comment.author.id)}>
+            <TouchableOpacity 
+              onPress={() => handleUserProfilePress(comment.author.id)}
+              activeOpacity={0.7}
+            >
               <Image source={{ uri: comment.author.avatar }} style={styles.commentAvatar} />
             </TouchableOpacity>
             <View style={styles.commentContent}>
               <View style={styles.commentHeader}>
-                <TouchableOpacity onPress={() => handleUserProfilePress(comment.author.id)}>
+                <TouchableOpacity 
+                  onPress={() => handleUserProfilePress(comment.author.id)}
+                  activeOpacity={0.7}
+                >
                   <Text style={styles.commentAuthor}>{comment.author.name}</Text>
                 </TouchableOpacity>
                 <Text style={styles.commentTimestamp}>{comment.timestamp}</Text>
@@ -601,7 +614,10 @@ export default function NewsfeedScreen() {
         ))}
         
         <View style={styles.addCommentSection}>
-          <TouchableOpacity onPress={() => handleUserProfilePress(profile?.id || '')}>
+          <TouchableOpacity 
+            onPress={() => handleUserProfilePress(profile?.id || '')}
+            activeOpacity={0.7}
+          >
             <Image 
               source={{ 
                 uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' 
@@ -687,7 +703,10 @@ export default function NewsfeedScreen() {
     return (
       <View style={styles.postCard}>
         <View style={styles.postHeader}>
-          <TouchableOpacity onPress={() => handleUserProfilePress(post.author.id)}>
+          <TouchableOpacity 
+            onPress={() => handleUserProfilePress(post.author.id)}
+            activeOpacity={0.7}
+          >
             <Image source={{ uri: post.author.image }} style={styles.authorImage} />
           </TouchableOpacity>
           <TouchableOpacity 
