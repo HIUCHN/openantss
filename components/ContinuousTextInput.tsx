@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, TextInput, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
-import { CreditCard as Edit3, Save, X } from 'lucide-react-native';
+import { CreditCard as Edit3, Send, X } from 'lucide-react-native';
 
 interface ContinuousTextInputProps {
   placeholder?: string;
@@ -15,6 +15,8 @@ interface ContinuousTextInputProps {
   autoFocus?: boolean;
   minHeight?: number;
   maxHeight?: number;
+  saveButtonText?: string;
+  saveButtonIcon?: 'save' | 'send';
 }
 
 export default function ContinuousTextInput({
@@ -30,6 +32,8 @@ export default function ContinuousTextInput({
   autoFocus = false,
   minHeight = 120,
   maxHeight = 300,
+  saveButtonText = "Save",
+  saveButtonIcon = 'save',
 }: ContinuousTextInputProps) {
   const [text, setText] = useState(initialValue);
   const [isEditing, setIsEditing] = useState(autoFocus);
@@ -55,6 +59,7 @@ export default function ContinuousTextInput({
   const handleSave = () => {
     setIsEditing(false);
     onSave?.(text);
+    setText(''); // Clear the text after posting
     textInputRef.current?.blur();
   };
 
@@ -159,12 +164,20 @@ export default function ContinuousTextInput({
           <Text style={styles.cancelButtonText}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity 
-          style={styles.saveButton} 
+          style={[
+            styles.saveButton,
+            !text.trim() && styles.saveButtonDisabled
+          ]} 
           onPress={handleSave}
           activeOpacity={0.7}
+          disabled={!text.trim()}
         >
-          <Save size={16} color="#FFFFFF" />
-          <Text style={styles.saveButtonText}>Save</Text>
+          {saveButtonIcon === 'send' ? (
+            <Send size={16} color="#FFFFFF" />
+          ) : (
+            <Edit3 size={16} color="#FFFFFF" />
+          )}
+          <Text style={styles.saveButtonText}>{saveButtonText}</Text>
         </TouchableOpacity>
       </View>
 
@@ -284,6 +297,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
     gap: 4,
+  },
+  saveButtonDisabled: {
+    backgroundColor: '#D1D5DB',
+    opacity: 0.6,
   },
   saveButtonText: {
     fontSize: 12,
