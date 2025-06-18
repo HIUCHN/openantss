@@ -870,7 +870,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .select('id')
         .eq('sender_id', user.id)
         .eq('receiver_id', receiverId)
-        .single();
+        .maybeSingle();
 
       if (existingRequest) {
         return { error: new Error('Connection request already sent') };
@@ -881,7 +881,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('connections')
         .select('id')
         .or(`and(user1_id.eq.${user.id},user2_id.eq.${receiverId}),and(user1_id.eq.${receiverId},user2_id.eq.${user.id})`)
-        .single();
+        .maybeSingle();
 
       if (existingConnection) {
         return { error: new Error('Already connected with this user') };
@@ -1032,7 +1032,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('connections')
         .select('id')
         .or(`and(user1_id.eq.${user.id},user2_id.eq.${userId}),and(user1_id.eq.${userId},user2_id.eq.${user.id})`)
-        .single();
+        .maybeSingle();
 
       if (connection) {
         return { 
@@ -1048,7 +1048,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('sender_id', user.id)
         .eq('receiver_id', userId)
         .eq('status', 'pending')
-        .single();
+        .maybeSingle();
 
       return { 
         data: { 
