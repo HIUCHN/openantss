@@ -796,29 +796,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('💬 Fetching comments for post:', postId);
       
-      const { data, error } = await supabase
-        .from('comments')
-        .select(`
-          *,
-          profiles!inner(
-            id,
-            username,
-            full_name,
-            avatar_url,
-            role,
-            company
-          )
-        `)
-        .eq('post_id', postId)
-        .order('created_at', { ascending: true });
+      // Use the new helper function for better performance and reliability
+      const { data, error } = await supabase.rpc('get_post_comments', {
+        target_post_id: postId
+      });
 
       if (error) {
         console.error('❌ Error fetching comments:', error);
         return { data: null, error };
       }
 
-      console.log('✅ Comments fetched successfully:', data?.length || 0, 'comments');
-      return { data: data || [], error: null };
+      // Transform the data to match our expected format
+      const transformedComments = data?.map((comment: any) => ({
+        id: comment.id,
+        post_id: comment.post_id,
+        author_id: comment.author_id,
+        content: comment.content,
+        parent_comment_id: comment.parent_comment_id,
+        likes_count: comment.likes_count,
+        created_at: comment.created_at,
+        updated_at: comment.updated_at,
+        profiles: {
+          id: comment.author_id,
+          username: comment.author_username,
+          full_name: comment.author_full_name,
+          avatar_url: comment.author_avatar_url,
+        }
+      })) || [];
+
+      console.log('✅ Comments fetched successfully:', transformedComments.length, 'comments');
+      return { data: transformedComments, error: null };
     } catch (error) {
       console.error('❌ Unexpected error fetching comments:', error);
       return { data: null, error };
