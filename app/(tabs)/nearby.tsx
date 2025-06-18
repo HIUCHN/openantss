@@ -26,17 +26,18 @@ interface NearbyUser {
 }
 
 export default function NearbyScreen() {
-  const { profile, storeUserLocation, getNearbyUsers, togglePublicMode } = useAuth();
+  const { profile, storeUserLocation, getNearbyUsers, togglePublicMode, clearUserLocation } = useAuth();
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [nearbyUsers, setNearbyUsers] = useState<NearbyUser[]>([]);
   const [selectedUser, setSelectedUser] = useState<NearbyUser | null>(null);
   const [showUserModal, setShowUserModal] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [locationPermission, setLocationPermission] = useState<Location.PermissionStatus | null>(null);
   const [isTrackingLocation, setIsTrackingLocation] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isTogglingMode, setIsTogglingMode] = useState(false);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -44,11 +45,21 @@ export default function NearbyScreen() {
   const isPublicMode = profile?.is_public ?? false;
 
   useEffect(() => {
-    initializeLocation();
+    // Only initialize location if public mode is enabled
+    if (isPublicMode) {
+      initializeLocation();
+    } else {
+      // Clean up when not in public mode
+      cleanup();
+      setLocation(null);
+      setNearbyUsers([]);
+      setErrorMessage(null);
+    }
+
     return () => {
       cleanup();
     };
-  }, []);
+  }, [isPublicMode]);
 
   useEffect(() => {
     if (isPublicMode && location) {
@@ -133,16 +144,18 @@ export default function NearbyScreen() {
         async (newLocation) => {
           setLocation(newLocation);
           
-          // Store updated location
-          await storeUserLocation({
-            latitude: newLocation.coords.latitude,
-            longitude: newLocation.coords.longitude,
-            accuracy: newLocation.coords.accuracy || undefined,
-            altitude: newLocation.coords.altitude || undefined,
-            heading: newLocation.coords.heading || undefined,
-            speed: newLocation.coords.speed || undefined,
-            timestamp: new Date(newLocation.timestamp),
-          });
+          // Only store location if still in public mode
+          if (isPublicMode) {
+            await storeUserLocation({
+              latitude: newLocation.coords.latitude,
+              longitude: newLocation.coords.longitude,
+              accuracy: newLocation.coords.accuracy || undefined,
+              altitude: newLocation.coords.altitude || undefined,
+              heading: newLocation.coords.heading || undefined,
+              speed: newLocation.coords.speed || undefined,
+              timestamp: new Date(newLocation.timestamp),
+            });
+          }
         }
       );
     } catch (error) {
@@ -177,6 +190,8 @@ export default function NearbyScreen() {
   };
 
   const fetchNearbyUsers = async () => {
+    if (!isPublicMode || !location) return;
+
     try {
       const { data, error } = await getNearbyUsers(2000); // 2km radius
       
@@ -188,12 +203,12 @@ export default function NearbyScreen() {
       if (data) {
         const formattedUsers: NearbyUser[] = data.map((userLocation: any, index: number) => {
           const user = userLocation.profiles;
-          const distance = location ? calculateDistance(
+          const distance = calculateDistance(
             location.coords.latitude,
             location.coords.longitude,
             userLocation.latitude,
             userLocation.longitude
-          ) : 0;
+          );
 
           // Assign different pin colors based on role or randomly
           const pinColors = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#3B82F6'];
@@ -261,6 +276,8 @@ export default function NearbyScreen() {
   };
 
   const handleRefresh = async () => {
+    if (!isPublicMode) return;
+    
     setRefreshing(true);
     await fetchNearbyUsers();
     setRefreshing(false);
@@ -272,23 +289,32 @@ export default function NearbyScreen() {
   };
 
   const handleTogglePublicMode = async () => {
+    if (isTogglingMode) return; // Prevent multiple simultaneous toggles
+
     try {
+      setIsTogglingMode(true);
       const newValue = !isPublicMode;
+      
+      console.log('🔄 Toggling public mode from', isPublicMode, 'to', newValue);
+      
       const { error } = await togglePublicMode(newValue);
       
       if (error) {
+        console.error('❌ Error toggling public mode:', error);
         Alert.alert('Error', 'Failed to update location sharing settings. Please try again.');
         return;
       }
 
-      if (newValue) {
-        // Turning on public mode - request location and start tracking
-        await initializeLocation();
-      } else {
-        // Turning off public mode - stop tracking and clear data
-        stopLocationTracking();
-        stopPeriodicRefresh();
+      if (!newValue) {
+        // Turning off public mode - clear location data immediately
+        console.log('🗑️ Clearing location data for private mode');
+        await clearUserLocation();
+        
+        // Clean up local state
+        cleanup();
+        setLocation(null);
         setNearbyUsers([]);
+        setErrorMessage(null);
       }
 
       const message = newValue 
@@ -300,9 +326,13 @@ export default function NearbyScreen() {
         message,
         [{ text: 'Got it' }]
       );
+
+      console.log('✅ Public mode toggled successfully to:', newValue);
     } catch (error) {
-      console.error('Error toggling public mode:', error);
+      console.error('❌ Unexpected error toggling public mode:', error);
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setIsTogglingMode(false);
     }
   };
 
@@ -418,9 +448,19 @@ export default function NearbyScreen() {
         <Text style={styles.privateModeDescription}>
           Your location is not being shared. Enable Public Mode to see nearby professionals and be discoverable by others.
         </Text>
-        <TouchableOpacity style={styles.enablePublicButton} onPress={handleTogglePublicMode}>
-          <Eye size={18} color="#FFFFFF" />
-          <Text style={styles.enablePublicButtonText}>Enable Public Mode</Text>
+        <TouchableOpacity 
+          style={[styles.enablePublicButton, isTogglingMode && styles.buttonDisabled]} 
+          onPress={handleTogglePublicMode}
+          disabled={isTogglingMode}
+        >
+          {isTogglingMode ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Eye size={18} color="#FFFFFF" />
+              <Text style={styles.enablePublicButtonText}>Enable Public Mode</Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -450,7 +490,7 @@ export default function NearbyScreen() {
     );
   }
 
-  if (errorMessage && locationPermission !== 'granted') {
+  if (errorMessage && locationPermission !== 'granted' && isPublicMode) {
     return (
       <SafeAreaView style={styles.container}>
         <PermissionScreen />
@@ -489,7 +529,7 @@ export default function NearbyScreen() {
           <TouchableOpacity 
             style={styles.refreshButton} 
             onPress={handleRefresh}
-            disabled={refreshing}
+            disabled={refreshing || !isPublicMode}
           >
             <RefreshCw 
               size={20} 
@@ -524,10 +564,15 @@ export default function NearbyScreen() {
             </View>
           </View>
           <TouchableOpacity 
-            style={styles.toggleButton}
+            style={[styles.toggleButton, isTogglingMode && styles.buttonDisabled]}
             onPress={handleTogglePublicMode}
+            disabled={isTogglingMode}
           >
-            <Text style={styles.toggleButtonText}>Turn Off</Text>
+            {isTogglingMode ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.toggleButtonText}>Turn Off</Text>
+            )}
           </TouchableOpacity>
         </View>
       </LinearGradient>
@@ -696,11 +741,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   toggleButtonText: {
     fontSize: 12,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   mapContainer: {
     flex: 1,
@@ -900,7 +951,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
+    minWidth: 160,
   },
   enablePublicButtonText: {
     fontSize: 14,
