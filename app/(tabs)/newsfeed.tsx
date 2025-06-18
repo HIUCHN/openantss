@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Search, Bell, Paperclip, Hash, Calendar, Heart, MessageCircle, Repeat, Mail, MoveHorizontal as MoreHorizontal, Briefcase } from 'lucide-react-native';
+import { Bell, Plus, Calendar, Paperclip, Hash, Heart, MessageCircle, Repeat, Mail, MoveHorizontal as MoreHorizontal, Briefcase } from 'lucide-react-native';
 import SearchBar from '@/components/SearchBar';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
+import ContinuousTextInput from '@/components/ContinuousTextInput';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface Comment {
@@ -182,7 +183,6 @@ const trendingTags = [
 
 export default function NewsfeedScreen() {
   const { profile } = useAuth();
-  const [postText, setPostText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [posts, setPosts] = useState<Post[]>(initialPosts);
   const [filteredPosts, setFilteredPosts] = useState<Post[]>(initialPosts);
@@ -216,15 +216,15 @@ export default function NewsfeedScreen() {
     setFilteredPosts(results);
   };
 
-  const handleCreatePost = () => {
-    if (!postText.trim()) {
+  const handleCreatePost = (text: string) => {
+    if (!text.trim()) {
       Alert.alert('Error', 'Please write something before posting.');
       return;
     }
 
     // Extract hashtags from the post content
     const hashtagRegex = /#\w+/g;
-    const extractedTags = postText.match(hashtagRegex) || [];
+    const extractedTags = text.match(hashtagRegex) || [];
 
     // Create new post
     const newPost: Post = {
@@ -235,7 +235,7 @@ export default function NewsfeedScreen() {
         company: profile?.company || 'OpenAnts',
         image: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
       },
-      content: postText,
+      content: text,
       timestamp: 'now',
       likes: 0,
       likedBy: [],
@@ -270,9 +270,6 @@ export default function NewsfeedScreen() {
       );
       setFilteredPosts(results);
     }
-
-    // Clear the input
-    setPostText('');
 
     // Show success message
     Alert.alert('Success', 'Your post has been published!');
@@ -317,9 +314,8 @@ export default function NewsfeedScreen() {
     });
   };
 
-  const handleAddComment = (postId: number) => {
-    const commentText = newComment[postId]?.trim();
-    if (!commentText) return;
+  const handleAddComment = (postId: number, commentText: string) => {
+    if (!commentText.trim()) return;
 
     const newCommentObj: Comment = {
       id: Date.now(),
@@ -360,9 +356,6 @@ export default function NewsfeedScreen() {
       
       return updatedPosts;
     });
-
-    // Clear the comment input
-    setNewComment(prev => ({ ...prev, [postId]: '' }));
   };
 
   const toggleComments = (postId: number) => {
@@ -383,18 +376,13 @@ export default function NewsfeedScreen() {
           style={styles.userAvatar} 
         />
         <View style={styles.createPostInput}>
-          <TextInput
-            style={styles.postTextInput}
+          <ContinuousTextInput
             placeholder="Share a thought, update, question, or project..."
-            value={postText}
-            onChangeText={setPostText}
-            multiline={true}
-            numberOfLines={3}
-            placeholderTextColor="#9CA3AF"
-            autoCorrect={true}
-            autoCapitalize="sentences"
-            scrollEnabled={false}
-            textAlignVertical="top"
+            onSave={handleCreatePost}
+            maxLength={500}
+            showWordCount={false}
+            minHeight={80}
+            maxHeight={200}
           />
           <View style={styles.createPostActions}>
             <View style={styles.postOptions}>
@@ -411,21 +399,6 @@ export default function NewsfeedScreen() {
                 <Text style={styles.postOptionText}>Event</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity 
-              style={[
-                styles.postButton,
-                !postText.trim() && styles.postButtonDisabled
-              ]}
-              onPress={handleCreatePost}
-              disabled={!postText.trim()}
-            >
-              <Text style={[
-                styles.postButtonText,
-                !postText.trim() && styles.postButtonTextDisabled
-              ]}>
-                Post
-              </Text>
-            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -470,23 +443,15 @@ export default function NewsfeedScreen() {
           style={styles.commentAvatar} 
         />
         <View style={styles.addCommentInput}>
-          <TextInput
-            style={styles.commentTextInput}
+          <ContinuousTextInput
             placeholder="Write a comment..."
-            value={newComment[post.id] || ''}
-            onChangeText={(text) => setNewComment(prev => ({ ...prev, [post.id]: text }))}
-            placeholderTextColor="#9CA3AF"
+            onSave={(text) => handleAddComment(post.id, text)}
+            maxLength={300}
+            showWordCount={false}
+            minHeight={40}
+            maxHeight={100}
             multiline={true}
-            autoCorrect={true}
-            autoCapitalize="sentences"
-            scrollEnabled={false}
           />
-          <TouchableOpacity 
-            style={styles.commentSubmitButton}
-            onPress={() => handleAddComment(post.id)}
-          >
-            <Text style={styles.commentSubmitText}>Post</Text>
-          </TouchableOpacity>
         </View>
       </View>
     </View>
@@ -823,22 +788,7 @@ const styles = StyleSheet.create({
   createPostInput: {
     flex: 1,
   },
-  postTextInput: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#111827',
-    minHeight: 80,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    textAlignVertical: 'top',
-  },
   createPostActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginTop: 12,
   },
   postOptions: {
@@ -854,23 +804,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
-  },
-  postButton: {
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  postButtonDisabled: {
-    backgroundColor: '#D1D5DB',
-  },
-  postButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  postButtonTextDisabled: {
-    color: '#9CA3AF',
   },
   trendingSection: {
     backgroundColor: '#FFFFFF',
@@ -1147,34 +1080,7 @@ const styles = StyleSheet.create({
   },
   addCommentInput: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
-  commentTextInput: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#111827',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    maxHeight: 80,
-    textAlignVertical: 'top',
-  },
-  commentSubmitButton: {
-    backgroundColor: '#6366F1',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
     marginLeft: 8,
-  },
-  commentSubmitText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
   },
   bottomPadding: {
     height: 100,
