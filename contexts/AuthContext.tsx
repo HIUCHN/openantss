@@ -131,6 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await supabase.auth.signOut();
         } else if (IS_FORCE_LOGIN) {
           const { email, password } = await loadCredentials();
+          console.log("email: "email, ", password: ", password);
           if (!email || !password) {
             await supabase.auth.signOut();
           } else {
