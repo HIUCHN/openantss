@@ -166,8 +166,16 @@ export default function NearbyScreen() {
 
   const stopLocationTracking = () => {
     if (locationSubscription.current) {
-      locationSubscription.current.remove();
-      locationSubscription.current = null;
+      try {
+        // Use the correct method to remove the subscription
+        locationSubscription.current.remove();
+        locationSubscription.current = null;
+        console.log('✅ Location tracking stopped successfully');
+      } catch (error) {
+        console.error('❌ Error stopping location tracking:', error);
+        // Force clear the subscription reference even if removal fails
+        locationSubscription.current = null;
+      }
     }
     setIsTrackingLocation(false);
   };
