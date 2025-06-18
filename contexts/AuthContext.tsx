@@ -682,13 +682,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('👍 Liking post:', postId);
       
       // Increment likes count
-      const { error } = await supabase
-        .from('posts')
-        .update({ 
-          likes_count: supabase.sql`likes_count + 1`,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', postId);
+      const { error } = await supabase.rpc('increment_post_likes', {
+        post_id: postId
+      });
 
       if (error) {
         console.error('❌ Error liking post:', error);
@@ -710,13 +706,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('👎 Unliking post:', postId);
       
       // Decrement likes count (but don't go below 0)
-      const { error } = await supabase
-        .from('posts')
-        .update({ 
-          likes_count: supabase.sql`GREATEST(likes_count - 1, 0)`,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', postId);
+      const { error } = await supabase.rpc('decrement_post_likes', {
+        post_id: postId
+      });
 
       if (error) {
         console.error('❌ Error unliking post:', error);
