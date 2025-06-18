@@ -9,6 +9,7 @@ type Profile = Database['public']['Tables']['profiles']['Row'];
 type UserLocation = Database['public']['Tables']['user_location']['Row'];
 type Post = Database['public']['Tables']['posts']['Row'];
 type Comment = Database['public']['Tables']['comments']['Row'];
+type ConnectionRequest = Database['public']['Tables']['connection_requests']['Row'];
 
 interface AuthContextType {
   session: Session | null;
@@ -50,6 +51,12 @@ interface AuthContextType {
   createComment: (postId: string, content: string, parentCommentId?: string) => Promise<{ data: Comment | null; error: any }>;
   getComments: (postId: string) => Promise<{ data: Comment[] | null; error: any }>;
   deleteComment: (commentId: string) => Promise<{ error: any }>;
+  // Connection request functions
+  sendConnectionRequest: (receiverId: string, message: string) => Promise<{ error: any }>;
+  getConnectionRequests: () => Promise<{ data: ConnectionRequest[] | null; error: any }>;
+  acceptConnectionRequest: (requestId: string) => Promise<{ error: any }>;
+  declineConnectionRequest: (requestId: string) => Promise<{ error: any }>;
+  checkConnectionStatus: (userId: string) => Promise<{ data: { isConnected: boolean; hasPendingRequest: boolean; requestId?: string } | null; error: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -850,6 +857,213 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Connection request functions
+  const sendConnectionRequest = async (receiverId: string, message: string) => {
+    if (!user) return { error: new Error('No user logged in') };
+
+    try {
+      console.log('🤝 Sending connection request to:', receiverId);
+      
+      // Check if a request already exists
+      const { data: existingRequest } = await supabase
+        .from('connection_requests')
+        .select('id')
+        .eq('sender_id', user.id)
+        .eq('receiver_id', receiverId)
+        .single();
+
+      if (existingRequest) {
+        return { error: new Error('Connection request already sent') };
+      }
+
+      // Check if users are already connected
+      const { data: existingConnection } = await supabase
+        .from('connections')
+        .select('id')
+        .or(`and(user1_id.eq.${user.id},user2_id.eq.${receiverId}),and(user1_id.eq.${receiverId},user2_id.eq.${user.id})`)
+        .single();
+
+      if (existingConnection) {
+        return { error: new Error('Already connected with this user') };
+      }
+
+      const { error } = await supabase
+        .from('connection_requests')
+        .insert({
+          sender_id: user.id,
+          receiver_id: receiverId,
+          message: message.trim(),
+          status: 'pending'
+        });
+
+      if (error) {
+        console.error('❌ Error sending connection request:', error);
+        return { error };
+      }
+
+      console.log('✅ Connection request sent successfully');
+      return { error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error sending connection request:', error);
+      return { error };
+    }
+  };
+
+  const getConnectionRequests = async () => {
+    if (!user) return { data: null, error: new Error('No user logged in') };
+
+    try {
+      console.log('📨 Fetching connection requests...');
+      
+      const { data, error } = await supabase
+        .from('connection_requests')
+        .select(`
+          *,
+          sender:profiles!connection_requests_sender_id_fkey(
+            id,
+            username,
+            full_name,
+            avatar_url,
+            role,
+            company
+          )
+        `)
+        .eq('receiver_id', user.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Error fetching connection requests:', error);
+        return { data: null, error };
+      }
+
+      console.log('✅ Connection requests fetched successfully:', data?.length || 0, 'requests');
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error fetching connection requests:', error);
+      return { data: null, error };
+    }
+  };
+
+  const acceptConnectionRequest = async (requestId: string) => {
+    if (!user) return { error: new Error('No user logged in') };
+
+    try {
+      console.log('✅ Accepting connection request:', requestId);
+      
+      // Get the request details first
+      const { data: request, error: fetchError } = await supabase
+        .from('connection_requests')
+        .select('sender_id, receiver_id')
+        .eq('id', requestId)
+        .eq('receiver_id', user.id)
+        .single();
+
+      if (fetchError || !request) {
+        console.error('❌ Error fetching connection request:', fetchError);
+        return { error: fetchError || new Error('Request not found') };
+      }
+
+      // Create the connection
+      const { error: connectionError } = await supabase
+        .from('connections')
+        .insert({
+          user1_id: request.sender_id,
+          user2_id: request.receiver_id
+        });
+
+      if (connectionError) {
+        console.error('❌ Error creating connection:', connectionError);
+        return { error: connectionError };
+      }
+
+      // Delete the request
+      const { error: deleteError } = await supabase
+        .from('connection_requests')
+        .delete()
+        .eq('id', requestId);
+
+      if (deleteError) {
+        console.error('❌ Error deleting connection request:', deleteError);
+        return { error: deleteError };
+      }
+
+      console.log('✅ Connection request accepted successfully');
+      return { error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error accepting connection request:', error);
+      return { error };
+    }
+  };
+
+  const declineConnectionRequest = async (requestId: string) => {
+    if (!user) return { error: new Error('No user logged in') };
+
+    try {
+      console.log('❌ Declining connection request:', requestId);
+      
+      const { error } = await supabase
+        .from('connection_requests')
+        .delete()
+        .eq('id', requestId)
+        .eq('receiver_id', user.id);
+
+      if (error) {
+        console.error('❌ Error declining connection request:', error);
+        return { error };
+      }
+
+      console.log('✅ Connection request declined successfully');
+      return { error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error declining connection request:', error);
+      return { error };
+    }
+  };
+
+  const checkConnectionStatus = async (userId: string) => {
+    if (!user) return { data: null, error: new Error('No user logged in') };
+
+    try {
+      console.log('🔍 Checking connection status with user:', userId);
+      
+      // Check if already connected
+      const { data: connection } = await supabase
+        .from('connections')
+        .select('id')
+        .or(`and(user1_id.eq.${user.id},user2_id.eq.${userId}),and(user1_id.eq.${userId},user2_id.eq.${user.id})`)
+        .single();
+
+      if (connection) {
+        return { 
+          data: { isConnected: true, hasPendingRequest: false }, 
+          error: null 
+        };
+      }
+
+      // Check if there's a pending request
+      const { data: request } = await supabase
+        .from('connection_requests')
+        .select('id')
+        .eq('sender_id', user.id)
+        .eq('receiver_id', userId)
+        .eq('status', 'pending')
+        .single();
+
+      return { 
+        data: { 
+          isConnected: false, 
+          hasPendingRequest: !!request,
+          requestId: request?.id 
+        }, 
+        error: null 
+      };
+    } catch (error) {
+      console.error('❌ Unexpected error checking connection status:', error);
+      return { data: null, error };
+    }
+  };
+
   // Helper function to calculate distance between two points
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
     const R = 6371e3; // Earth's radius in meters
@@ -893,6 +1107,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     createComment,
     getComments,
     deleteComment,
+    // Connection request management
+    sendConnectionRequest,
+    getConnectionRequests,
+    acceptConnectionRequest,
+    declineConnectionRequest,
+    checkConnectionStatus,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

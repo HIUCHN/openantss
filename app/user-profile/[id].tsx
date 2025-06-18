@@ -22,7 +22,7 @@ interface UserProfileData {
 
 export default function UserProfileScreen() {
   const { id } = useLocalSearchParams();
-  const { profile: currentUserProfile } = useAuth();
+  const { profile: currentUserProfile, sendConnectionRequest, checkConnectionStatus } = useAuth();
   const [userData, setUserData] = useState<UserProfileData>({
     profile: null,
     education: [],
@@ -32,12 +32,21 @@ export default function UserProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [showActionModal, setShowActionModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<{
+    isConnected: boolean;
+    hasPendingRequest: boolean;
+    requestId?: string;
+  } | null>(null);
+  const [sendingRequest, setSendingRequest] = useState(false);
 
   useEffect(() => {
     if (id) {
       fetchUserData(id as string);
+      if (currentUserProfile?.id && id !== currentUserProfile.id) {
+        fetchConnectionStatus(id as string);
+      }
     }
-  }, [id]);
+  }, [id, currentUserProfile?.id]);
 
   const fetchUserData = async (userId: string) => {
     try {
@@ -125,14 +134,55 @@ export default function UserProfileScreen() {
     }
   };
 
+  const fetchConnectionStatus = async (userId: string) => {
+    try {
+      const { data, error } = await checkConnectionStatus(userId);
+      if (error) {
+        console.error('❌ Error checking connection status:', error);
+      } else {
+        setConnectionStatus(data);
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error checking connection status:', error);
+    }
+  };
+
   const handleBack = () => {
     router.back();
   };
 
-  const handleConnect = () => {
-    // Handle connection request
-    console.log('Sending connection request to', userData.profile?.full_name);
-    Alert.alert('Connection Request', `Connection request sent to ${userData.profile?.full_name || userData.profile?.username}!`);
+  const handleConnect = async () => {
+    if (!userData.profile || sendingRequest) return;
+
+    try {
+      setSendingRequest(true);
+      
+      const message = `Hi ${userData.profile.full_name || userData.profile.username}, I'd like to connect with you on OpenAnts!`;
+      
+      const { error } = await sendConnectionRequest(userData.profile.id, message);
+      
+      if (error) {
+        if (error.message.includes('already sent')) {
+          Alert.alert('Request Already Sent', 'You have already sent a connection request to this user.');
+        } else if (error.message.includes('Already connected')) {
+          Alert.alert('Already Connected', 'You are already connected with this user.');
+        } else {
+          Alert.alert('Error', 'Failed to send connection request. Please try again.');
+        }
+      } else {
+        Alert.alert('Success', 'Connection request sent successfully!');
+        // Update connection status to reflect the pending request
+        setConnectionStatus({
+          isConnected: false,
+          hasPendingRequest: true
+        });
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error sending connection request:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setSendingRequest(false);
+    }
   };
 
   const handleFollow = () => {
@@ -252,6 +302,48 @@ export default function UserProfileScreen() {
     </Modal>
   );
 
+  const getConnectButtonContent = () => {
+    if (sendingRequest) {
+      return (
+        <>
+          <ActivityIndicator size="small" color="#FFFFFF" />
+          <Text style={styles.connectButtonText}>Sending...</Text>
+        </>
+      );
+    }
+
+    if (connectionStatus?.isConnected) {
+      return (
+        <>
+          <CheckCircle size={16} color="#FFFFFF" />
+          <Text style={styles.connectButtonText}>Connected</Text>
+        </>
+      );
+    }
+
+    if (connectionStatus?.hasPendingRequest) {
+      return (
+        <>
+          <Clock size={16} color="#FFFFFF" />
+          <Text style={styles.connectButtonText}>Request Sent</Text>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <UserPlus size={16} color="#FFFFFF" />
+        <Text style={styles.connectButtonText}>Connect</Text>
+      </>
+    );
+  };
+
+  const isConnectButtonDisabled = () => {
+    return sendingRequest || 
+           connectionStatus?.isConnected || 
+           connectionStatus?.hasPendingRequest;
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -357,9 +449,15 @@ export default function UserProfileScreen() {
           {/* Primary Action Buttons - Hide for own profile */}
           {!isOwnProfile && (
             <View style={styles.primaryActions}>
-              <TouchableOpacity style={styles.connectButton} onPress={handleConnect}>
-                <UserPlus size={16} color="#FFFFFF" />
-                <Text style={styles.connectButtonText}>Connect</Text>
+              <TouchableOpacity 
+                style={[
+                  styles.connectButton, 
+                  isConnectButtonDisabled() && styles.connectButtonDisabled
+                ]} 
+                onPress={handleConnect}
+                disabled={isConnectButtonDisabled()}
+              >
+                {getConnectButtonContent()}
               </TouchableOpacity>
               <TouchableOpacity style={styles.followButton} onPress={handleFollow}>
                 <Plus size={16} color="#374151" />
@@ -470,7 +568,7 @@ export default function UserProfileScreen() {
             {userData.experiences.map((exp) => (
               <View key={exp.id} style={styles.experienceItem}>
                 <View style={styles.experienceLogo}>
-                  <Briefcase size={20} color="#6366F1" />
+                  <Building size={20} color="#6366F1" />
                 </View>
                 <View style={styles.experienceInfo}>
                   <Text style={styles.experienceTitle}>{exp.job_title}</Text>
@@ -774,6 +872,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     gap: 8,
+  },
+  connectButtonDisabled: {
+    backgroundColor: '#9CA3AF',
   },
   connectButtonText: {
     fontSize: 16,

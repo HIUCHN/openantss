@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, Bell, MessageCircle, ChevronRight, Briefcase, Users, QrCode, UserPlus, X, Check, Settings } from 'lucide-react-native';
@@ -34,42 +34,6 @@ const smartMatches = [
     image: 'https://images.pexels.com/photos/1130626/pexels-photo-1130626.jpeg?auto=compress&cs=tinysrgb&w=400',
     matchScore: 88,
     matchColor: '#F59E0B',
-  },
-];
-
-const connectionRequests = [
-  {
-    id: 1,
-    name: 'Emily Rodriguez',
-    role: 'UX Researcher',
-    company: 'Meta',
-    message: 'Hi! I saw your presentation on design systems. Would love to connect and discuss collaboration opportunities.',
-    image: 'https://images.pexels.com/photos/1181686/pexels-photo-1181686.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timestamp: '2m ago',
-    tags: ['Design Systems', 'UX Research'],
-    mutualConnections: 3,
-  },
-  {
-    id: 2,
-    name: 'James Wilson',
-    role: 'Product Manager',
-    company: 'Tesla',
-    message: 'Interested in your work on AI-powered design tools. Let\'s connect!',
-    image: 'https://images.pexels.com/photos/2379005/pexels-photo-2379005.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timestamp: '15m ago',
-    tags: ['AI/ML', 'Product Strategy'],
-    mutualConnections: 1,
-  },
-  {
-    id: 3,
-    name: 'Maria Garcia',
-    role: 'Frontend Developer',
-    company: 'Stripe',
-    message: 'Love your portfolio! Would be great to connect and share experiences.',
-    image: 'https://images.pexels.com/photos/1181424/pexels-photo-1181424.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timestamp: '1h ago',
-    tags: ['Frontend', 'React'],
-    mutualConnections: 5,
   },
 ];
 
@@ -116,18 +80,75 @@ const recentConnections = [
 ];
 
 export default function HomeScreen() {
-  const { profile, togglePublicMode } = useAuth();
+  const { profile, togglePublicMode, getConnectionRequests, acceptConnectionRequest, declineConnectionRequest } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
-  const [requests, setRequests] = useState(connectionRequests);
+  const [connectionRequests, setConnectionRequests] = useState([]);
   const [filteredMatches, setFilteredMatches] = useState(smartMatches);
   const [filteredConnections, setFilteredConnections] = useState(recentConnections);
   const [showAllRequests, setShowAllRequests] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [isTogglingPublicMode, setIsTogglingPublicMode] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [processingRequests, setProcessingRequests] = useState<Set<string>>(new Set());
 
   // Use profile.is_public directly, no local state needed
   const isPublicMode = profile?.is_public ?? true;
+
+  // Load connection requests on component mount and when profile changes
+  useEffect(() => {
+    if (profile) {
+      loadConnectionRequests();
+    }
+  }, [profile]);
+
+  const loadConnectionRequests = async () => {
+    try {
+      const { data, error } = await getConnectionRequests();
+      if (error) {
+        console.error('❌ Error loading connection requests:', error);
+      } else {
+        // Transform the data to match the expected format
+        const transformedRequests = data?.map((request: any) => ({
+          id: request.id,
+          name: request.sender.full_name || request.sender.username,
+          role: request.sender.role || 'Professional',
+          company: request.sender.company || 'OpenAnts',
+          message: request.message,
+          timestamp: formatTimestamp(request.created_at),
+          image: request.sender.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          tags: ['Connection', 'Networking'],
+          mutualConnections: Math.floor(Math.random() * 10) + 1, // Mock data for now
+        })) || [];
+        
+        setConnectionRequests(transformedRequests);
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error loading connection requests:', error);
+    }
+  };
+
+  const formatTimestamp = (timestamp: string): string => {
+    const now = new Date();
+    const requestTime = new Date(timestamp);
+    const diffMs = now.getTime() - requestTime.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    
+    return requestTime.toLocaleDateString();
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadConnectionRequests();
+    setRefreshing(false);
+  };
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -158,12 +179,60 @@ export default function HomeScreen() {
     setFilteredConnections(connectionResults);
   };
 
-  const handleAcceptRequest = (requestId: number) => {
-    setRequests(prev => prev.filter(req => req.id !== requestId));
+  const handleAcceptRequest = async (requestId: string) => {
+    if (processingRequests.has(requestId)) return;
+
+    try {
+      setProcessingRequests(prev => new Set(prev).add(requestId));
+      
+      const { error } = await acceptConnectionRequest(requestId);
+      
+      if (error) {
+        console.error('❌ Error accepting connection request:', error);
+        Alert.alert('Error', 'Failed to accept connection request. Please try again.');
+      } else {
+        // Remove the request from the local state
+        setConnectionRequests(prev => prev.filter(req => req.id !== requestId));
+        Alert.alert('Success', 'Connection request accepted! You are now connected.');
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error accepting connection request:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setProcessingRequests(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(requestId);
+        return newSet;
+      });
+    }
   };
 
-  const handleDeclineRequest = (requestId: number) => {
-    setRequests(prev => prev.filter(req => req.id !== requestId));
+  const handleDeclineRequest = async (requestId: string) => {
+    if (processingRequests.has(requestId)) return;
+
+    try {
+      setProcessingRequests(prev => new Set(prev).add(requestId));
+      
+      const { error } = await declineConnectionRequest(requestId);
+      
+      if (error) {
+        console.error('❌ Error declining connection request:', error);
+        Alert.alert('Error', 'Failed to decline connection request. Please try again.');
+      } else {
+        // Remove the request from the local state
+        setConnectionRequests(prev => prev.filter(req => req.id !== requestId));
+        Alert.alert('Request Declined', 'Connection request has been declined.');
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error declining connection request:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setProcessingRequests(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(requestId);
+        return newSet;
+      });
+    }
   };
 
   const handleViewAllRequests = () => {
@@ -319,68 +388,76 @@ export default function HomeScreen() {
     );
   };
 
-  const ConnectionRequestCard = ({ request, isCompact = false }) => (
-    <View style={[styles.requestCard, isCompact && styles.compactRequestCard]}>
-      <View style={styles.requestHeader}>
-        <Image source={{ uri: request.image }} style={styles.requestAvatar} />
-        <View style={styles.requestInfo}>
-          <View style={styles.requestNameRow}>
-            <Text style={styles.requestName}>{request.name}</Text>
-            <Text style={styles.requestTimestamp}>{request.timestamp}</Text>
+  const ConnectionRequestCard = ({ request, isCompact = false }) => {
+    const isProcessing = processingRequests.has(request.id);
+    
+    return (
+      <View style={[styles.requestCard, isCompact && styles.compactRequestCard]}>
+        <View style={styles.requestHeader}>
+          <Image source={{ uri: request.image }} style={styles.requestAvatar} />
+          <View style={styles.requestInfo}>
+            <View style={styles.requestNameRow}>
+              <Text style={styles.requestName}>{request.name}</Text>
+              <Text style={styles.requestTimestamp}>{request.timestamp}</Text>
+            </View>
+            <Text style={styles.requestRole}>{request.role} at {request.company}</Text>
+            {request.mutualConnections > 0 && (
+              <Text style={styles.mutualConnections}>
+                {request.mutualConnections} mutual connection{request.mutualConnections > 1 ? 's' : ''}
+              </Text>
+            )}
           </View>
-          <Text style={styles.requestRole}>{request.role} at {request.company}</Text>
-          {request.mutualConnections > 0 && (
-            <Text style={styles.mutualConnections}>
-              {request.mutualConnections} mutual connection{request.mutualConnections > 1 ? 's' : ''}
+        </View>
+        
+        {!isCompact && (
+          <>
+            <Text style={styles.requestMessage}>{request.message}</Text>
+            <View style={styles.requestTags}>
+              {request.tags.map((tag, index) => (
+                <View key={index} style={[
+                  styles.requestTag,
+                  index === 0 ? styles.blueRequestTag : styles.greenRequestTag
+                ]}>
+                  <Text style={[
+                    styles.requestTagText,
+                    index === 0 ? styles.blueRequestTagText : styles.greenRequestTagText
+                  ]}>
+                    {tag}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+        
+        <View style={styles.requestActions}>
+          <TouchableOpacity 
+            style={[styles.acceptButton, isProcessing && styles.buttonDisabled]}
+            onPress={() => handleAcceptRequest(request.id)}
+            disabled={isProcessing}
+          >
+            <Check size={16} color="#FFFFFF" />
+            <Text style={styles.acceptButtonText}>
+              {isProcessing ? 'Processing...' : 'Accept'}
             </Text>
-          )}
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.declineButton, isProcessing && styles.buttonDisabled]}
+            onPress={() => handleDeclineRequest(request.id)}
+            disabled={isProcessing}
+          >
+            <X size={16} color="#6B7280" />
+            <Text style={styles.declineButtonText}>Decline</Text>
+          </TouchableOpacity>
         </View>
       </View>
-      
-      {!isCompact && (
-        <>
-          <Text style={styles.requestMessage}>{request.message}</Text>
-          <View style={styles.requestTags}>
-            {request.tags.map((tag, index) => (
-              <View key={index} style={[
-                styles.requestTag,
-                index === 0 ? styles.blueRequestTag : styles.greenRequestTag
-              ]}>
-                <Text style={[
-                  styles.requestTagText,
-                  index === 0 ? styles.blueRequestTagText : styles.greenRequestTagText
-                ]}>
-                  {tag}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </>
-      )}
-      
-      <View style={styles.requestActions}>
-        <TouchableOpacity 
-          style={styles.acceptButton}
-          onPress={() => handleAcceptRequest(request.id)}
-        >
-          <Check size={16} color="#FFFFFF" />
-          <Text style={styles.acceptButtonText}>Accept</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.declineButton}
-          onPress={() => handleDeclineRequest(request.id)}
-        >
-          <X size={16} color="#6B7280" />
-          <Text style={styles.declineButtonText}>Decline</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const ConnectionRequestsSection = () => {
-    const displayedRequests = showAllRequests ? requests : requests.slice(0, 2);
+    const displayedRequests = showAllRequests ? connectionRequests : connectionRequests.slice(0, 2);
     
-    if (requests.length === 0) return null;
+    if (connectionRequests.length === 0) return null;
 
     return (
       <View style={styles.section}>
@@ -389,7 +466,7 @@ export default function HomeScreen() {
             <UserPlus size={20} color="#6366F1" />
             <Text style={styles.sectionTitle}>Connection Requests</Text>
             <View style={styles.requestsBadge}>
-              <Text style={styles.requestsBadgeText}>{requests.length}</Text>
+              <Text style={styles.requestsBadgeText}>{connectionRequests.length}</Text>
             </View>
           </View>
           <TouchableOpacity onPress={handleViewAllRequests}>
@@ -405,12 +482,12 @@ export default function HomeScreen() {
           />
         ))}
         
-        {!showAllRequests && requests.length > 2 && (
+        {!showAllRequests && connectionRequests.length > 2 && (
           <TouchableOpacity 
             style={styles.showMoreButton}
             onPress={() => setShowAllRequests(true)}
           >
-            <Text style={styles.showMoreText}>Show {requests.length - 2} more requests</Text>
+            <Text style={styles.showMoreText}>Show {connectionRequests.length - 2} more requests</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -441,7 +518,7 @@ export default function HomeScreen() {
             <TouchableOpacity style={styles.notificationButton}>
               <Bell size={20} color="#6B7280" />
               <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>{requests.length}</Text>
+                <Text style={styles.notificationBadgeText}>{connectionRequests.length}</Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity onPress={handleProfilePress}>
@@ -522,7 +599,7 @@ export default function HomeScreen() {
             onPress={handleMatchesNavigation}
           />
           <StatCard 
-            number={requests.length.toString()} 
+            number={connectionRequests.length.toString()} 
             label="Requests" 
             color="#F59E0B" 
             onPress={handleRequestsNavigation}
@@ -530,7 +607,18 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#6366F1']}
+            tintColor="#6366F1"
+          />
+        }
+      >
         {/* Search Results or Default Content */}
         {searchQuery.trim() !== '' && (
           <View style={styles.searchResults}>
@@ -948,6 +1036,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#6B7280',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   showMoreButton: {
     alignItems: 'center',
