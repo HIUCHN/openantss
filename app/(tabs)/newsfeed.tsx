@@ -388,14 +388,13 @@ export default function NewsfeedScreen() {
             placeholder="Share a thought, update, question, or project..."
             value={postText}
             onChangeText={setPostText}
-            multiline
+            multiline={true}
             numberOfLines={3}
             placeholderTextColor="#9CA3AF"
-            textAlignVertical="top"
             autoCorrect={true}
             autoCapitalize="sentences"
-            blurOnSubmit={false}
-            returnKeyType="default"
+            scrollEnabled={false}
+            textAlignVertical="top"
           />
           <View style={styles.createPostActions}>
             <View style={styles.postOptions}>
@@ -477,9 +476,10 @@ export default function NewsfeedScreen() {
             value={newComment[post.id] || ''}
             onChangeText={(text) => setNewComment(prev => ({ ...prev, [post.id]: text }))}
             placeholderTextColor="#9CA3AF"
-            multiline
-            blurOnSubmit={false}
-            returnKeyType="default"
+            multiline={true}
+            autoCorrect={true}
+            autoCapitalize="sentences"
+            scrollEnabled={false}
           />
           <TouchableOpacity 
             style={styles.commentSubmitButton}
@@ -833,12 +833,7 @@ const styles = StyleSheet.create({
     minHeight: 80,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    // Web-specific styles to ensure proper text input behavior
-    ...(typeof window !== 'undefined' && {
-      outlineStyle: 'none',
-      outlineWidth: 0,
-      resize: 'none',
-    }),
+    textAlignVertical: 'top',
   },
   createPostActions: {
     flexDirection: 'row',
@@ -1167,12 +1162,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
     maxHeight: 80,
-    // Web-specific styles to ensure proper text input behavior
-    ...(typeof window !== 'undefined' && {
-      outlineStyle: 'none',
-      outlineWidth: 0,
-      resize: 'none',
-    }),
+    textAlignVertical: 'top',
   },
   commentSubmitButton: {
     backgroundColor: '#6366F1',
