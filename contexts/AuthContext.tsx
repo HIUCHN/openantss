@@ -133,8 +133,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const { email, password } = await loadCredentials();
           console.log("email: ", email, ", password: ", password);
           if (!email || !password) {
+            console.log("must logout")
             await supabase.auth.signOut();
           } else {
+            console.log("must login")
             await signIn(email, password);
           }
         } else {
