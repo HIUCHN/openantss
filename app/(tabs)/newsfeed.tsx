@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bell, Plus, Calendar, Paperclip, Hash, Heart, MessageCircle, Repeat, Mail, MoveHorizontal as MoreHorizontal, Briefcase, ImageIcon, Video, FileText, X } from 'lucide-react-native';
+import { Bell, Plus, Calendar, Paperclip, Hash, Heart, MessageCircle, Repeat, Mail, MoveHorizontal as MoreHorizontal, Briefcase, Image as ImageIcon, Video, FileText, X } from 'lucide-react-native';
 import SearchBar from '@/components/SearchBar';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
 import ContinuousTextInput from '@/components/ContinuousTextInput';
