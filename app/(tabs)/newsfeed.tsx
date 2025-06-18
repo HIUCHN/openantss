@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bell, Plus, Calendar, Paperclip, Hash, Heart, MessageCircle, Repeat, Mail, MoveHorizontal as MoreHorizontal, Briefcase, Image as ImageIcon, Video, FileText, X } from 'lucide-react-native';
+import { Bell, Plus, Calendar, Paperclip, Hash, Heart, MessageCircle, Repeat, Mail, MoveHorizontal as MoreHorizontal, Briefcase } from 'lucide-react-native';
 import SearchBar from '@/components/SearchBar';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
 import ContinuousTextInput from '@/components/ContinuousTextInput';
 import { useAuth } from '@/contexts/AuthContext';
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
 
 interface Comment {
   id: number;
@@ -16,14 +14,6 @@ interface Comment {
   content: string;
   timestamp: string;
   avatar: string;
-}
-
-interface Attachment {
-  id: string;
-  type: 'image' | 'video' | 'document';
-  uri: string;
-  name: string;
-  size?: number;
 }
 
 interface Post {
@@ -50,7 +40,6 @@ interface Post {
     timeLeft: string;
   };
   image?: string;
-  attachments?: Attachment[];
 }
 
 const initialPosts: Post[] = [
@@ -200,7 +189,6 @@ export default function NewsfeedScreen() {
   const [newComment, setNewComment] = useState<{ [key: number]: string }>({});
   const [showComments, setShowComments] = useState<{ [key: number]: boolean }>({});
   const [showAccountSettings, setShowAccountSettings] = useState(false);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -229,8 +217,8 @@ export default function NewsfeedScreen() {
   };
 
   const handleCreatePost = (text: string) => {
-    if (!text.trim() && attachments.length === 0) {
-      Alert.alert('Error', 'Please write something or add an attachment before posting.');
+    if (!text.trim()) {
+      Alert.alert('Error', 'Please write something before posting.');
       return;
     }
 
@@ -256,7 +244,6 @@ export default function NewsfeedScreen() {
       tags: extractedTags,
       type: 'text',
       liked: false,
-      attachments: attachments.length > 0 ? [...attachments] : undefined,
     };
 
     // Add the new post to the beginning of the posts array
@@ -284,94 +271,8 @@ export default function NewsfeedScreen() {
       setFilteredPosts(results);
     }
 
-    // Clear attachments
-    setAttachments([]);
-
     // Show success message
     Alert.alert('Success', 'Your post has been published!');
-  };
-
-  const handlePickImage = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [16, 9],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        const newAttachment: Attachment = {
-          id: Date.now().toString(),
-          type: 'image',
-          uri: asset.uri,
-          name: asset.fileName || `image_${Date.now()}.jpg`,
-          size: asset.fileSize,
-        };
-        setAttachments(prev => [...prev, newAttachment]);
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to pick image');
-    }
-  };
-
-  const handlePickVideo = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-        allowsEditing: true,
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        const newAttachment: Attachment = {
-          id: Date.now().toString(),
-          type: 'video',
-          uri: asset.uri,
-          name: asset.fileName || `video_${Date.now()}.mp4`,
-          size: asset.fileSize,
-        };
-        setAttachments(prev => [...prev, newAttachment]);
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to pick video');
-    }
-  };
-
-  const handlePickDocument = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: '*/*',
-        copyToCacheDirectory: true,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        const newAttachment: Attachment = {
-          id: Date.now().toString(),
-          type: 'document',
-          uri: asset.uri,
-          name: asset.name,
-          size: asset.size,
-        };
-        setAttachments(prev => [...prev, newAttachment]);
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to pick document');
-    }
-  };
-
-  const removeAttachment = (id: string) => {
-    setAttachments(prev => prev.filter(att => att.id !== id));
-  };
-
-  const formatFileSize = (bytes?: number) => {
-    if (!bytes) return '';
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
   };
 
   const handleLike = (postId: number) => {
@@ -482,54 +383,12 @@ export default function NewsfeedScreen() {
             showWordCount={false}
             minHeight={80}
             maxHeight={200}
-            saveButtonText="Post"
-            saveButtonIcon="send"
           />
-          
-          {/* Attachments Preview */}
-          {attachments.length > 0 && (
-            <View style={styles.attachmentsPreview}>
-              {attachments.map((attachment) => (
-                <View key={attachment.id} style={styles.attachmentItem}>
-                  <View style={styles.attachmentInfo}>
-                    {attachment.type === 'image' && <ImageIcon size={16} color="#6366F1" />}
-                    {attachment.type === 'video' && <Video size={16} color="#8B5CF6" />}
-                    {attachment.type === 'document' && <FileText size={16} color="#10B981" />}
-                    <View style={styles.attachmentDetails}>
-                      <Text style={styles.attachmentName} numberOfLines={1}>
-                        {attachment.name}
-                      </Text>
-                      {attachment.size && (
-                        <Text style={styles.attachmentSize}>
-                          {formatFileSize(attachment.size)}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.removeAttachment}
-                    onPress={() => removeAttachment(attachment.id)}
-                  >
-                    <X size={14} color="#EF4444" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          )}
-
           <View style={styles.createPostActions}>
             <View style={styles.postOptions}>
-              <TouchableOpacity style={styles.postOption} onPress={handlePickImage}>
-                <ImageIcon size={16} color="#6B7280" />
-                <Text style={styles.postOptionText}>Photo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.postOption} onPress={handlePickVideo}>
-                <Video size={16} color="#6B7280" />
-                <Text style={styles.postOptionText}>Video</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.postOption} onPress={handlePickDocument}>
+              <TouchableOpacity style={styles.postOption}>
                 <Paperclip size={16} color="#6B7280" />
-                <Text style={styles.postOptionText}>File</Text>
+                <Text style={styles.postOptionText}>Attach</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.postOption}>
                 <Hash size={16} color="#6B7280" />
@@ -592,8 +451,6 @@ export default function NewsfeedScreen() {
             minHeight={40}
             maxHeight={100}
             multiline={true}
-            saveButtonText="Reply"
-            saveButtonIcon="send"
           />
         </View>
       </View>
@@ -652,35 +509,7 @@ export default function NewsfeedScreen() {
           );
         
         default:
-          return (
-            <View>
-              <Text style={styles.postContent}>{post.content}</Text>
-              {/* Render attachments */}
-              {post.attachments && post.attachments.length > 0 && (
-                <View style={styles.postAttachments}>
-                  {post.attachments.map((attachment) => (
-                    <View key={attachment.id} style={styles.postAttachmentItem}>
-                      <View style={styles.attachmentInfo}>
-                        {attachment.type === 'image' && <ImageIcon size={16} color="#6366F1" />}
-                        {attachment.type === 'video' && <Video size={16} color="#8B5CF6" />}
-                        {attachment.type === 'document' && <FileText size={16} color="#10B981" />}
-                        <View style={styles.attachmentDetails}>
-                          <Text style={styles.attachmentName} numberOfLines={1}>
-                            {attachment.name}
-                          </Text>
-                          {attachment.size && (
-                            <Text style={styles.attachmentSize}>
-                              {formatFileSize(attachment.size)}
-                            </Text>
-                          )}
-                        </View>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          );
+          return <Text style={styles.postContent}>{post.content}</Text>;
       }
     };
 
@@ -959,42 +788,6 @@ const styles = StyleSheet.create({
   createPostInput: {
     flex: 1,
   },
-  attachmentsPreview: {
-    marginTop: 12,
-    gap: 8,
-  },
-  attachmentItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  attachmentInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 8,
-  },
-  attachmentDetails: {
-    flex: 1,
-  },
-  attachmentName: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#111827',
-  },
-  attachmentSize: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  removeAttachment: {
-    padding: 4,
-  },
   createPostActions: {
     marginTop: 12,
   },
@@ -1102,17 +895,6 @@ const styles = StyleSheet.create({
     color: '#374151',
     lineHeight: 22,
     marginBottom: 12,
-  },
-  postAttachments: {
-    marginTop: 12,
-    gap: 8,
-  },
-  postAttachmentItem: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
   },
   jobPostContainer: {
     backgroundColor: 'rgba(99, 102, 241, 0.1)',
