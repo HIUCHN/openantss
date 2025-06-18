@@ -1,942 +1,597 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch, Modal, Animated, Dimensions, Alert } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Image, ScrollView, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  MapPin, 
-  Users, 
-  Briefcase, 
-  Calendar, 
-  MessageCircle, 
-  UserPlus, 
-  Filter, 
-  Bell,
-  List,
-  Map,
-  Lightbulb,
-  Hand,
-  Bookmark,
-  Coffee,
-  Plus,
-  Minus,
-  Crosshair,
-  ArrowLeft,
-  X,
-  Eye,
-  EyeOff
-} from 'lucide-react-native';
 import * as Location from 'expo-location';
-import SearchBar from '@/components/SearchBar';
-import OpenAntsLogo from '@/components/OpenAntsLogo';
-import AccountSettingsModal from '@/components/AccountSettingsModal';
-import MapBoxMap from '@/components/MapBoxMap';
+import { MapPin, Users, MessageCircle, UserPlus, X, Navigation, RefreshCw, Settings, Eye, EyeOff } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import MapBoxMap from '@/components/MapBoxMap';
+import AccountSettingsModal from '@/components/AccountSettingsModal';
 
-const { width, height } = Dimensions.get('window');
-
-const nearbyPeople = [
-  {
-    id: 1,
-    name: 'Alex Chen',
-    role: 'Senior Product Designer',
-    company: 'Spotify',
-    education: 'MSc, University of Edinburgh',
-    distance: '15m away',
-    location: 'Same café',
-    bio: 'Passionate about creating user-centered experiences. Love mentoring junior designers and exploring new design systems.',
-    interests: ['UI/UX Design', 'Figma', 'User Research', 'Prototyping'],
-    image: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
-    status: 'available',
-    lookingFor: 'Looking for mentorship in design leadership',
-    isOnline: true,
-    latitude: 51.5074,
-    longitude: -0.1278,
-    pinColor: '#10B981',
-    statusText: 'Open to chat',
-    lastActive: '2 mins ago',
-    tags: ['#ProductStrategy', '#Design', '#Leadership']
-  },
-  {
-    id: 2,
-    name: 'Sarah Williams',
-    role: 'Frontend Developer',
-    company: 'Airbnb',
-    education: 'BSc Computer Science, MIT',
-    distance: '8m away',
-    location: 'Same building',
-    bio: 'Full-stack developer passionate about React and modern web technologies. Always excited to collaborate on innovative projects.',
-    interests: ['React', 'Hiring', 'Mutual: #Frontend'],
-    image: 'https://images.pexels.com/photos/1130626/pexels-photo-1130626.jpeg?auto=compress&cs=tinysrgb&w=400',
-    status: 'available',
-    lookingFor: null,
-    isOnline: true,
-    latitude: 51.5084,
-    longitude: -0.1268,
-    pinColor: '#3B82F6',
-    statusText: 'Manager at Adobe',
-    lastActive: '5 mins ago',
-    tags: ['#Figma', '#Startups', '#Mentoring']
-  },
-  {
-    id: 3,
-    name: 'Mike Johnson',
-    role: 'Product Manager',
-    company: 'Tesla',
-    education: 'MBA, Stanford',
-    distance: '12m away',
-    location: 'Coffee shop',
-    bio: 'Product strategist with experience in automotive tech. Love discussing innovation and future mobility.',
-    interests: ['Product Strategy', 'Innovation', 'Startups'],
-    image: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400',
-    status: 'student',
-    lookingFor: 'Looking for internship opportunities',
-    isOnline: true,
-    latitude: 51.5064,
-    longitude: -0.1288,
-    pinColor: '#F59E0B',
-    statusText: 'MSc Student at UCL',
-    lastActive: '1 min ago',
-    tags: ['#MachineLearning', '#Python', '#Research']
-  },
-];
-
-const crossedPaths = [
-  {
-    id: 1,
-    name: 'Mike',
-    image: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timeAgo: '2h ago',
-  },
-  {
-    id: 2,
-    name: 'Lisa',
-    image: 'https://images.pexels.com/photos/1239288/pexels-photo-1239288.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timeAgo: '5h ago',
-  },
-  {
-    id: 3,
-    name: 'David',
-    image: 'https://images.pexels.com/photos/2379005/pexels-photo-2379005.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timeAgo: '1d ago',
-  },
-];
-
-const nearbyEvents = [
-  {
-    id: 1,
-    title: 'React Meetup',
-    location: 'Tech Hub',
-    time: 'Tomorrow 7:00 PM',
-    attendees: 15,
-    type: 'meetup',
-  },
-];
-
-const quickFilters = ['All', 'Within 100m', 'Open to Chat', 'Mentoring', 'Freelance'];
+interface NearbyUser {
+  id: string;
+  name: string;
+  role: string;
+  company: string;
+  latitude: number;
+  longitude: number;
+  distance: number;
+  lastSeen: string;
+  image: string;
+  pinColor: string;
+  statusText: string;
+  bio?: string;
+  skills?: string[];
+  isOnline: boolean;
+}
 
 export default function NearbyScreen() {
-  const { profile, storeUserLocation, getNearbyUsers } = useAuth();
-  const [activeFilter, setActiveFilter] = useState('All');
-  const [viewMode, setViewMode] = useState('list'); // 'list' or 'map'
-  const [openToChat, setOpenToChat] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [showUserPopup, setShowUserPopup] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [showNotificationBanner, setShowNotificationBanner] = useState(true);
-  const [pulseAnimation] = useState(new Animated.Value(1));
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filteredPeople, setFilteredPeople] = useState(nearbyPeople);
+  const { profile, storeUserLocation, getNearbyUsers, togglePublicMode } = useAuth();
+  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [nearbyUsers, setNearbyUsers] = useState<NearbyUser[]>([]);
+  const [selectedUser, setSelectedUser] = useState<NearbyUser | null>(null);
+  const [showUserModal, setShowUserModal] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
-  const [nearbyUsers, setNearbyUsers] = useState([]);
-  const [loadingNearbyUsers, setLoadingNearbyUsers] = useState(false);
-  
-  // Location tracking state
-  const [currentUserLocation, setCurrentUserLocation] = useState(null);
-  const [locationPermission, setLocationPermission] = useState(null);
-  const [locationWatcher, setLocationWatcher] = useState(null);
-  const [locationTrackingActive, setLocationTrackingActive] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [locationPermission, setLocationPermission] = useState<Location.PermissionStatus | null>(null);
+  const [isTrackingLocation, setIsTrackingLocation] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+  const refreshInterval = useRef<NodeJS.Timeout | null>(null);
 
-  // Get public mode state from profile
+  // Check if user has public mode enabled
   const isPublicMode = profile?.is_public ?? false;
 
   useEffect(() => {
-    // Pulse animation for user's location pin
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnimation, {
-          toValue: 0.5,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnimation, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
-  }, []);
-
-  // Request location permissions on mount
-  useEffect(() => {
-    requestLocationPermission();
-    
-    // Cleanup location watcher on unmount
+    initializeLocation();
     return () => {
-      if (locationWatcher) {
-        locationWatcher.remove();
-      }
+      cleanup();
     };
   }, []);
 
-  // Start/stop location tracking based on public mode
   useEffect(() => {
-    console.log('📍 Public mode changed:', isPublicMode);
-    
-    if (isPublicMode && locationPermission === 'granted') {
-      console.log('🟢 Starting location tracking (Public Mode ON)');
+    if (isPublicMode && location) {
       startLocationTracking();
+      startPeriodicRefresh();
     } else {
-      console.log('🔴 Stopping location tracking (Public Mode OFF or no permission)');
       stopLocationTracking();
+      stopPeriodicRefresh();
     }
-  }, [isPublicMode, locationPermission]);
+  }, [isPublicMode, location]);
 
-  // Auto-refresh nearby users when location changes and public mode is on
-  useEffect(() => {
-    if (autoRefresh && currentUserLocation && isPublicMode) {
-      fetchNearbyUsers();
-    }
-  }, [currentUserLocation, autoRefresh, isPublicMode]);
+  const cleanup = () => {
+    stopLocationTracking();
+    stopPeriodicRefresh();
+  };
 
-  const requestLocationPermission = async () => {
+  const initializeLocation = async () => {
     try {
-      console.log('📍 Requesting location permissions...');
-      
-      // Request foreground location permissions
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      const granted = status === 'granted';
-      setLocationPermission(granted ? 'granted' : 'denied');
-      
-      if (!granted) {
-        Alert.alert(
-          'Location Permission Required',
-          'To show your location on the map and find nearby professionals, please enable location access.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Settings', onPress: () => Location.requestForegroundPermissionsAsync() }
-          ]
-        );
+      setLoading(true);
+      setErrorMessage(null);
+
+      // Check if location services are enabled
+      const enabled = await Location.hasServicesEnabledAsync();
+      if (!enabled) {
+        setErrorMessage('Location services are disabled. Please enable them in your device settings.');
+        setLoading(false);
         return;
       }
 
-      console.log('✅ Location permission granted');
-      
+      // Request location permissions
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermission(status);
+
+      if (status !== 'granted') {
+        setErrorMessage('Location permission is required to see nearby professionals. Please grant permission in settings.');
+        setLoading(false);
+        return;
+      }
+
+      // Get current location
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      setLocation(currentLocation);
+
+      if (isPublicMode) {
+        // Store location in database
+        await storeUserLocation({
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude,
+          accuracy: currentLocation.coords.accuracy || undefined,
+          altitude: currentLocation.coords.altitude || undefined,
+          heading: currentLocation.coords.heading || undefined,
+          speed: currentLocation.coords.speed || undefined,
+          timestamp: new Date(currentLocation.timestamp),
+        });
+
+        // Fetch nearby users
+        await fetchNearbyUsers();
+      }
     } catch (error) {
-      console.error('❌ Error requesting location permission:', error);
-      setLocationPermission('denied');
-      Alert.alert('Error', 'Failed to request location permission. Please try again.');
+      console.error('Error initializing location:', error);
+      setErrorMessage('Failed to get your location. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   const startLocationTracking = async () => {
-    if (locationTrackingActive || !isPublicMode) {
-      console.log('📍 Location tracking already active or public mode is off');
-      return;
-    }
+    if (isTrackingLocation || !isPublicMode) return;
 
     try {
-      console.log('🟢 Starting location tracking...');
-      setLocationTrackingActive(true);
-
-      // Get initial location
-      const initialLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-
-      const initialCoords = {
-        latitude: initialLocation.coords.latitude,
-        longitude: initialLocation.coords.longitude,
-        accuracy: initialLocation.coords.accuracy,
-        timestamp: new Date(initialLocation.timestamp),
-      };
-
-      setCurrentUserLocation(initialCoords);
-      console.log('📍 Initial location obtained:', initialCoords);
-
-      // Store location in database
-      await storeUserLocation({
-        latitude: initialCoords.latitude,
-        longitude: initialCoords.longitude,
-        accuracy: initialCoords.accuracy,
-        timestamp: initialCoords.timestamp,
-      });
-
-      // Start watching position for real-time updates
-      const watcher = await Location.watchPositionAsync(
+      setIsTrackingLocation(true);
+      
+      locationSubscription.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
+          accuracy: Location.Accuracy.Balanced,
           timeInterval: 30000, // Update every 30 seconds
           distanceInterval: 50, // Update when moved 50 meters
         },
-        async (location) => {
-          // Only update if public mode is still on
-          if (!profile?.is_public) {
-            console.log('📍 Public mode is off, skipping location update');
-            return;
-          }
-
-          const newCoords = {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            accuracy: location.coords.accuracy,
-            timestamp: new Date(location.timestamp),
-          };
+        async (newLocation) => {
+          setLocation(newLocation);
           
-          setCurrentUserLocation(newCoords);
-          console.log('📍 Location updated:', newCoords);
-
-          // Store updated location in database
+          // Store updated location
           await storeUserLocation({
-            latitude: newCoords.latitude,
-            longitude: newCoords.longitude,
-            accuracy: newCoords.accuracy,
-            altitude: location.coords.altitude,
-            heading: location.coords.heading,
-            speed: location.coords.speed,
-            timestamp: newCoords.timestamp,
+            latitude: newLocation.coords.latitude,
+            longitude: newLocation.coords.longitude,
+            accuracy: newLocation.coords.accuracy || undefined,
+            altitude: newLocation.coords.altitude || undefined,
+            heading: newLocation.coords.heading || undefined,
+            speed: newLocation.coords.speed || undefined,
+            timestamp: new Date(newLocation.timestamp),
           });
         }
       );
-
-      setLocationWatcher(watcher);
-      console.log('✅ Real-time location tracking started');
-      
     } catch (error) {
-      console.error('❌ Error starting location tracking:', error);
-      setLocationTrackingActive(false);
-      Alert.alert('Location Error', 'Failed to get your current location. Please check your location settings.');
+      console.error('Error starting location tracking:', error);
+      setIsTrackingLocation(false);
     }
   };
 
   const stopLocationTracking = () => {
-    console.log('🔴 Stopping location tracking...');
-    
-    if (locationWatcher) {
-      locationWatcher.remove();
-      setLocationWatcher(null);
+    if (locationSubscription.current) {
+      locationSubscription.current.remove();
+      locationSubscription.current = null;
     }
-    
-    setCurrentUserLocation(null);
-    setLocationTrackingActive(false);
-    
-    console.log('✅ Location tracking stopped');
+    setIsTrackingLocation(false);
+  };
+
+  const startPeriodicRefresh = () => {
+    if (refreshInterval.current) return;
+
+    refreshInterval.current = setInterval(() => {
+      if (isPublicMode && location) {
+        fetchNearbyUsers();
+      }
+    }, 60000); // Refresh every minute
+  };
+
+  const stopPeriodicRefresh = () => {
+    if (refreshInterval.current) {
+      clearInterval(refreshInterval.current);
+      refreshInterval.current = null;
+    }
   };
 
   const fetchNearbyUsers = async () => {
-    if (!isPublicMode) {
-      console.log('📍 Public mode is off, skipping nearby users fetch');
-      return;
-    }
-
     try {
-      setLoadingNearbyUsers(true);
-      console.log('🔍 Fetching nearby users...');
-      
-      const { data, error } = await getNearbyUsers(1000); // 1km radius
+      const { data, error } = await getNearbyUsers(2000); // 2km radius
       
       if (error) {
-        console.error('❌ Error fetching nearby users:', error);
-      } else {
-        console.log('✅ Nearby users fetched:', data?.length || 0);
-        setNearbyUsers(data || []);
+        console.error('Error fetching nearby users:', error);
+        return;
+      }
+
+      if (data) {
+        const formattedUsers: NearbyUser[] = data.map((userLocation: any, index: number) => {
+          const user = userLocation.profiles;
+          const distance = location ? calculateDistance(
+            location.coords.latitude,
+            location.coords.longitude,
+            userLocation.latitude,
+            userLocation.longitude
+          ) : 0;
+
+          // Assign different pin colors based on role or randomly
+          const pinColors = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#3B82F6'];
+          const pinColor = pinColors[index % pinColors.length];
+
+          return {
+            id: user.id,
+            name: user.full_name || user.username,
+            role: user.role || 'Professional',
+            company: user.company || 'OpenAnts',
+            latitude: userLocation.latitude,
+            longitude: userLocation.longitude,
+            distance: Math.round(distance),
+            lastSeen: formatLastSeen(userLocation.timestamp),
+            image: user.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+            pinColor,
+            statusText: distance < 100 ? 'Very Close' : distance < 500 ? 'Nearby' : 'In Area',
+            bio: user.bio,
+            skills: user.skills,
+            isOnline: isRecentLocation(userLocation.timestamp),
+          };
+        });
+
+        setNearbyUsers(formattedUsers);
       }
     } catch (error) {
-      console.error('❌ Unexpected error fetching nearby users:', error);
-    } finally {
-      setLoadingNearbyUsers(false);
+      console.error('Error fetching nearby users:', error);
     }
   };
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    
-    if (query.trim() === '') {
-      setFilteredPeople(nearbyPeople);
-      return;
-    }
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lng2 - lng1) * Math.PI / 180;
 
-    const lowercaseQuery = query.toLowerCase();
-    
-    const results = nearbyPeople.filter(person => 
-      person.name.toLowerCase().includes(lowercaseQuery) ||
-      person.role.toLowerCase().includes(lowercaseQuery) ||
-      person.company.toLowerCase().includes(lowercaseQuery) ||
-      person.bio.toLowerCase().includes(lowercaseQuery) ||
-      person.interests.some(interest => interest.toLowerCase().includes(lowercaseQuery)) ||
-      person.tags.some(tag => tag.toLowerCase().includes(lowercaseQuery)) ||
-      (person.lookingFor && person.lookingFor.toLowerCase().includes(lowercaseQuery))
-    );
-    
-    setFilteredPeople(results);
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c;
   };
 
-  const handleUserPinPress = (user) => {
+  const formatLastSeen = (timestamp: string): string => {
+    const now = new Date();
+    const lastSeen = new Date(timestamp);
+    const diffMs = now.getTime() - lastSeen.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 5) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${diffDays}d ago`;
+  };
+
+  const isRecentLocation = (timestamp: string): boolean => {
+    const now = new Date();
+    const lastSeen = new Date(timestamp);
+    const diffMs = now.getTime() - lastSeen.getTime();
+    return diffMs < 300000; // 5 minutes
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchNearbyUsers();
+    setRefreshing(false);
+  };
+
+  const handleUserPinPress = (user: NearbyUser) => {
     setSelectedUser(user);
-    setShowUserPopup(true);
+    setShowUserModal(true);
   };
 
-  const closeUserPopup = () => {
-    setShowUserPopup(false);
-    setSelectedUser(null);
+  const handleTogglePublicMode = async () => {
+    try {
+      const newValue = !isPublicMode;
+      const { error } = await togglePublicMode(newValue);
+      
+      if (error) {
+        Alert.alert('Error', 'Failed to update location sharing settings. Please try again.');
+        return;
+      }
+
+      if (newValue) {
+        // Turning on public mode - request location and start tracking
+        await initializeLocation();
+      } else {
+        // Turning off public mode - stop tracking and clear data
+        stopLocationTracking();
+        stopPeriodicRefresh();
+        setNearbyUsers([]);
+      }
+
+      const message = newValue 
+        ? 'Location sharing enabled. You can now see and be seen by nearby professionals.'
+        : 'Location sharing disabled. Your location is no longer visible to others.';
+      
+      Alert.alert(
+        newValue ? 'Public Mode Enabled' : 'Private Mode Enabled', 
+        message,
+        [{ text: 'Got it' }]
+      );
+    } catch (error) {
+      console.error('Error toggling public mode:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    }
   };
 
-  const handleProfilePress = () => {
-    setShowAccountSettings(true);
-  };
-
-  // Convert nearby people to map format
-  const mapUserLocations = filteredPeople.map(person => ({
-    id: person.id.toString(),
-    name: person.name,
-    latitude: person.latitude,
-    longitude: person.longitude,
-    pinColor: person.pinColor,
-    statusText: person.statusText,
-    image: person.image,
-    ...person // Include all other properties
-  }));
-
-  const PersonCard = ({ person }) => (
-    <View style={styles.personCard}>
-      <View style={styles.personHeader}>
-        <View style={styles.avatarContainer}>
-          <Image source={{ uri: person.image }} style={styles.personImage} />
-          {person.isOnline && <View style={styles.onlineIndicator} />}
-        </View>
-        <View style={styles.personInfo}>
-          <View style={styles.nameRow}>
-            <Text style={styles.personName}>{person.name}</Text>
-            <View style={styles.distanceBadge}>
-              <Text style={styles.distanceText}>{person.distance} • {person.location}</Text>
-            </View>
-          </View>
-          <Text style={styles.personRole}>{person.role} at {person.company}</Text>
-          <Text style={styles.personEducation}>{person.education}</Text>
-          <Text style={styles.personBio}>{person.bio}</Text>
-          
-          <View style={styles.interestsContainer}>
-            {person.interests.map((interest, index) => (
-              <View 
-                key={index} 
-                style={[
-                  styles.interestTag,
-                  index === 0 ? styles.interestTagBlue :
-                  index === 1 ? styles.interestTagGreen :
-                  index === 2 ? styles.interestTagPurple :
-                  styles.interestTagOrange
-                ]}
-              >
-                <Text 
-                  style={[
-                    styles.interestText,
-                    index === 0 ? styles.interestTextBlue :
-                    index === 1 ? styles.interestTextGreen :
-                    index === 2 ? styles.interestTextPurple :
-                    styles.interestTextOrange
-                  ]}
-                >
-                  {interest}
-                </Text>
-              </View>
-            ))}
-          </View>
-          
-          {person.lookingFor && (
-            <View style={styles.lookingForContainer}>
-              <Lightbulb size={14} color="#F59E0B" />
-              <Text style={styles.lookingForText}>{person.lookingFor}</Text>
-            </View>
-          )}
-          
-          <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.primaryButton}>
-              <MessageCircle size={14} color="#FFFFFF" />
-              <Text style={styles.primaryButtonText}>Message</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryButton}>
-              <Hand size={14} color="#6B7280" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryButton}>
-              <Bookmark size={14} color="#6B7280" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryButton}>
-              <Calendar size={14} color="#6B7280" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-
-  const CrossedPathsSection = () => (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>People You Crossed Paths With</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.crossedPathsContainer}>
-        {crossedPaths.map((person) => (
-          <TouchableOpacity key={person.id} style={styles.crossedPathItem}>
-            <Image source={{ uri: person.image }} style={styles.crossedPathImage} />
-            <Text style={styles.crossedPathName}>{person.name}</Text>
-            <Text style={styles.crossedPathTime}>{person.timeAgo}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
-
-  const EventCard = ({ event }) => (
-    <View style={styles.eventCard}>
-      <View style={styles.eventHeader}>
-        <View style={styles.eventIcon}>
-          <Calendar size={16} color="#6366F1" />
-        </View>
-        <View style={styles.eventInfo}>
-          <Text style={styles.eventTitle}>{event.title}</Text>
-          <Text style={styles.eventDetails}>{event.time} • {event.location}</Text>
-          <Text style={styles.eventAttendees}>{event.attendees} attendees interested</Text>
-        </View>
-        <TouchableOpacity style={styles.joinButton}>
-          <Text style={styles.joinButtonText}>Join</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  const UserPopupModal = () => {
+  const UserModal = () => {
     if (!selectedUser) return null;
 
     return (
       <Modal
-        visible={showUserPopup}
+        visible={showUserModal}
         transparent={true}
         animationType="slide"
-        onRequestClose={closeUserPopup}
+        onRequestClose={() => setShowUserModal(false)}
       >
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
-          activeOpacity={1} 
-          onPress={closeUserPopup}
-        >
-          <TouchableOpacity 
-            style={styles.modalContent} 
-            activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
-          >
-            <View style={styles.modalHandle} />
-            
-            <View style={styles.popupContent}>
-              <View style={styles.popupHeader}>
-                <Image source={{ uri: selectedUser.image }} style={styles.popupAvatar} />
-                <View style={styles.popupUserInfo}>
-                  <Text style={styles.popupUserName}>{selectedUser.name}</Text>
-                  <Text style={styles.popupUserTitle}>{selectedUser.role} at {selectedUser.company}</Text>
-                  <Text style={styles.popupUserDistance}>{selectedUser.distance} – {selectedUser.location}</Text>
-                  <Text style={styles.popupUserStatus}>
-                    {selectedUser.statusText} • Active {selectedUser.lastActive}
-                  </Text>
+        <View style={styles.modalOverlay}>
+          <View style={styles.userModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Professional Profile</Text>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={() => setShowUserModal(false)}
+              >
+                <X size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              <View style={styles.userHeader}>
+                <Image source={{ uri: selectedUser.image }} style={styles.userImage} />
+                <View style={styles.userInfo}>
+                  <Text style={styles.userName}>{selectedUser.name}</Text>
+                  <Text style={styles.userRole}>{selectedUser.role}</Text>
+                  <Text style={styles.userCompany}>{selectedUser.company}</Text>
+                  <View style={styles.statusContainer}>
+                    <View style={[
+                      styles.statusDot, 
+                      { backgroundColor: selectedUser.isOnline ? '#10B981' : '#6B7280' }
+                    ]} />
+                    <Text style={styles.statusText}>
+                      {selectedUser.isOnline ? 'Active now' : selectedUser.lastSeen}
+                    </Text>
+                  </View>
                 </View>
               </View>
-              
-              <View style={styles.popupTags}>
-                {selectedUser.tags.map((tag, index) => (
-                  <View key={index} style={styles.popupTag}>
-                    <Text style={styles.popupTagText}>{tag}</Text>
+
+              <View style={styles.distanceCard}>
+                <MapPin size={16} color="#6366F1" />
+                <Text style={styles.distanceText}>
+                  {selectedUser.distance}m away • {selectedUser.statusText}
+                </Text>
+              </View>
+
+              {selectedUser.bio && (
+                <View style={styles.bioSection}>
+                  <Text style={styles.sectionTitle}>About</Text>
+                  <Text style={styles.bioText}>{selectedUser.bio}</Text>
+                </View>
+              )}
+
+              {selectedUser.skills && selectedUser.skills.length > 0 && (
+                <View style={styles.skillsSection}>
+                  <Text style={styles.sectionTitle}>Skills</Text>
+                  <View style={styles.skillsContainer}>
+                    {selectedUser.skills.slice(0, 6).map((skill, index) => (
+                      <View key={index} style={styles.skillTag}>
+                        <Text style={styles.skillText}>{skill}</Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
-              
-              <View style={styles.popupActions}>
-                <TouchableOpacity style={styles.popupPrimaryButton}>
-                  <MessageCircle size={16} color="#FFFFFF" />
-                  <Text style={styles.popupPrimaryButtonText}>Message</Text>
+                </View>
+              )}
+
+              <View style={styles.actionButtons}>
+                <TouchableOpacity style={styles.connectButton}>
+                  <UserPlus size={18} color="#FFFFFF" />
+                  <Text style={styles.connectButtonText}>Connect</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.popupSecondaryButton}>
-                  <Hand size={16} color="#6B7280" />
-                  <Text style={styles.popupSecondaryButtonText}>Wave</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.popupSecondaryButton}>
-                  <Text style={styles.popupSecondaryButtonText}>View Profile</Text>
+                <TouchableOpacity style={styles.messageButton}>
+                  <MessageCircle size={18} color="#6366F1" />
+                  <Text style={styles.messageButtonText}>Message</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     );
   };
+
+  const PermissionScreen = () => (
+    <View style={styles.permissionContainer}>
+      <View style={styles.permissionContent}>
+        <View style={styles.permissionIcon}>
+          <MapPin size={48} color="#6366F1" />
+        </View>
+        <Text style={styles.permissionTitle}>Location Access Required</Text>
+        <Text style={styles.permissionDescription}>
+          To see nearby professionals and enable networking opportunities, we need access to your location.
+        </Text>
+        <TouchableOpacity style={styles.permissionButton} onPress={initializeLocation}>
+          <Text style={styles.permissionButtonText}>Enable Location</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const PrivateModeScreen = () => (
+    <View style={styles.privateModeContainer}>
+      <View style={styles.privateModeContent}>
+        <View style={styles.privateModeIcon}>
+          <EyeOff size={48} color="#6B7280" />
+        </View>
+        <Text style={styles.privateModeTitle}>Private Mode Enabled</Text>
+        <Text style={styles.privateModeDescription}>
+          Your location is not being shared. Enable Public Mode to see nearby professionals and be discoverable by others.
+        </Text>
+        <TouchableOpacity style={styles.enablePublicButton} onPress={handleTogglePublicMode}>
+          <Eye size={18} color="#FFFFFF" />
+          <Text style={styles.enablePublicButtonText}>Enable Public Mode</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const ErrorScreen = () => (
+    <View style={styles.errorContainer}>
+      <View style={styles.errorContent}>
+        <Text style={styles.errorTitle}>Unable to Load Nearby Users</Text>
+        <Text style={styles.errorDescription}>{errorMessage}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={initializeLocation}>
+          <RefreshCw size={18} color="#FFFFFF" />
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6366F1" />
+          <Text style={styles.loadingText}>Finding nearby professionals...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (errorMessage && locationPermission !== 'granted') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <PermissionScreen />
+      </SafeAreaView>
+    );
+  }
+
+  if (!isPublicMode) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <PrivateModeScreen />
+      </SafeAreaView>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ErrorScreen />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <View style={styles.headerLeft}>
-            {viewMode === 'map' && (
-              <TouchableOpacity 
-                style={styles.backButton}
-                onPress={() => setViewMode('list')}
-              >
-                <ArrowLeft size={20} color="#6B7280" />
-              </TouchableOpacity>
-            )}
-            <View style={styles.appIcon}>
-              <OpenAntsLogo size={28} color="#FFFFFF" />
-            </View>
-            <Text style={styles.headerTitle}>OpenAnts</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>Nearby Professionals</Text>
+          <View style={styles.userCount}>
+            <Users size={16} color="#6366F1" />
+            <Text style={styles.userCountText}>{nearbyUsers.length} nearby</Text>
           </View>
-          <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.notificationButton}>
-              <Bell size={20} color="#6B7280" />
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>3</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleProfilePress}>
-              <Image 
-                source={{ uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
-                style={styles.profileImage} 
-              />
-            </TouchableOpacity>
-          </View>
+        </View>
+        <View style={styles.headerRight}>
+          <TouchableOpacity 
+            style={styles.refreshButton} 
+            onPress={handleRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw 
+              size={20} 
+              color="#6366F1" 
+              style={refreshing ? styles.spinning : undefined}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.settingsButton}
+            onPress={() => setShowAccountSettings(true)}
+          >
+            <Settings size={20} color="#6B7280" />
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Search Bar - Only show in list view */}
-      {viewMode === 'list' && (
-        <SearchBar
-          placeholder="Search people, skills, companies..."
-          onSearch={handleSearch}
-          showFilter={true}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-      )}
-
-      {/* Location Status Banner */}
-      {viewMode === 'map' && (
-        <LinearGradient
-          colors={isPublicMode ? ['#10B981', '#059669'] : ['#EF4444', '#DC2626']}
-          style={styles.notificationBanner}
-        >
-          <View style={styles.notificationContent}>
-            <View style={styles.notificationIcon}>
-              <MapPin size={16} color="#FFFFFF" />
+      {/* Status Banner */}
+      <LinearGradient
+        colors={['#10B981', '#059669']}
+        style={styles.statusBanner}
+      >
+        <View style={styles.statusContent}>
+          <View style={styles.statusLeft}>
+            <View style={styles.statusIcon}>
+              <Eye size={16} color="#FFFFFF" />
             </View>
-            <View style={styles.notificationText}>
-              <Text style={styles.notificationTitle}>
-                {isPublicMode 
-                  ? (locationTrackingActive 
-                      ? `${nearbyUsers.length} professionals near you are open to connect!`
-                      : 'Connecting to GPS...'
-                    )
-                  : 'Location sharing is disabled'
-                }
-              </Text>
-              <Text style={styles.notificationSubtitle}>
-                {isPublicMode 
-                  ? (currentUserLocation 
-                      ? `Live location active • Accuracy: ${Math.round(currentUserLocation.accuracy || 0)}m`
-                      : 'Waiting for GPS signal...'
-                    )
-                  : 'Enable Public Mode to find nearby professionals'
-                }
-              </Text>
-            </View>
-            {showNotificationBanner && (
-              <TouchableOpacity 
-                style={styles.notificationClose}
-                onPress={() => setShowNotificationBanner(false)}
-              >
-                <X size={16} color="#FFFFFF80" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </LinearGradient>
-      )}
-
-      {/* Status Panel - Only show in map view */}
-      {viewMode === 'map' && (
-        <View style={styles.statusPanel}>
-          <View style={styles.statusContent}>
-            <View style={styles.statusLeft}>
-              <View style={styles.statusIcon}>
-                <Eye size={14} color={isPublicMode ? "#10B981" : "#EF4444"} />
-              </View>
-              <View>
-                <Text style={styles.statusTitle}>
-                  {isPublicMode 
-                    ? `You and ${nearbyUsers.length} others are visible`
-                    : 'You are not visible to others'
-                  }
-                </Text>
-                <Text style={styles.statusSubtitle}>
-                  {isPublicMode 
-                    ? (locationTrackingActive 
-                        ? `GPS tracking active • ${locationPermission === 'granted' ? 'Permission granted' : 'No permission'}`
-                        : 'GPS tracking starting...'
-                      )
-                    : 'Enable Public Mode to be discoverable'
-                  }
-                </Text>
-              </View>
-            </View>
-            <View style={styles.statusRight}>
-              <View style={[styles.onlineStatus, { 
-                backgroundColor: isPublicMode && locationTrackingActive ? '#10B981' : '#EF4444' 
-              }]} />
-              <Text style={styles.onlineText}>
-                {isPublicMode && locationTrackingActive ? 'Live' : 'Offline'}
+            <View>
+              <Text style={styles.statusTitle}>Public Mode Active</Text>
+              <Text style={styles.statusSubtitle}>
+                {isTrackingLocation ? 'Sharing location' : 'Location shared'}
               </Text>
             </View>
           </View>
+          <TouchableOpacity 
+            style={styles.toggleButton}
+            onPress={handleTogglePublicMode}
+          >
+            <Text style={styles.toggleButtonText}>Turn Off</Text>
+          </TouchableOpacity>
         </View>
-      )}
+      </LinearGradient>
 
-      {/* Live Metrics Bar - Only show in list view */}
-      {viewMode === 'list' && (
-        <View style={styles.metricsSection}>
-          <View style={styles.metricsGrid}>
-            <View style={styles.metricItem}>
-              <Text style={[styles.metricNumber, { color: '#6366F1' }]}>
-                {isPublicMode ? (loadingNearbyUsers ? '...' : nearbyUsers.length) : '0'}
-              </Text>
-              <Text style={styles.metricLabel}>Nearby</Text>
-            </View>
-            <View style={styles.metricItem}>
-              <Text style={[styles.metricNumber, { color: '#10B981' }]}>
-                {isPublicMode ? '4' : '0'}
-              </Text>
-              <Text style={styles.metricLabel}>Hiring</Text>
-            </View>
-            <View style={styles.metricItem}>
-              <Text style={[styles.metricNumber, { color: '#3B82F6' }]}>
-                {isPublicMode ? '7' : '0'}
-              </Text>
-              <Text style={styles.metricLabel}>Open to Chat</Text>
-            </View>
-            <View style={styles.metricItem}>
-              <Text style={[styles.metricNumber, { color: '#8B5CF6' }]}>
-                {isPublicMode ? '6' : '0'}
-              </Text>
-              <Text style={styles.metricLabel}>Mutual tags</Text>
-            </View>
-          </View>
-        </View>
-      )}
-
-      {/* Location Banner - Only show in list view */}
-      {viewMode === 'list' && (
-        <LinearGradient
-          colors={isPublicMode ? ['#10B981', '#059669'] : ['#EF4444', '#DC2626']}
-          style={styles.locationBanner}
-        >
-          <View style={styles.locationContent}>
-            <View style={styles.locationLeft}>
-              <View style={styles.locationIcon}>
-                <MapPin size={16} color="#FFFFFF" />
-              </View>
-              <View>
-                <Text style={styles.publicModeText}>
-                  {isPublicMode ? 'Public Mode Active' : 'Private Mode Active'}
-                </Text>
-                <Text style={styles.locationSubtext}>
-                  {isPublicMode 
-                    ? (currentUserLocation 
-                        ? `GPS: ${currentUserLocation.latitude.toFixed(4)}, ${currentUserLocation.longitude.toFixed(4)}`
-                        : 'Connecting to GPS...'
-                      )
-                    : 'Location sharing disabled'
-                  }
-                </Text>
-              </View>
-            </View>
-            <View style={[styles.statusIndicator, { 
-              backgroundColor: isPublicMode && locationTrackingActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.5)' 
-            }]}>
-              <Text style={[styles.statusIndicatorText, {
-                color: isPublicMode && locationTrackingActive ? '#10B981' : '#EF4444'
-              }]}>
-                {isPublicMode && locationTrackingActive ? 'LIVE' : 'OFF'}
-              </Text>
-            </View>
-          </View>
-          
-          <View style={styles.viewToggleContainer}>
-            <View style={styles.viewToggle}>
-              <TouchableOpacity 
-                style={[styles.viewButton, viewMode === 'list' && styles.activeViewButton]}
-                onPress={() => setViewMode('list')}
-              >
-                <List size={16} color={viewMode === 'list' ? '#FFFFFF' : '#FFFFFF80'} />
-                <Text style={[styles.viewButtonText, viewMode === 'list' && styles.activeViewButtonText]}>List</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.viewButton, viewMode === 'map' && styles.activeViewButton]}
-                onPress={() => setViewMode('map')}
-              >
-                <Map size={16} color={viewMode === 'map' ? '#FFFFFF' : '#FFFFFF80'} />
-                <Text style={[styles.viewButtonText, viewMode === 'map' && styles.activeViewButtonText]}>Map</Text>
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity style={styles.filterIconButton}>
-              <Filter size={16} color="#FFFFFF" />
-              <Text style={styles.filterIconText}>Filters</Text>
-            </TouchableOpacity>
-          </View>
-        </LinearGradient>
-      )}
-
-      {/* Enhanced Filters - Only show in list view */}
-      {viewMode === 'list' && (
-        <View style={styles.filtersSection}>
-          <View style={styles.filtersHeader}>
-            <Text style={styles.filtersTitle}>Quick Filters</Text>
-            <View style={styles.chatToggle}>
-              <Switch
-                value={openToChat}
-                onValueChange={setOpenToChat}
-                trackColor={{ false: '#E5E7EB', true: '#6366F1' }}
-                thumbColor="#FFFFFF"
-                style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
-              />
-              <Text style={styles.chatToggleText}>Open to chat now</Text>
-            </View>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickFilters}>
-            {quickFilters.map((filter) => (
-              <TouchableOpacity
-                key={filter}
-                style={[
-                  styles.quickFilter,
-                  activeFilter === filter && styles.activeQuickFilter
-                ]}
-                onPress={() => setActiveFilter(filter)}
-              >
-                <Text style={[
-                  styles.quickFilterText,
-                  activeFilter === filter && styles.activeQuickFilterText
-                ]}>
-                  {filter}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* Interactive MapBox Map View */}
-      {viewMode === 'map' && (
-        <View style={styles.mapContainer}>
+      {/* Map */}
+      <View style={styles.mapContainer}>
+        {location && (
           <MapBoxMap
-            userLocations={isPublicMode ? mapUserLocations : []}
-            currentUserLocation={isPublicMode ? currentUserLocation : null}
+            userLocations={nearbyUsers}
+            currentUserLocation={{
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+              accuracy: location.coords.accuracy || undefined,
+              timestamp: location.timestamp,
+            }}
             onUserPinPress={handleUserPinPress}
-            style={styles.mapView}
+            style={styles.map}
           />
-        </View>
-      )}
+        )}
+      </View>
 
-      {/* Quick Actions Bar - Only show in map view */}
-      {viewMode === 'map' && (
-        <View style={styles.quickActionsBar}>
-          <View style={styles.quickActionsLeft}>
+      {/* User List */}
+      <View style={styles.userListContainer}>
+        <Text style={styles.userListTitle}>Nearby Professionals</Text>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.userList}
+          contentContainerStyle={styles.userListContent}
+        >
+          {nearbyUsers.map((user) => (
             <TouchableOpacity 
-              style={styles.listViewButton}
-              onPress={() => setViewMode('list')}
+              key={user.id} 
+              style={styles.userCard}
+              onPress={() => handleUserPinPress(user)}
             >
-              <List size={16} color="#FFFFFF" />
-              <Text style={styles.listViewButtonText}>List View</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.filterButton}>
-              <Filter size={16} color="#6B7280" />
-              <Text style={styles.filterButtonText}>Filter</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.quickActionsRight}>
-            <Text style={styles.autoRefreshText}>Auto-refresh</Text>
-            <Switch
-              value={autoRefresh}
-              onValueChange={setAutoRefresh}
-              trackColor={{ false: '#E5E7EB', true: '#10B981' }}
-              thumbColor="#FFFFFF"
-              style={styles.autoRefreshSwitch}
-            />
-          </View>
-        </View>
-      )}
-
-      {/* List View Content */}
-      {viewMode === 'list' && (
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Search Results Header */}
-          {searchQuery.trim() !== '' && (
-            <View style={styles.searchResults}>
-              <Text style={styles.searchResultsTitle}>
-                Search Results for "{searchQuery}"
-              </Text>
-              {filteredPeople.length === 0 && (
-                <View style={styles.noResults}>
-                  <Text style={styles.noResultsText}>No people found</Text>
-                  <Text style={styles.noResultsSubtext}>Try adjusting your search terms</Text>
+              <Image source={{ uri: user.image }} style={styles.userCardImage} />
+              <View style={styles.userCardInfo}>
+                <Text style={styles.userCardName} numberOfLines={1}>{user.name}</Text>
+                <Text style={styles.userCardRole} numberOfLines={1}>{user.role}</Text>
+                <View style={styles.userCardDistance}>
+                  <MapPin size={12} color="#6B7280" />
+                  <Text style={styles.userCardDistanceText}>{user.distance}m</Text>
                 </View>
-              )}
-            </View>
-          )}
-
-          {/* Show message when public mode is off */}
-          {!isPublicMode && (
-            <View style={styles.privateModeMessage}>
-              <MapPin size={32} color="#9CA3AF" />
-              <Text style={styles.privateModeTitle}>Private Mode Active</Text>
-              <Text style={styles.privateModeSubtext}>
-                Enable Public Mode in the Home tab to discover nearby professionals and be discoverable by others.
-              </Text>
-            </View>
-          )}
-
-          {/* Show content only when public mode is on */}
-          {isPublicMode && (
-            <View style={styles.listContainer}>
-              {filteredPeople.map((person) => (
-                <PersonCard key={person.id} person={person} />
-              ))}
-            </View>
-          )}
-
-          {/* Hide other sections when searching or in private mode */}
-          {searchQuery.trim() === '' && isPublicMode && (
-            <>
-              <CrossedPathsSection />
-
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Upcoming Events Nearby</Text>
-                {nearbyEvents.map((event) => (
-                  <EventCard key={event.id} event={event} />
-                ))}
               </View>
-            </>
+              <View style={[
+                styles.userCardStatus,
+                { backgroundColor: user.isOnline ? '#10B981' : '#6B7280' }
+              ]} />
+            </TouchableOpacity>
+          ))}
+          
+          {nearbyUsers.length === 0 && (
+            <View style={styles.emptyState}>
+              <Users size={32} color="#D1D5DB" />
+              <Text style={styles.emptyStateText}>No professionals nearby</Text>
+              <Text style={styles.emptyStateSubtext}>Try refreshing or check back later</Text>
+            </View>
           )}
-
-          <View style={styles.bottomPadding} />
         </ScrollView>
-      )}
+      </View>
 
-      {/* User Popup Modal */}
-      <UserPopupModal />
-
-      {/* Account Settings Modal */}
+      <UserModal />
+      
       <AccountSettingsModal 
         visible={showAccountSettings}
         onClose={() => setShowAccountSettings(false)}
@@ -950,140 +605,60 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
   headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  backButton: {
-    padding: 8,
-    marginRight: 8,
-  },
-  appIcon: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#6366F1',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-    overflow: 'hidden',
-  },
-  logoImage: {
-    width: 28,
-    height: 28,
+    flex: 1,
   },
   headerTitle: {
     fontSize: 18,
     fontFamily: 'Inter-Bold',
     color: '#111827',
+    marginBottom: 2,
+  },
+  userCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  userCountText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#6366F1',
   },
   headerRight: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
-  notificationButton: {
-    position: 'relative',
+  refreshButton: {
     padding: 8,
   },
-  notificationBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 16,
-    height: 16,
-    backgroundColor: '#EF4444',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+  spinning: {
+    // Note: In a real app, you'd use react-native-reanimated for the spinning animation
   },
-  notificationBadgeText: {
-    fontSize: 10,
-    fontFamily: 'Inter-Bold',
-    color: '#FFFFFF',
-  },
-  profileImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-  },
-  searchResults: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  searchResultsTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  noResults: {
-    alignItems: 'center',
-    paddingVertical: 24,
-  },
-  noResultsText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  noResultsSubtext: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#9CA3AF',
-  },
-  notificationBanner: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  notificationContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  notificationIcon: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#FFFFFF20',
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  notificationText: {
-    flex: 1,
-  },
-  notificationTitle: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  notificationSubtitle: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#FFFFFF80',
-  },
-  notificationClose: {
+  settingsButton: {
     padding: 8,
   },
-  statusPanel: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+  statusBanner: {
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
@@ -1095,11 +670,12 @@ const styles = StyleSheet.create({
   statusLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   statusIcon: {
     width: 32,
     height: 32,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1108,531 +684,265 @@ const styles = StyleSheet.create({
   statusTitle: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
-    color: '#111827',
+    color: '#FFFFFF',
   },
   statusSubtitle: {
     fontSize: 12,
     fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  statusRight: {
-    alignItems: 'center',
-  },
-  onlineStatus: {
-    width: 12,
-    height: 12,
-    backgroundColor: '#10B981',
-    borderRadius: 6,
-    marginBottom: 4,
-  },
-  onlineText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  metricsSection: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  metricItem: {
-    alignItems: 'center',
-  },
-  metricNumber: {
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
-  },
-  metricLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  locationBanner: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  locationContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  locationLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  locationIcon: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#FFFFFF20',
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  publicModeText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  locationSubtext: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
     color: '#FFFFFF80',
   },
-  statusIndicator: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusIndicatorText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Bold',
-  },
-  viewToggleContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  viewToggle: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF20',
-    borderRadius: 8,
-    padding: 2,
-  },
-  viewButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    gap: 4,
-  },
-  activeViewButton: {
-    backgroundColor: '#FFFFFF20',
-  },
-  viewButtonText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF80',
-  },
-  activeViewButtonText: {
-    color: '#FFFFFF',
-  },
-  filterIconButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF20',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    gap: 4,
-  },
-  filterIconText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  filtersSection: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  filtersHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  filtersTitle: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#111827',
-  },
-  chatToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  chatToggleText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  quickFilters: {
-    flexDirection: 'row',
-  },
-  quickFilter: {
-    backgroundColor: '#F3F4F6',
+  toggleButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    marginRight: 8,
   },
-  activeQuickFilter: {
-    backgroundColor: '#6366F1',
-  },
-  quickFilterText: {
+  toggleButtonText: {
     fontSize: 12,
     fontFamily: 'Inter-Medium',
-    color: '#6B7280',
-  },
-  activeQuickFilterText: {
     color: '#FFFFFF',
   },
   mapContainer: {
-    position: 'relative',
-    height: 320,
-    backgroundColor: '#E5E7EB',
+    flex: 1,
+    margin: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  mapView: {
+  map: {
     flex: 1,
   },
-  quickActionsBar: {
+  userListContainer: {
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  userListTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
     paddingHorizontal: 16,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    marginBottom: 12,
   },
-  quickActionsLeft: {
-    flexDirection: 'row',
-    gap: 12,
+  userList: {
+    paddingLeft: 16,
   },
-  listViewButton: {
-    backgroundColor: '#6366F1',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 8,
+  userListContent: {
+    paddingRight: 16,
   },
-  listViewButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  filterButton: {
+  userCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    marginRight: 12,
+    width: 140,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 8,
+    borderColor: '#F3F4F6',
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  filterButtonText: {
+  userCardImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginBottom: 8,
+    alignSelf: 'center',
+  },
+  userCardInfo: {
+    alignItems: 'center',
+  },
+  userCardName: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
-    color: '#6B7280',
+    color: '#111827',
+    marginBottom: 2,
+    textAlign: 'center',
   },
-  quickActionsRight: {
+  userCardRole: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  userCardDistance: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 2,
   },
-  autoRefreshText: {
-    fontSize: 14,
+  userCardDistanceText: {
+    fontSize: 11,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
   },
-  autoRefreshSwitch: {
-    transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }],
+  userCardStatus: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
-  content: {
-    flex: 1,
-  },
-  privateModeMessage: {
+  emptyState: {
     alignItems: 'center',
-    paddingVertical: 48,
+    justifyContent: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    width: 200,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#6B7280',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  emptyStateSubtext: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  permissionContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 32,
-    backgroundColor: '#FFFFFF',
-    margin: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
   },
-  privateModeTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
-    color: '#374151',
-    marginTop: 16,
-    marginBottom: 8,
+  permissionContent: {
+    alignItems: 'center',
+    maxWidth: 300,
   },
-  privateModeSubtext: {
+  permissionIcon: {
+    width: 80,
+    height: 80,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  permissionTitle: {
+    fontSize: 20,
+    fontFamily: 'Inter-Bold',
+    color: '#111827',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  permissionDescription: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
     textAlign: 'center',
     lineHeight: 20,
+    marginBottom: 24,
   },
-  listContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-  },
-  personCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-  },
-  personHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  avatarContainer: {
-    position: 'relative',
-    marginRight: 16,
-  },
-  personImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 16,
-    height: 16,
-    backgroundColor: '#10B981',
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  personInfo: {
-    flex: 1,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  personName: {
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
-    color: '#111827',
-  },
-  distanceBadge: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-  },
-  distanceText: {
-    fontSize: 10,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  personRole: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-    marginBottom: 2,
-  },
-  personEducation: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#9CA3AF',
-    marginBottom: 8,
-  },
-  personBio: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  interestsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 12,
-  },
-  interestTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-  },
-  interestTagBlue: {
-    backgroundColor: '#DBEAFE',
-  },
-  interestTagGreen: {
-    backgroundColor: '#D1FAE5',
-  },
-  interestTagPurple: {
-    backgroundColor: '#F3E8FF',
-  },
-  interestTagOrange: {
-    backgroundColor: '#FED7AA',
-  },
-  interestText: {
-    fontSize: 10,
-    fontFamily: 'Inter-Medium',
-  },
-  interestTextBlue: {
-    color: '#1D4ED8',
-  },
-  interestTextGreen: {
-    color: '#059669',
-  },
-  interestTextPurple: {
-    color: '#7C3AED',
-  },
-  interestTextOrange: {
-    color: '#EA580C',
-  },
-  lookingForContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    borderRadius: 8,
-    padding: 8,
-    marginBottom: 12,
-    gap: 4,
-  },
-  lookingForText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#92400E',
-    flex: 1,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  primaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  permissionButton: {
     backgroundColor: '#6366F1',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
     borderRadius: 8,
-    gap: 4,
-    flex: 1,
-    justifyContent: 'center',
   },
-  primaryButtonText: {
-    fontSize: 12,
+  permissionButtonText: {
+    fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
   },
-  secondaryButton: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    padding: 8,
-    borderRadius: 8,
+  privateModeContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  privateModeContent: {
+    alignItems: 'center',
+    maxWidth: 300,
+  },
+  privateModeIcon: {
+    width: 80,
+    height: 80,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 24,
   },
-  section: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
+  privateModeTitle: {
+    fontSize: 20,
+    fontFamily: 'Inter-Bold',
     color: '#111827',
-    marginBottom: 16,
+    marginBottom: 12,
+    textAlign: 'center',
   },
-  crossedPathsContainer: {
+  privateModeDescription: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  enablePublicButton: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
     flexDirection: 'row',
-  },
-  crossedPathItem: {
     alignItems: 'center',
-    marginRight: 16,
-    minWidth: 80,
+    gap: 8,
   },
-  crossedPathImage: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    marginBottom: 8,
-  },
-  crossedPathName: {
+  enablePublicButtonText: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
-    color: '#111827',
-    marginBottom: 2,
+    color: '#FFFFFF',
   },
-  crossedPathTime: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  eventCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-  },
-  eventHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  eventIcon: {
-    width: 48,
-    height: 48,
-    backgroundColor: '#EEF2FF',
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  eventInfo: {
+  errorContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
   },
-  eventTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+  errorContent: {
+    alignItems: 'center',
+    maxWidth: 300,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
     color: '#111827',
-    marginBottom: 2,
+    marginBottom: 12,
+    textAlign: 'center',
   },
-  eventDetails: {
+  errorDescription: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
-    marginBottom: 2,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
   },
-  eventAttendees: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#9CA3AF',
-  },
-  joinButton: {
+  retryButton: {
     backgroundColor: '#6366F1',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
     borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  joinButtonText: {
-    fontSize: 12,
+  retryButtonText: {
+    fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
   },
@@ -1641,81 +951,133 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
-  modalContent: {
+  userModalContent: {
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingHorizontal: 24,
-    paddingVertical: 24,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
   },
-  modalHandle: {
-    width: 48,
-    height: 4,
-    backgroundColor: '#D1D5DB',
-    borderRadius: 2,
-    alignSelf: 'center',
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalBody: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  userHeader: {
+    flexDirection: 'row',
     marginBottom: 16,
   },
-  popupContent: {
-    gap: 16,
-  },
-  popupHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 16,
-  },
-  popupAvatar: {
+  userImage: {
     width: 64,
     height: 64,
     borderRadius: 32,
+    marginRight: 16,
   },
-  popupUserInfo: {
+  userInfo: {
     flex: 1,
   },
-  popupUserName: {
+  userName: {
     fontSize: 18,
     fontFamily: 'Inter-Bold',
     color: '#111827',
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  popupUserTitle: {
+  userRole: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#6B7280',
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  popupUserDistance: {
-    fontSize: 12,
+  userCompany: {
+    fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#9CA3AF',
-    marginBottom: 4,
+    marginBottom: 8,
   },
-  popupUserStatus: {
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
     fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#10B981',
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
   },
-  popupTags: {
+  distanceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 6,
+  },
+  distanceText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#6366F1',
+  },
+  bioSection: {
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  bioText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#374151',
+    lineHeight: 20,
+  },
+  skillsSection: {
+    marginBottom: 24,
+  },
+  skillsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  popupTag: {
-    backgroundColor: '#DBEAFE',
+  skillTag: {
+    backgroundColor: '#F3F4F6',
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
     borderRadius: 12,
   },
-  popupTagText: {
+  skillText: {
     fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#1D4ED8',
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
   },
-  popupActions: {
+  actionButtons: {
     flexDirection: 'row',
     gap: 12,
   },
-  popupPrimaryButton: {
+  connectButton: {
     flex: 1,
     backgroundColor: '#6366F1',
     flexDirection: 'row',
@@ -1725,15 +1087,15 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 8,
   },
-  popupPrimaryButtonText: {
+  connectButtonText: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
   },
-  popupSecondaryButton: {
+  messageButton: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: '#6366F1',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1741,12 +1103,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 8,
   },
-  popupSecondaryButtonText: {
+  messageButtonText: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
-    color: '#6B7280',
-  },
-  bottomPadding: {
-    height: 100,
+    color: '#6366F1',
   },
 });
