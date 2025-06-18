@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Database } from '@/types/database';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { encode, decode } from 'base-64';
 
 console.log("anhnq1 create supabase")
 
@@ -57,6 +58,18 @@ const SessionStorage = {
     }
   },
 };
+
+export async function saveCredentials(email: string, password: string) {
+  await SessionStorage.setItem('login_email', email);
+  await SessionStorage.setItem('login_password', encode(password));
+}
+
+export async function loadCredentials() {
+  const email = await SessionStorage.getItem('login_email');
+  const password = await SessionStorage.getItem('login_password');
+  
+  return { email: email, password: password ? decode(password) : password };
+}
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {

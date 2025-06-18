@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { loadCredentials, saveCredentials, supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import { AppState, AppStateStatus } from 'react-native';
-import { IS_FORCE_LOGOUT } from '../constants';
+import { IS_FORCE_LOGIN, IS_FORCE_LOGOUT } from '../constants';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 type UserLocation = Database['public']['Tables']['user_location']['Row'];
@@ -128,6 +128,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (nextAppState === 'active' && session) {
         if (IS_FORCE_LOGOUT) {
           await supabase.auth.signOut();
+        } else if (IS_FORCE_LOGIN) {
+          const { email, password } = await loadCredentials();
+          if (!email || !password) {
+            await supabase.auth.signOut();
+          } else {
+            await signIn(email, password);
+          }
         } else {
           console.log('📱 App came to foreground, checking connection...');
           // Let Supabase handle session refresh automatically
@@ -179,6 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (data.session) {
         console.log('✅ Sign in successful');
         setConnectionStatus('connected');
+        saveCredentials(email, password);
       }
 
       return { error };
