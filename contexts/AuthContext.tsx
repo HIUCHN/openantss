@@ -8,6 +8,7 @@ import { IS_FORCE_LOGIN, IS_FORCE_LOGOUT } from '../constants';
 type Profile = Database['public']['Tables']['profiles']['Row'];
 type UserLocation = Database['public']['Tables']['user_location']['Row'];
 type Post = Database['public']['Tables']['posts']['Row'];
+type Comment = Database['public']['Tables']['comments']['Row'];
 
 interface AuthContextType {
   session: Session | null;
@@ -45,6 +46,10 @@ interface AuthContextType {
   likePost: (postId: string) => Promise<{ error: any }>;
   unlikePost: (postId: string) => Promise<{ error: any }>;
   deletePost: (postId: string) => Promise<{ error: any }>;
+  // Comment management functions
+  createComment: (postId: string, content: string, parentCommentId?: string) => Promise<{ data: Comment | null; error: any }>;
+  getComments: (postId: string) => Promise<{ data: Comment[] | null; error: any }>;
+  deleteComment: (commentId: string) => Promise<{ error: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -751,6 +756,108 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Comment management functions
+  const createComment = async (postId: string, content: string, parentCommentId?: string) => {
+    if (!user) return { data: null, error: new Error('No user logged in') };
+
+    try {
+      console.log('💬 Creating new comment for post:', postId);
+      
+      const commentData = {
+        post_id: postId,
+        author_id: user.id,
+        content: content.trim(),
+        parent_comment_id: parentCommentId || null,
+        likes_count: 0,
+      };
+
+      const { data, error } = await supabase
+        .from('comments')
+        .insert(commentData)
+        .select(`
+          *,
+          profiles!inner(
+            id,
+            username,
+            full_name,
+            avatar_url,
+            role,
+            company
+          )
+        `)
+        .single();
+
+      if (error) {
+        console.error('❌ Error creating comment:', error);
+        return { data: null, error };
+      }
+
+      console.log('✅ Comment created successfully');
+      return { data, error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error creating comment:', error);
+      return { data: null, error };
+    }
+  };
+
+  const getComments = async (postId: string) => {
+    try {
+      console.log('💬 Fetching comments for post:', postId);
+      
+      const { data, error } = await supabase
+        .from('comments')
+        .select(`
+          *,
+          profiles!inner(
+            id,
+            username,
+            full_name,
+            avatar_url,
+            role,
+            company
+          )
+        `)
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('❌ Error fetching comments:', error);
+        return { data: null, error };
+      }
+
+      console.log('✅ Comments fetched successfully:', data?.length || 0, 'comments');
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error fetching comments:', error);
+      return { data: null, error };
+    }
+  };
+
+  const deleteComment = async (commentId: string) => {
+    if (!user) return { error: new Error('No user logged in') };
+
+    try {
+      console.log('🗑️ Deleting comment:', commentId);
+      
+      const { error } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', commentId)
+        .eq('author_id', user.id); // Ensure user can only delete their own comments
+
+      if (error) {
+        console.error('❌ Error deleting comment:', error);
+        return { error };
+      }
+
+      console.log('✅ Comment deleted successfully');
+      return { error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error deleting comment:', error);
+      return { error };
+    }
+  };
+
   // Helper function to calculate distance between two points
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
     const R = 6371e3; // Earth's radius in meters
@@ -790,6 +897,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     likePost,
     unlikePost,
     deletePost,
+    // Comment management
+    createComment,
+    getComments,
+    deleteComment,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

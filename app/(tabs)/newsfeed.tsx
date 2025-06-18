@@ -9,11 +9,15 @@ import ContinuousTextInput from '@/components/ContinuousTextInput';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface Comment {
-  id: number;
-  author: string;
+  id: string;
+  author: {
+    id: string;
+    name: string;
+    avatar: string;
+  };
   content: string;
   timestamp: string;
-  avatar: string;
+  likes: number;
 }
 
 interface Post {
@@ -51,17 +55,18 @@ const trendingTags = [
 ];
 
 export default function NewsfeedScreen() {
-  const { profile, createPost, getPosts, likePost, unlikePost, deletePost } = useAuth();
+  const { profile, createPost, getPosts, likePost, unlikePost, deletePost, createComment, getComments, deleteComment } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [posts, setPosts] = useState<Post[]>([]);
   const [filteredPosts, setFilteredPosts] = useState<Post[]>([]);
-  const [newComment, setNewComment] = useState<{ [key: string]: string }>({});
   const [showComments, setShowComments] = useState<{ [key: string]: boolean }>({});
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [creatingPost, setCreatingPost] = useState(false);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  const [loadingComments, setLoadingComments] = useState<{ [key: string]: boolean }>({});
+  const [postComments, setPostComments] = useState<{ [key: string]: Comment[] }>({});
 
   // Load posts on component mount
   useEffect(() => {
@@ -94,7 +99,7 @@ export default function NewsfeedScreen() {
           timestamp: formatTimestamp(dbPost.created_at),
           likes: dbPost.likes_count || 0,
           likedBy: [], // We'll implement this later with a separate likes table
-          comments: [], // We'll implement comments later
+          comments: [], // Comments will be loaded separately
           shares: dbPost.shares_count || 0,
           tags: dbPost.tags || [],
           type: dbPost.type || 'text',
@@ -116,6 +121,55 @@ export default function NewsfeedScreen() {
       Alert.alert('Error', 'An unexpected error occurred while loading posts.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCommentsForPost = async (postId: string) => {
+    if (loadingComments[postId] || postComments[postId]) return; // Already loading or loaded
+
+    try {
+      setLoadingComments(prev => ({ ...prev, [postId]: true }));
+      
+      const { data, error } = await getComments(postId);
+      
+      if (error) {
+        console.error('Error loading comments:', error);
+        return;
+      }
+
+      if (data) {
+        // Transform database comments to match our UI format
+        const transformedComments: Comment[] = data.map((dbComment: any) => ({
+          id: dbComment.id,
+          author: {
+            id: dbComment.profiles.id,
+            name: dbComment.profiles.full_name || dbComment.profiles.username,
+            avatar: dbComment.profiles.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          },
+          content: dbComment.content,
+          timestamp: formatTimestamp(dbComment.created_at),
+          likes: dbComment.likes_count || 0,
+        }));
+
+        setPostComments(prev => ({ ...prev, [postId]: transformedComments }));
+        
+        // Update the post's comment count in local state
+        setPosts(prevPosts => prevPosts.map(post => 
+          post.id === postId 
+            ? { ...post, comments: transformedComments }
+            : post
+        ));
+        
+        setFilteredPosts(prevPosts => prevPosts.map(post => 
+          post.id === postId 
+            ? { ...post, comments: transformedComments }
+            : post
+        ));
+      }
+    } catch (error) {
+      console.error('Unexpected error loading comments:', error);
+    } finally {
+      setLoadingComments(prev => ({ ...prev, [postId]: false }));
     }
   };
 
@@ -317,47 +371,81 @@ export default function NewsfeedScreen() {
     );
   };
 
-  const handleAddComment = (postId: string, commentText: string) => {
+  const handleAddComment = async (postId: string, commentText: string) => {
     if (!commentText.trim()) return;
 
-    const newCommentObj: Comment = {
-      id: Date.now(),
-      author: 'You',
-      content: commentText,
-      timestamp: 'now',
-      avatar: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400'
-    };
-
-    setPosts(prevPosts => {
-      const updatedPosts = prevPosts.map(post => {
-        if (post.id === postId) {
-          return {
-            ...post,
-            comments: [...post.comments, newCommentObj]
-          };
-        }
-        return post;
-      });
+    try {
+      const { data, error } = await createComment(postId, commentText);
       
-      // Update filtered posts as well
-      if (searchQuery.trim() !== '') {
-        setFilteredPosts(updatedPosts.filter(post => 
-          post.author.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          post.author.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          post.author.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          post.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          post.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())) ||
-          (post.type === 'job' && post.jobTitle?.toLowerCase().includes(searchQuery.toLowerCase()))
-        ));
-      } else {
-        setFilteredPosts(updatedPosts);
+      if (error) {
+        console.error('Error creating comment:', error);
+        Alert.alert('Error', 'Failed to add comment. Please try again.');
+        return;
       }
-      
-      return updatedPosts;
-    });
+
+      if (data) {
+        // Transform the new comment
+        const newComment: Comment = {
+          id: data.id,
+          author: {
+            id: data.profiles.id,
+            name: data.profiles.full_name || data.profiles.username,
+            avatar: data.profiles.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          },
+          content: data.content,
+          timestamp: 'now',
+          likes: 0,
+        };
+
+        // Update local comments state
+        setPostComments(prev => ({
+          ...prev,
+          [postId]: [...(prev[postId] || []), newComment]
+        }));
+
+        // Update posts state
+        setPosts(prevPosts => {
+          const updatedPosts = prevPosts.map(post => {
+            if (post.id === postId) {
+              return {
+                ...post,
+                comments: [...post.comments, newComment]
+              };
+            }
+            return post;
+          });
+          
+          // Update filtered posts as well
+          if (searchQuery.trim() !== '') {
+            setFilteredPosts(updatedPosts.filter(post => 
+              post.author.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              post.author.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              post.author.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              post.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              post.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())) ||
+              (post.type === 'job' && post.jobTitle?.toLowerCase().includes(searchQuery.toLowerCase()))
+            ));
+          } else {
+            setFilteredPosts(updatedPosts);
+          }
+          
+          return updatedPosts;
+        });
+      }
+    } catch (error) {
+      console.error('Unexpected error creating comment:', error);
+      Alert.alert('Error', 'An unexpected error occurred while adding your comment.');
+    }
   };
 
-  const toggleComments = (postId: string) => {
+  const toggleComments = async (postId: string) => {
+    const isShowing = showComments[postId];
+    
+    if (!isShowing) {
+      // Load comments when showing for the first time
+      await loadCommentsForPost(postId);
+    }
+    
     setShowComments(prev => ({ ...prev, [postId]: !prev[postId] }));
   };
 
@@ -425,45 +513,101 @@ export default function NewsfeedScreen() {
     </View>
   );
 
-  const CommentSection = ({ post }: { post: Post }) => (
-    <View style={styles.commentsSection}>
-      {post.comments.map((comment) => (
-        <View key={comment.id} style={styles.commentItem}>
-          <Image source={{ uri: comment.avatar }} style={styles.commentAvatar} />
-          <View style={styles.commentContent}>
-            <View style={styles.commentHeader}>
-              <Text style={styles.commentAuthor}>{comment.author}</Text>
-              <Text style={styles.commentTimestamp}>{comment.timestamp}</Text>
+  const CommentSection = ({ post }: { post: Post }) => {
+    const comments = postComments[post.id] || post.comments || [];
+    const isLoadingComments = loadingComments[post.id];
+
+    return (
+      <View style={styles.commentsSection}>
+        {isLoadingComments && (
+          <View style={styles.loadingCommentsContainer}>
+            <ActivityIndicator size="small" color="#6366F1" />
+            <Text style={styles.loadingCommentsText}>Loading comments...</Text>
+          </View>
+        )}
+        
+        {comments.map((comment) => (
+          <View key={comment.id} style={styles.commentItem}>
+            <Image source={{ uri: comment.author.avatar }} style={styles.commentAvatar} />
+            <View style={styles.commentContent}>
+              <View style={styles.commentHeader}>
+                <Text style={styles.commentAuthor}>{comment.author.name}</Text>
+                <Text style={styles.commentTimestamp}>{comment.timestamp}</Text>
+              </View>
+              <Text style={styles.commentText}>{comment.content}</Text>
+              <View style={styles.commentActions}>
+                <TouchableOpacity style={styles.commentLikeButton}>
+                  <Heart size={12} color="#6B7280" />
+                  <Text style={styles.commentLikeText}>{comment.likes}</Text>
+                </TouchableOpacity>
+                {comment.author.id === profile?.id && (
+                  <TouchableOpacity 
+                    style={styles.commentDeleteButton}
+                    onPress={() => {
+                      Alert.alert(
+                        'Delete Comment',
+                        'Are you sure you want to delete this comment?',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Delete',
+                            style: 'destructive',
+                            onPress: async () => {
+                              try {
+                                const { error } = await deleteComment(comment.id);
+                                if (error) {
+                                  Alert.alert('Error', 'Failed to delete comment.');
+                                  return;
+                                }
+                                
+                                // Remove comment from local state
+                                setPostComments(prev => ({
+                                  ...prev,
+                                  [post.id]: prev[post.id]?.filter(c => c.id !== comment.id) || []
+                                }));
+                              } catch (error) {
+                                Alert.alert('Error', 'An unexpected error occurred.');
+                              }
+                            }
+                          }
+                        ]
+                      );
+                    }}
+                  >
+                    <Trash2 size={12} color="#EF4444" />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
-            <Text style={styles.commentText}>{comment.content}</Text>
+          </View>
+        ))}
+        
+        <View style={styles.addCommentSection}>
+          <Image 
+            source={{ 
+              uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' 
+            }} 
+            style={styles.commentAvatar} 
+          />
+          <View style={styles.addCommentInput}>
+            <ContinuousTextInput
+              placeholder="Write a comment..."
+              onSave={(text) => handleAddComment(post.id, text)}
+              maxLength={300}
+              showWordCount={false}
+              minHeight={40}
+              maxHeight={100}
+              multiline={true}
+            />
           </View>
         </View>
-      ))}
-      
-      <View style={styles.addCommentSection}>
-        <Image 
-          source={{ 
-            uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' 
-          }} 
-          style={styles.commentAvatar} 
-        />
-        <View style={styles.addCommentInput}>
-          <ContinuousTextInput
-            placeholder="Write a comment..."
-            onSave={(text) => handleAddComment(post.id, text)}
-            maxLength={300}
-            showWordCount={false}
-            minHeight={40}
-            maxHeight={100}
-            multiline={true}
-          />
-        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const PostCard = ({ post }: { post: Post }) => {
     const isOwnPost = post.author.id === profile?.id;
+    const comments = postComments[post.id] || post.comments || [];
     
     const renderPostContent = () => {
       switch (post.type) {
@@ -571,7 +715,7 @@ export default function NewsfeedScreen() {
 
             <TouchableOpacity style={styles.actionButton} onPress={() => toggleComments(post.id)}>
               <MessageCircle size={18} color="#6B7280" />
-              <Text style={styles.actionText}>{post.comments.length}</Text>
+              <Text style={styles.actionText}>{comments.length}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionButton}>
@@ -1126,6 +1270,18 @@ const styles = StyleSheet.create({
     borderTopColor: '#F3F4F6',
     marginTop: 8,
   },
+  loadingCommentsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  loadingCommentsText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
   commentItem: {
     flexDirection: 'row',
     marginBottom: 12,
@@ -1160,6 +1316,25 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: '#374151',
     lineHeight: 18,
+    marginBottom: 4,
+  },
+  commentActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  commentLikeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  commentLikeText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
+  commentDeleteButton: {
+    padding: 2,
   },
   addCommentSection: {
     flexDirection: 'row',

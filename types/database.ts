@@ -206,6 +206,38 @@ export interface Database {
           updated_at?: string;
         };
       };
+      comments: {
+        Row: {
+          id: string;
+          post_id: string;
+          author_id: string;
+          content: string;
+          parent_comment_id: string | null;
+          likes_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          post_id: string;
+          author_id: string;
+          content: string;
+          parent_comment_id?: string | null;
+          likes_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          post_id?: string;
+          author_id?: string;
+          content?: string;
+          parent_comment_id?: string | null;
+          likes_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       user_education: {
         Row: {
           id: string;
