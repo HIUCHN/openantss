@@ -7,6 +7,7 @@ import { IS_FORCE_LOGIN, IS_FORCE_LOGOUT } from '../constants';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 type UserLocation = Database['public']['Tables']['user_location']['Row'];
+type Post = Database['public']['Tables']['posts']['Row'];
 
 interface AuthContextType {
   session: Session | null;
@@ -38,6 +39,12 @@ interface AuthContextType {
   refreshSession: () => Promise<void>;
   togglePublicMode: (isPublic: boolean) => Promise<{ error: any }>;
   clearUserLocation: () => Promise<{ error: any }>;
+  // Post management functions
+  createPost: (content: string, tags?: string[]) => Promise<{ data: Post | null; error: any }>;
+  getPosts: (limit?: number) => Promise<{ data: Post[] | null; error: any }>;
+  likePost: (postId: string) => Promise<{ error: any }>;
+  unlikePost: (postId: string) => Promise<{ error: any }>;
+  deletePost: (postId: string) => Promise<{ error: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -578,6 +585,172 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Post management functions
+  const createPost = async (content: string, tags: string[] = []) => {
+    if (!user) return { data: null, error: new Error('No user logged in') };
+
+    try {
+      console.log('📝 Creating new post...');
+      
+      const postData = {
+        author_id: user.id,
+        content: content.trim(),
+        type: 'text' as const,
+        tags: tags.length > 0 ? tags : null,
+        likes_count: 0,
+        comments_count: 0,
+        shares_count: 0,
+      };
+
+      const { data, error } = await supabase
+        .from('posts')
+        .insert(postData)
+        .select(`
+          *,
+          profiles!inner(
+            id,
+            username,
+            full_name,
+            avatar_url,
+            role,
+            company
+          )
+        `)
+        .single();
+
+      if (error) {
+        console.error('❌ Error creating post:', error);
+        return { data: null, error };
+      }
+
+      console.log('✅ Post created successfully');
+      return { data, error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error creating post:', error);
+      return { data: null, error };
+    }
+  };
+
+  const getPosts = async (limit: number = 20) => {
+    try {
+      console.log('📰 Fetching posts from database...');
+      
+      const { data, error } = await supabase
+        .from('posts')
+        .select(`
+          *,
+          profiles!inner(
+            id,
+            username,
+            full_name,
+            avatar_url,
+            role,
+            company,
+            is_public
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        console.error('❌ Error fetching posts:', error);
+        return { data: null, error };
+      }
+
+      // Filter posts from public profiles only (unless it's the current user's post)
+      const filteredPosts = data?.filter((post: any) => 
+        post.profiles.is_public || post.author_id === user?.id
+      ) || [];
+
+      console.log('✅ Posts fetched successfully:', filteredPosts.length, 'posts');
+      return { data: filteredPosts, error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error fetching posts:', error);
+      return { data: null, error };
+    }
+  };
+
+  const likePost = async (postId: string) => {
+    if (!user) return { error: new Error('No user logged in') };
+
+    try {
+      console.log('👍 Liking post:', postId);
+      
+      // Increment likes count
+      const { error } = await supabase
+        .from('posts')
+        .update({ 
+          likes_count: supabase.sql`likes_count + 1`,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', postId);
+
+      if (error) {
+        console.error('❌ Error liking post:', error);
+        return { error };
+      }
+
+      console.log('✅ Post liked successfully');
+      return { error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error liking post:', error);
+      return { error };
+    }
+  };
+
+  const unlikePost = async (postId: string) => {
+    if (!user) return { error: new Error('No user logged in') };
+
+    try {
+      console.log('👎 Unliking post:', postId);
+      
+      // Decrement likes count (but don't go below 0)
+      const { error } = await supabase
+        .from('posts')
+        .update({ 
+          likes_count: supabase.sql`GREATEST(likes_count - 1, 0)`,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', postId);
+
+      if (error) {
+        console.error('❌ Error unliking post:', error);
+        return { error };
+      }
+
+      console.log('✅ Post unliked successfully');
+      return { error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error unliking post:', error);
+      return { error };
+    }
+  };
+
+  const deletePost = async (postId: string) => {
+    if (!user) return { error: new Error('No user logged in') };
+
+    try {
+      console.log('🗑️ Deleting post:', postId);
+      
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', postId)
+        .eq('author_id', user.id); // Ensure user can only delete their own posts
+
+      if (error) {
+        console.error('❌ Error deleting post:', error);
+        return { error };
+      }
+
+      console.log('✅ Post deleted successfully');
+      return { error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error deleting post:', error);
+      return { error };
+    }
+  };
+
   // Helper function to calculate distance between two points
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
     const R = 6371e3; // Earth's radius in meters
@@ -611,6 +784,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshSession,
     togglePublicMode,
     clearUserLocation,
+    // Post management
+    createPost,
+    getPosts,
+    likePost,
+    unlikePost,
+    deletePost,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

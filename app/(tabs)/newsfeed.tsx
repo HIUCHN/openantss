@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bell, Plus, Calendar, Paperclip, Hash, Heart, MessageCircle, Repeat, Mail, MoveHorizontal as MoreHorizontal, Briefcase } from 'lucide-react-native';
+import { Bell, Plus, Calendar, Paperclip, Hash, Heart, MessageCircle, Repeat, Mail, MoveHorizontal as MoreHorizontal, Briefcase, Trash2 } from 'lucide-react-native';
 import SearchBar from '@/components/SearchBar';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
 import ContinuousTextInput from '@/components/ContinuousTextInput';
@@ -17,8 +17,9 @@ interface Comment {
 }
 
 interface Post {
-  id: number;
+  id: string;
   author: {
+    id: string;
     name: string;
     role: string;
     company: string;
@@ -42,138 +43,6 @@ interface Post {
   image?: string;
 }
 
-const initialPosts: Post[] = [
-  {
-    id: 1,
-    author: {
-      name: 'Alex Chen',
-      role: 'Senior Product Designer',
-      company: 'Spotify',
-      image: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
-    },
-    content: 'Just wrapped up an amazing user research session! The insights we gathered will completely reshape our onboarding flow. Sometimes the best solutions come from simply listening to your users 🎯',
-    timestamp: '2h ago',
-    likes: 24,
-    likedBy: ['Sarah Williams', 'Mike Johnson', 'Lisa Park'],
-    comments: [
-      {
-        id: 1,
-        author: 'Sarah Williams',
-        content: 'This is so true! User research is often undervalued but it\'s the foundation of great design.',
-        timestamp: '1h ago',
-        avatar: 'https://images.pexels.com/photos/1130626/pexels-photo-1130626.jpeg?auto=compress&cs=tinysrgb&w=400'
-      },
-      {
-        id: 2,
-        author: 'Mike Johnson',
-        content: 'Would love to hear more about your research methodology. Any insights you can share?',
-        timestamp: '45m ago',
-        avatar: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400'
-      }
-    ],
-    shares: 3,
-    tags: ['#UXDesign', '#UserResearch'],
-    type: 'text',
-    liked: false,
-  },
-  {
-    id: 2,
-    author: {
-      name: 'Sarah Williams',
-      role: 'Engineering Manager',
-      company: 'Airbnb',
-      image: 'https://images.pexels.com/photos/1130626/pexels-photo-1130626.jpeg?auto=compress&cs=tinysrgb&w=400',
-    },
-    content: 'Join our amazing team building the future of travel tech. React, TypeScript, and passion for great UX required!',
-    timestamp: '4h ago',
-    likes: 47,
-    likedBy: ['Alex Chen', 'David Lee', 'Emma Rodriguez'],
-    comments: [
-      {
-        id: 3,
-        author: 'David Lee',
-        content: 'This sounds like an amazing opportunity! Is this position remote-friendly?',
-        timestamp: '3h ago',
-        avatar: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=400'
-      }
-    ],
-    shares: 15,
-    tags: ['#TechJobs', '#React', '#Remote'],
-    type: 'job',
-    jobTitle: 'Senior Frontend Developer - Remote',
-    liked: false,
-  },
-  {
-    id: 3,
-    author: {
-      name: 'Mike Johnson',
-      role: 'Product Manager',
-      company: 'Tesla',
-      image: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400',
-    },
-    content: 'What\'s your go-to tool for wireframing? Curious to see what the community prefers!',
-    timestamp: '6h ago',
-    likes: 32,
-    likedBy: ['Lisa Park', 'Emma Rodriguez'],
-    comments: [
-      {
-        id: 4,
-        author: 'Lisa Park',
-        content: 'Figma all the way! The collaboration features are unmatched.',
-        timestamp: '5h ago',
-        avatar: 'https://images.pexels.com/photos/1239288/pexels-photo-1239288.jpeg?auto=compress&cs=tinysrgb&w=400'
-      },
-      {
-        id: 5,
-        author: 'Emma Rodriguez',
-        content: 'I still love Sketch for quick wireframes, but Figma is great for team collaboration.',
-        timestamp: '4h ago',
-        avatar: 'https://images.pexels.com/photos/1181686/pexels-photo-1181686.jpeg?auto=compress&cs=tinysrgb&w=400'
-      }
-    ],
-    shares: 7,
-    tags: ['#ProductDesign', '#Tools'],
-    type: 'poll',
-    poll: {
-      options: [
-        { name: 'Figma', percentage: 45, color: '#6366F1' },
-        { name: 'Sketch', percentage: 30, color: '#F59E0B' },
-        { name: 'Adobe XD', percentage: 25, color: '#10B981' },
-      ],
-      totalVotes: 127,
-      timeLeft: '2 days left',
-    },
-    liked: false,
-  },
-  {
-    id: 4,
-    author: {
-      name: 'Lisa Park',
-      role: 'Data Scientist',
-      company: 'Google',
-      image: 'https://images.pexels.com/photos/1239288/pexels-photo-1239288.jpeg?auto=compress&cs=tinysrgb&w=400',
-    },
-    content: 'Excited to share our latest machine learning project! This visualization shows user behavior patterns across different touchpoints. The insights are incredible! 📊✨',
-    timestamp: '1d ago',
-    likes: 89,
-    likedBy: ['Alex Chen', 'Sarah Williams', 'Mike Johnson', 'David Lee'],
-    comments: [
-      {
-        id: 6,
-        author: 'Alex Chen',
-        content: 'This visualization is stunning! What tools did you use for the data analysis?',
-        timestamp: '20h ago',
-        avatar: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400'
-      }
-    ],
-    shares: 12,
-    tags: ['#MachineLearning', '#DataScience', '#Analytics'],
-    type: 'image',
-    image: 'https://images.pexels.com/photos/3184291/pexels-photo-3184291.jpeg?auto=compress&cs=tinysrgb&w=800',
-    liked: false,
-  },
-];
-
 const trendingTags = [
   { name: '#UXDesign', color: '#3B82F6' },
   { name: '#RemoteWork', color: '#10B981' },
@@ -182,13 +51,95 @@ const trendingTags = [
 ];
 
 export default function NewsfeedScreen() {
-  const { profile } = useAuth();
+  const { profile, createPost, getPosts, likePost, unlikePost, deletePost } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
-  const [posts, setPosts] = useState<Post[]>(initialPosts);
-  const [filteredPosts, setFilteredPosts] = useState<Post[]>(initialPosts);
-  const [newComment, setNewComment] = useState<{ [key: number]: string }>({});
-  const [showComments, setShowComments] = useState<{ [key: number]: boolean }>({});
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [filteredPosts, setFilteredPosts] = useState<Post[]>([]);
+  const [newComment, setNewComment] = useState<{ [key: string]: string }>({});
+  const [showComments, setShowComments] = useState<{ [key: string]: boolean }>({});
   const [showAccountSettings, setShowAccountSettings] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [creatingPost, setCreatingPost] = useState(false);
+  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+
+  // Load posts on component mount
+  useEffect(() => {
+    loadPosts();
+  }, []);
+
+  const loadPosts = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await getPosts(50); // Load up to 50 posts
+      
+      if (error) {
+        console.error('Error loading posts:', error);
+        Alert.alert('Error', 'Failed to load posts. Please try again.');
+        return;
+      }
+
+      if (data) {
+        // Transform database posts to match our UI format
+        const transformedPosts: Post[] = data.map((dbPost: any) => ({
+          id: dbPost.id,
+          author: {
+            id: dbPost.profiles.id,
+            name: dbPost.profiles.full_name || dbPost.profiles.username,
+            role: dbPost.profiles.role || 'Professional',
+            company: dbPost.profiles.company || 'OpenAnts',
+            image: dbPost.profiles.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          },
+          content: dbPost.content,
+          timestamp: formatTimestamp(dbPost.created_at),
+          likes: dbPost.likes_count || 0,
+          likedBy: [], // We'll implement this later with a separate likes table
+          comments: [], // We'll implement comments later
+          shares: dbPost.shares_count || 0,
+          tags: dbPost.tags || [],
+          type: dbPost.type || 'text',
+          liked: false, // We'll track this locally for now
+          jobTitle: dbPost.job_title,
+          poll: dbPost.poll_options ? {
+            options: dbPost.poll_options.options || [],
+            totalVotes: dbPost.poll_options.totalVotes || 0,
+            timeLeft: dbPost.poll_options.timeLeft || '',
+          } : undefined,
+          image: dbPost.image_url,
+        }));
+
+        setPosts(transformedPosts);
+        setFilteredPosts(transformedPosts);
+      }
+    } catch (error) {
+      console.error('Unexpected error loading posts:', error);
+      Alert.alert('Error', 'An unexpected error occurred while loading posts.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadPosts();
+    setRefreshing(false);
+  };
+
+  const formatTimestamp = (timestamp: string): string => {
+    const now = new Date();
+    const postTime = new Date(timestamp);
+    const diffMs = now.getTime() - postTime.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    
+    return postTime.toLocaleDateString();
+  };
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -206,115 +157,167 @@ export default function NewsfeedScreen() {
       post.author.company.toLowerCase().includes(lowercaseQuery) ||
       post.content.toLowerCase().includes(lowercaseQuery) ||
       post.tags.some(tag => tag.toLowerCase().includes(lowercaseQuery)) ||
-      (post.type === 'job' && post.jobTitle?.toLowerCase().includes(lowercaseQuery)) ||
-      post.comments.some(comment => 
-        comment.author.toLowerCase().includes(lowercaseQuery) ||
-        comment.content.toLowerCase().includes(lowercaseQuery)
-      )
+      (post.type === 'job' && post.jobTitle?.toLowerCase().includes(lowercaseQuery))
     );
     
     setFilteredPosts(results);
   };
 
-  const handleCreatePost = (text: string) => {
+  const handleCreatePost = async (text: string) => {
     if (!text.trim()) {
       Alert.alert('Error', 'Please write something before posting.');
       return;
     }
 
-    // Extract hashtags from the post content
-    const hashtagRegex = /#\w+/g;
-    const extractedTags = text.match(hashtagRegex) || [];
-
-    // Create new post
-    const newPost: Post = {
-      id: Date.now(), // Simple ID generation
-      author: {
-        name: profile?.full_name || 'You',
-        role: profile?.role || 'Professional',
-        company: profile?.company || 'OpenAnts',
-        image: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
-      },
-      content: text,
-      timestamp: 'now',
-      likes: 0,
-      likedBy: [],
-      comments: [],
-      shares: 0,
-      tags: extractedTags,
-      type: 'text',
-      liked: false,
-    };
-
-    // Add the new post to the beginning of the posts array
-    const updatedPosts = [newPost, ...posts];
-    setPosts(updatedPosts);
-    
-    // Update filtered posts if no search is active
-    if (searchQuery.trim() === '') {
-      setFilteredPosts(updatedPosts);
-    } else {
-      // Re-apply search filter with new posts
-      const lowercaseQuery = searchQuery.toLowerCase();
-      const results = updatedPosts.filter(post => 
-        post.author.name.toLowerCase().includes(lowercaseQuery) ||
-        post.author.role.toLowerCase().includes(lowercaseQuery) ||
-        post.author.company.toLowerCase().includes(lowercaseQuery) ||
-        post.content.toLowerCase().includes(lowercaseQuery) ||
-        post.tags.some(tag => tag.toLowerCase().includes(lowercaseQuery)) ||
-        (post.type === 'job' && post.jobTitle?.toLowerCase().includes(lowercaseQuery)) ||
-        post.comments.some(comment => 
-          comment.author.toLowerCase().includes(lowercaseQuery) ||
-          comment.content.toLowerCase().includes(lowercaseQuery)
-        )
-      );
-      setFilteredPosts(results);
-    }
-
-    // Show success message
-    Alert.alert('Success', 'Your post has been published!');
-  };
-
-  const handleLike = (postId: number) => {
-    setPosts(prevPosts => {
-      const updatedPosts = prevPosts.map(post => {
-        if (post.id === postId) {
-          const isLiked = post.liked;
-          return {
-            ...post,
-            liked: !isLiked,
-            likes: isLiked ? post.likes - 1 : post.likes + 1,
-            likedBy: isLiked 
-              ? post.likedBy.filter(name => name !== 'You')
-              : [...post.likedBy, 'You']
-          };
-        }
-        return post;
-      });
+    try {
+      setCreatingPost(true);
       
-      // Update filtered posts as well
-      if (searchQuery.trim() !== '') {
-        setFilteredPosts(updatedPosts.filter(post => 
-          post.author.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          post.author.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          post.author.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          post.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          post.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())) ||
-          (post.type === 'job' && post.jobTitle?.toLowerCase().includes(searchQuery.toLowerCase())) ||
-          post.comments.some(comment => 
-            comment.author.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            comment.content.toLowerCase().includes(searchQuery.toLowerCase())
-          )
-        ));
-      } else {
-        setFilteredPosts(updatedPosts);
+      // Extract hashtags from the post content
+      const hashtagRegex = /#\w+/g;
+      const extractedTags = text.match(hashtagRegex) || [];
+
+      const { data, error } = await createPost(text, extractedTags);
+      
+      if (error) {
+        console.error('Error creating post:', error);
+        Alert.alert('Error', 'Failed to create post. Please try again.');
+        return;
       }
-      
-      return updatedPosts;
-    });
+
+      if (data) {
+        // Transform the new post and add it to the beginning of the list
+        const newPost: Post = {
+          id: data.id,
+          author: {
+            id: data.profiles.id,
+            name: data.profiles.full_name || data.profiles.username,
+            role: data.profiles.role || 'Professional',
+            company: data.profiles.company || 'OpenAnts',
+            image: data.profiles.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          },
+          content: data.content,
+          timestamp: 'now',
+          likes: 0,
+          likedBy: [],
+          comments: [],
+          shares: 0,
+          tags: data.tags || [],
+          type: data.type || 'text',
+          liked: false,
+        };
+
+        const updatedPosts = [newPost, ...posts];
+        setPosts(updatedPosts);
+        
+        // Update filtered posts if no search is active
+        if (searchQuery.trim() === '') {
+          setFilteredPosts(updatedPosts);
+        } else {
+          // Re-apply search filter with new posts
+          handleSearch(searchQuery);
+        }
+
+        Alert.alert('Success', 'Your post has been published!');
+      }
+    } catch (error) {
+      console.error('Unexpected error creating post:', error);
+      Alert.alert('Error', 'An unexpected error occurred while creating your post.');
+    } finally {
+      setCreatingPost(false);
+    }
   };
 
-  const handleAddComment = (postId: number, commentText: string) => {
+  const handleLike = async (postId: string) => {
+    const isLiked = likedPosts.has(postId);
+    
+    try {
+      if (isLiked) {
+        await unlikePost(postId);
+        setLikedPosts(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(postId);
+          return newSet;
+        });
+      } else {
+        await likePost(postId);
+        setLikedPosts(prev => new Set(prev).add(postId));
+      }
+
+      // Update local post state
+      setPosts(prevPosts => {
+        const updatedPosts = prevPosts.map(post => {
+          if (post.id === postId) {
+            return {
+              ...post,
+              liked: !isLiked,
+              likes: isLiked ? post.likes - 1 : post.likes + 1,
+            };
+          }
+          return post;
+        });
+        
+        // Update filtered posts as well
+        if (searchQuery.trim() !== '') {
+          setFilteredPosts(updatedPosts.filter(post => 
+            post.author.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            post.author.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            post.author.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            post.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            post.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())) ||
+            (post.type === 'job' && post.jobTitle?.toLowerCase().includes(searchQuery.toLowerCase()))
+          ));
+        } else {
+          setFilteredPosts(updatedPosts);
+        }
+        
+        return updatedPosts;
+      });
+    } catch (error) {
+      console.error('Error toggling like:', error);
+      Alert.alert('Error', 'Failed to update like. Please try again.');
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    Alert.alert(
+      'Delete Post',
+      'Are you sure you want to delete this post? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await deletePost(postId);
+              
+              if (error) {
+                console.error('Error deleting post:', error);
+                Alert.alert('Error', 'Failed to delete post. Please try again.');
+                return;
+              }
+
+              // Remove post from local state
+              const updatedPosts = posts.filter(post => post.id !== postId);
+              setPosts(updatedPosts);
+              setFilteredPosts(updatedPosts.filter(post => 
+                searchQuery.trim() === '' || 
+                post.author.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                post.content.toLowerCase().includes(searchQuery.toLowerCase())
+              ));
+
+              Alert.alert('Success', 'Post deleted successfully.');
+            } catch (error) {
+              console.error('Unexpected error deleting post:', error);
+              Alert.alert('Error', 'An unexpected error occurred while deleting the post.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleAddComment = (postId: string, commentText: string) => {
     if (!commentText.trim()) return;
 
     const newCommentObj: Comment = {
@@ -344,11 +347,7 @@ export default function NewsfeedScreen() {
           post.author.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
           post.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
           post.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())) ||
-          (post.type === 'job' && post.jobTitle?.toLowerCase().includes(searchQuery.toLowerCase())) ||
-          post.comments.some(comment => 
-            comment.author.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            comment.content.toLowerCase().includes(searchQuery.toLowerCase())
-          )
+          (post.type === 'job' && post.jobTitle?.toLowerCase().includes(searchQuery.toLowerCase()))
         ));
       } else {
         setFilteredPosts(updatedPosts);
@@ -358,7 +357,7 @@ export default function NewsfeedScreen() {
     });
   };
 
-  const toggleComments = (postId: number) => {
+  const toggleComments = (postId: string) => {
     setShowComments(prev => ({ ...prev, [postId]: !prev[postId] }));
   };
 
@@ -384,6 +383,12 @@ export default function NewsfeedScreen() {
             minHeight={80}
             maxHeight={200}
           />
+          {creatingPost && (
+            <View style={styles.creatingPostIndicator}>
+              <ActivityIndicator size="small" color="#6366F1" />
+              <Text style={styles.creatingPostText}>Publishing...</Text>
+            </View>
+          )}
           <View style={styles.createPostActions}>
             <View style={styles.postOptions}>
               <TouchableOpacity style={styles.postOption}>
@@ -458,6 +463,8 @@ export default function NewsfeedScreen() {
   );
 
   const PostCard = ({ post }: { post: Post }) => {
+    const isOwnPost = post.author.id === profile?.id;
+    
     const renderPostContent = () => {
       switch (post.type) {
         case 'job':
@@ -523,9 +530,19 @@ export default function NewsfeedScreen() {
           </View>
           <View style={styles.postMeta}>
             <Text style={styles.timestamp}>{post.timestamp}</Text>
-            <TouchableOpacity style={styles.moreButton}>
-              <MoreHorizontal size={16} color="#6B7280" />
-            </TouchableOpacity>
+            <View style={styles.postMenuContainer}>
+              <TouchableOpacity style={styles.moreButton}>
+                <MoreHorizontal size={16} color="#6B7280" />
+              </TouchableOpacity>
+              {isOwnPost && (
+                <TouchableOpacity 
+                  style={styles.deleteButton}
+                  onPress={() => handleDeletePost(post.id)}
+                >
+                  <Trash2 size={14} color="#EF4444" />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         </View>
 
@@ -584,6 +601,17 @@ export default function NewsfeedScreen() {
     );
   };
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6366F1" />
+          <Text style={styles.loadingText}>Loading newsfeed...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -626,7 +654,18 @@ export default function NewsfeedScreen() {
         onChangeText={setSearchQuery}
       />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#6366F1']}
+            tintColor="#6366F1"
+          />
+        }
+      >
         {/* Create Post Section - Hide when searching */}
         {searchQuery.trim() === '' && <CreatePostSection />}
         
@@ -650,6 +689,13 @@ export default function NewsfeedScreen() {
         
         {/* Posts Feed */}
         <View style={styles.feedSection}>
+          {filteredPosts.length === 0 && searchQuery.trim() === '' && (
+            <View style={styles.emptyFeed}>
+              <Text style={styles.emptyFeedText}>No posts yet</Text>
+              <Text style={styles.emptyFeedSubtext}>Be the first to share something!</Text>
+            </View>
+          )}
+          
           {filteredPosts.map((post) => (
             <PostCard key={post.id} post={post} />
           ))}
@@ -671,6 +717,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
   },
   header: {
     backgroundColor: '#FFFFFF',
@@ -788,6 +845,17 @@ const styles = StyleSheet.create({
   createPostInput: {
     flex: 1,
   },
+  creatingPostIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  creatingPostText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#6366F1',
+  },
   createPostActions: {
     marginTop: 12,
   },
@@ -839,6 +907,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 16,
   },
+  emptyFeed: {
+    alignItems: 'center',
+    paddingVertical: 48,
+  },
+  emptyFeedText: {
+    fontSize: 18,
+    fontFamily: 'Inter-Medium',
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  emptyFeedSubtext: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
+  },
   postCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -886,7 +969,14 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginBottom: 4,
   },
+  postMenuContainer: {
+    flexDirection: 'row',
+    gap: 4,
+  },
   moreButton: {
+    padding: 4,
+  },
+  deleteButton: {
     padding: 4,
   },
   postContent: {
