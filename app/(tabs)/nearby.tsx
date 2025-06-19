@@ -38,6 +38,7 @@ export default function NearbyScreen() {
   const [isTrackingLocation, setIsTrackingLocation] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isTogglingMode, setIsTogglingMode] = useState(false);
+  const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -89,7 +90,7 @@ export default function NearbyScreen() {
         return;
       }
 
-      // Request location permissions
+      // Request location permissions with more specific permissions
       const { status } = await Location.requestForegroundPermissionsAsync();
       setLocationPermission(status);
 
@@ -99,12 +100,22 @@ export default function NearbyScreen() {
         return;
       }
 
-      // Get current location
+      // Get current location with high accuracy
+      console.log('📍 Getting high-accuracy location...');
       const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
+        accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy
+        maximumAge: 10000, // Use cached location if less than 10 seconds old
+        timeout: 15000, // 15 second timeout
+      });
+
+      console.log('📍 Location obtained:', {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+        accuracy: currentLocation.coords.accuracy,
       });
 
       setLocation(currentLocation);
+      setLocationAccuracy(currentLocation.coords.accuracy || null);
 
       if (isPublicMode) {
         // Store location in database
@@ -123,7 +134,13 @@ export default function NearbyScreen() {
       }
     } catch (error) {
       console.error('Error initializing location:', error);
-      setErrorMessage('Failed to get your location. Please try again.');
+      if (error.code === 'E_LOCATION_TIMEOUT') {
+        setErrorMessage('Location request timed out. Please try again.');
+      } else if (error.code === 'E_LOCATION_UNAVAILABLE') {
+        setErrorMessage('Location is temporarily unavailable. Please try again.');
+      } else {
+        setErrorMessage('Failed to get your location. Please check your GPS settings and try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -134,15 +151,23 @@ export default function NearbyScreen() {
 
     try {
       setIsTrackingLocation(true);
+      console.log('📍 Starting high-accuracy location tracking...');
       
       locationSubscription.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.Balanced,
-          timeInterval: 30000, // Update every 30 seconds
-          distanceInterval: 50, // Update when moved 50 meters
+          accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy
+          timeInterval: 15000, // Update every 15 seconds (more frequent)
+          distanceInterval: 10, // Update when moved 10 meters (more sensitive)
         },
         async (newLocation) => {
+          console.log('📍 Location updated:', {
+            latitude: newLocation.coords.latitude,
+            longitude: newLocation.coords.longitude,
+            accuracy: newLocation.coords.accuracy,
+          });
+
           setLocation(newLocation);
+          setLocationAccuracy(newLocation.coords.accuracy || null);
           
           // Only store location if still in public mode
           if (isPublicMode) {
@@ -167,13 +192,11 @@ export default function NearbyScreen() {
   const stopLocationTracking = () => {
     if (locationSubscription.current) {
       try {
-        // Use the correct method to remove the subscription
         locationSubscription.current.remove();
         locationSubscription.current = null;
         console.log('✅ Location tracking stopped successfully');
       } catch (error) {
         console.error('❌ Error stopping location tracking:', error);
-        // Force clear the subscription reference even if removal fails
         locationSubscription.current = null;
       }
     }
@@ -187,7 +210,7 @@ export default function NearbyScreen() {
       if (isPublicMode && location) {
         fetchNearbyUsers();
       }
-    }, 60000); // Refresh every minute
+    }, 30000); // Refresh every 30 seconds (more frequent)
   };
 
   const stopPeriodicRefresh = () => {
@@ -287,7 +310,8 @@ export default function NearbyScreen() {
     if (!isPublicMode) return;
     
     setRefreshing(true);
-    await fetchNearbyUsers();
+    // Refresh both location and nearby users
+    await initializeLocation();
     setRefreshing(false);
   };
 
@@ -297,7 +321,7 @@ export default function NearbyScreen() {
   };
 
   const handleTogglePublicMode = async () => {
-    if (isTogglingMode) return; // Prevent multiple simultaneous toggles
+    if (isTogglingMode) return;
 
     try {
       setIsTogglingMode(true);
@@ -314,11 +338,9 @@ export default function NearbyScreen() {
       }
 
       if (!newValue) {
-        // Turning off public mode - clear location data immediately
         console.log('🗑️ Clearing location data for private mode');
         await clearUserLocation();
         
-        // Clean up local state
         cleanup();
         setLocation(null);
         setNearbyUsers([]);
@@ -342,6 +364,22 @@ export default function NearbyScreen() {
     } finally {
       setIsTogglingMode(false);
     }
+  };
+
+  const getLocationAccuracyText = () => {
+    if (!locationAccuracy) return '';
+    if (locationAccuracy < 10) return 'Very High Accuracy';
+    if (locationAccuracy < 50) return 'High Accuracy';
+    if (locationAccuracy < 100) return 'Good Accuracy';
+    return 'Low Accuracy';
+  };
+
+  const getLocationAccuracyColor = () => {
+    if (!locationAccuracy) return '#6B7280';
+    if (locationAccuracy < 10) return '#10B981';
+    if (locationAccuracy < 50) return '#F59E0B';
+    if (locationAccuracy < 100) return '#EF4444';
+    return '#6B7280';
   };
 
   const UserModal = () => {
@@ -492,7 +530,8 @@ export default function NearbyScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#6366F1" />
-          <Text style={styles.loadingText}>Finding nearby professionals...</Text>
+          <Text style={styles.loadingText}>Getting your precise location...</Text>
+          <Text style={styles.loadingSubtext}>This may take a few seconds for best accuracy</Text>
         </View>
       </SafeAreaView>
     );
@@ -566,9 +605,16 @@ export default function NearbyScreen() {
             </View>
             <View>
               <Text style={styles.statusTitle}>Public Mode Active</Text>
-              <Text style={styles.statusSubtitle}>
-                {isTrackingLocation ? 'Sharing location' : 'Location shared'}
-              </Text>
+              <View style={styles.statusSubtitleRow}>
+                <Text style={styles.statusSubtitle}>
+                  {isTrackingLocation ? 'Live tracking' : 'Location shared'}
+                </Text>
+                {locationAccuracy && (
+                  <View style={styles.accuracyBadge}>
+                    <Text style={styles.accuracyText}>{getLocationAccuracyText()}</Text>
+                  </View>
+                )}
+              </View>
             </View>
           </View>
           <TouchableOpacity 
@@ -585,8 +631,8 @@ export default function NearbyScreen() {
         </View>
       </LinearGradient>
 
-      {/* Map */}
-      <View style={styles.mapContainer}>
+      {/* Enhanced Map Container - Much Larger */}
+      <View style={styles.enhancedMapContainer}>
         {location && (
           <MapBoxMap
             userLocations={nearbyUsers}
@@ -600,11 +646,21 @@ export default function NearbyScreen() {
             style={styles.map}
           />
         )}
+        
+        {/* Map Overlay Info */}
+        <View style={styles.mapOverlay}>
+          <View style={styles.mapInfo}>
+            <Navigation size={12} color="#FFFFFF" />
+            <Text style={styles.mapInfoText}>
+              {locationAccuracy ? `±${Math.round(locationAccuracy)}m` : 'Locating...'}
+            </Text>
+          </View>
+        </View>
       </View>
 
-      {/* User List */}
-      <View style={styles.userListContainer}>
-        <Text style={styles.userListTitle}>Nearby Professionals</Text>
+      {/* Compact User List */}
+      <View style={styles.compactUserListContainer}>
+        <Text style={styles.userListTitle}>Nearby ({nearbyUsers.length})</Text>
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false}
@@ -614,20 +670,14 @@ export default function NearbyScreen() {
           {nearbyUsers.map((user) => (
             <TouchableOpacity 
               key={user.id} 
-              style={styles.userCard}
+              style={styles.compactUserCard}
               onPress={() => handleUserPinPress(user)}
             >
-              <Image source={{ uri: user.image }} style={styles.userCardImage} />
-              <View style={styles.userCardInfo}>
-                <Text style={styles.userCardName} numberOfLines={1}>{user.name}</Text>
-                <Text style={styles.userCardRole} numberOfLines={1}>{user.role}</Text>
-                <View style={styles.userCardDistance}>
-                  <MapPin size={12} color="#6B7280" />
-                  <Text style={styles.userCardDistanceText}>{user.distance}m</Text>
-                </View>
-              </View>
+              <Image source={{ uri: user.image }} style={styles.compactUserImage} />
+              <Text style={styles.compactUserName} numberOfLines={1}>{user.name}</Text>
+              <Text style={styles.compactUserDistance}>{user.distance}m</Text>
               <View style={[
-                styles.userCardStatus,
+                styles.compactUserStatus,
                 { backgroundColor: user.isOnline ? '#10B981' : '#6B7280' }
               ]} />
             </TouchableOpacity>
@@ -635,9 +685,8 @@ export default function NearbyScreen() {
           
           {nearbyUsers.length === 0 && (
             <View style={styles.emptyState}>
-              <Users size={32} color="#D1D5DB" />
-              <Text style={styles.emptyStateText}>No professionals nearby</Text>
-              <Text style={styles.emptyStateSubtext}>Try refreshing or check back later</Text>
+              <Users size={24} color="#D1D5DB" />
+              <Text style={styles.emptyStateText}>No one nearby</Text>
             </View>
           )}
         </ScrollView>
@@ -666,8 +715,14 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#111827',
+  },
+  loadingSubtext: {
+    fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
+    textAlign: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -739,10 +794,26 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
   },
+  statusSubtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   statusSubtitle: {
     fontSize: 12,
     fontFamily: 'Inter-Regular',
     color: '#FFFFFF80',
+  },
+  accuracyBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  accuracyText: {
+    fontSize: 10,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
   },
   toggleButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
@@ -761,33 +832,57 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.6,
   },
-  mapContainer: {
+  // Enhanced Map Container - Much Larger
+  enhancedMapContainer: {
     flex: 1,
     margin: 16,
-    borderRadius: 12,
+    marginBottom: 8,
+    borderRadius: 16,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    position: 'relative',
   },
   map: {
     flex: 1,
   },
-  userListContainer: {
+  mapOverlay: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+  },
+  mapInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  mapInfoText: {
+    fontSize: 10,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+  },
+  // Compact User List
+  compactUserListContainer: {
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: 8,
+    maxHeight: 120,
   },
   userListTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Inter-SemiBold',
     color: '#111827',
     paddingHorizontal: 16,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   userList: {
     paddingLeft: 16,
@@ -795,81 +890,55 @@ const styles = StyleSheet.create({
   userListContent: {
     paddingRight: 16,
   },
-  userCard: {
+  compactUserCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 12,
-    marginRight: 12,
-    width: 140,
+    borderRadius: 8,
+    padding: 8,
+    marginRight: 8,
+    width: 80,
     borderWidth: 1,
     borderColor: '#F3F4F6',
     position: 'relative',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  userCardImage: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    marginBottom: 8,
-    alignSelf: 'center',
-  },
-  userCardInfo: {
     alignItems: 'center',
   },
-  userCardName: {
-    fontSize: 14,
+  compactUserImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginBottom: 4,
+  },
+  compactUserName: {
+    fontSize: 10,
     fontFamily: 'Inter-Medium',
     color: '#111827',
+    textAlign: 'center',
     marginBottom: 2,
-    textAlign: 'center',
   },
-  userCardRole: {
-    fontSize: 12,
+  compactUserDistance: {
+    fontSize: 9,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
-    marginBottom: 4,
     textAlign: 'center',
   },
-  userCardDistance: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  userCardDistanceText: {
-    fontSize: 11,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  userCardStatus: {
+  compactUserStatus: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: 6,
+    right: 6,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 32,
+    paddingVertical: 16,
     paddingHorizontal: 24,
-    width: 200,
+    width: 120,
   },
   emptyStateText: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Inter-Medium',
     color: '#6B7280',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  emptyStateSubtext: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#9CA3AF',
     marginTop: 4,
     textAlign: 'center',
   },
