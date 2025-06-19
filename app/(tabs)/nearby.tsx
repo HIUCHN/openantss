@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Image, ScrollVi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
-import { MapPin, Users, MessageCircle, UserPlus, X, Navigation, RefreshCw, Settings, Eye, EyeOff } from 'lucide-react-native';
+import { MapPin, Users, MessageCircle, UserPlus, X, Navigation, RefreshCw, Settings, Eye, EyeOff, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import MapBoxMap from '@/components/MapBoxMap';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
@@ -39,6 +39,7 @@ export default function NearbyScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isTogglingMode, setIsTogglingMode] = useState(false);
   const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
+  const [showNearbyMetrics, setShowNearbyMetrics] = useState(true); // New state for toggling metrics
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -631,8 +632,8 @@ export default function NearbyScreen() {
         </View>
       </LinearGradient>
 
-      {/* Enhanced Map Container - Much Larger */}
-      <View style={styles.enhancedMapContainer}>
+      {/* Large Map Container */}
+      <View style={styles.largeMapContainer}>
         {location && (
           <MapBoxMap
             userLocations={nearbyUsers}
@@ -658,39 +659,61 @@ export default function NearbyScreen() {
         </View>
       </View>
 
-      {/* Compact User List */}
-      <View style={styles.compactUserListContainer}>
-        <Text style={styles.userListTitle}>Nearby ({nearbyUsers.length})</Text>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          style={styles.userList}
-          contentContainerStyle={styles.userListContent}
-        >
-          {nearbyUsers.map((user) => (
-            <TouchableOpacity 
-              key={user.id} 
-              style={styles.compactUserCard}
-              onPress={() => handleUserPinPress(user)}
-            >
-              <Image source={{ uri: user.image }} style={styles.compactUserImage} />
-              <Text style={styles.compactUserName} numberOfLines={1}>{user.name}</Text>
-              <Text style={styles.compactUserDistance}>{user.distance}m</Text>
-              <View style={[
-                styles.compactUserStatus,
-                { backgroundColor: user.isOnline ? '#10B981' : '#6B7280' }
-              ]} />
-            </TouchableOpacity>
-          ))}
-          
-          {nearbyUsers.length === 0 && (
-            <View style={styles.emptyState}>
-              <Users size={24} color="#D1D5DB" />
-              <Text style={styles.emptyStateText}>No one nearby</Text>
-            </View>
-          )}
-        </ScrollView>
-      </View>
+      {/* Clickable Nearby Metrics */}
+      <TouchableOpacity 
+        style={styles.nearbyMetricsToggle}
+        onPress={() => setShowNearbyMetrics(!showNearbyMetrics)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.metricsHeader}>
+          <View style={styles.metricsHeaderLeft}>
+            <Users size={18} color="#6366F1" />
+            <Text style={styles.metricsTitle}>Nearby Professionals ({nearbyUsers.length})</Text>
+          </View>
+          <View style={styles.metricsHeaderRight}>
+            {showNearbyMetrics ? (
+              <ChevronUp size={20} color="#6B7280" />
+            ) : (
+              <ChevronDown size={20} color="#6B7280" />
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {/* Collapsible User List */}
+      {showNearbyMetrics && (
+        <View style={styles.nearbyUsersList}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.userList}
+            contentContainerStyle={styles.userListContent}
+          >
+            {nearbyUsers.map((user) => (
+              <TouchableOpacity 
+                key={user.id} 
+                style={styles.compactUserCard}
+                onPress={() => handleUserPinPress(user)}
+              >
+                <Image source={{ uri: user.image }} style={styles.compactUserImage} />
+                <Text style={styles.compactUserName} numberOfLines={1}>{user.name}</Text>
+                <Text style={styles.compactUserDistance}>{user.distance}m</Text>
+                <View style={[
+                  styles.compactUserStatus,
+                  { backgroundColor: user.isOnline ? '#10B981' : '#6B7280' }
+                ]} />
+              </TouchableOpacity>
+            ))}
+            
+            {nearbyUsers.length === 0 && (
+              <View style={styles.emptyState}>
+                <Users size={24} color="#D1D5DB" />
+                <Text style={styles.emptyStateText}>No one nearby</Text>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      )}
 
       <UserModal />
       
@@ -832,57 +855,76 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.6,
   },
-  // Enhanced Map Container - Much Larger
-  enhancedMapContainer: {
+  // Large Map Container - Takes up most of the screen
+  largeMapContainer: {
     flex: 1,
     margin: 16,
     marginBottom: 8,
-    borderRadius: 16,
+    borderRadius: 20,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
     position: 'relative',
+    backgroundColor: '#FFFFFF',
   },
   map: {
     flex: 1,
   },
   mapOverlay: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: 16,
+    right: 16,
   },
   mapInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
   },
   mapInfoText: {
-    fontSize: 10,
+    fontSize: 11,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
   },
-  // Compact User List
-  compactUserListContainer: {
+  // Clickable Nearby Metrics Toggle
+  nearbyMetricsToggle: {
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
-    paddingTop: 12,
-    paddingBottom: 8,
-    maxHeight: 120,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  userListTitle: {
-    fontSize: 14,
+  metricsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  metricsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  metricsTitle: {
+    fontSize: 16,
     fontFamily: 'Inter-SemiBold',
     color: '#111827',
-    paddingHorizontal: 16,
-    marginBottom: 8,
+  },
+  metricsHeaderRight: {
+    padding: 4,
+  },
+  // Collapsible User List
+  nearbyUsersList: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingBottom: 8,
+    maxHeight: 120,
   },
   userList: {
     paddingLeft: 16,
@@ -892,54 +934,61 @@ const styles = StyleSheet.create({
   },
   compactUserCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    padding: 8,
-    marginRight: 8,
-    width: 80,
+    borderRadius: 12,
+    padding: 10,
+    marginRight: 12,
+    width: 90,
     borderWidth: 1,
     borderColor: '#F3F4F6',
     position: 'relative',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   compactUserImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginBottom: 4,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginBottom: 6,
   },
   compactUserName: {
-    fontSize: 10,
+    fontSize: 11,
     fontFamily: 'Inter-Medium',
     color: '#111827',
     textAlign: 'center',
     marginBottom: 2,
   },
   compactUserDistance: {
-    fontSize: 9,
+    fontSize: 10,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
     textAlign: 'center',
   },
   compactUserStatus: {
     position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
   },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    paddingVertical: 20,
     paddingHorizontal: 24,
-    width: 120,
+    width: 140,
   },
   emptyStateText: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: 'Inter-Medium',
     color: '#6B7280',
-    marginTop: 4,
+    marginTop: 6,
     textAlign: 'center',
   },
   permissionContainer: {
