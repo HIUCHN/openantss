@@ -632,8 +632,8 @@ export default function NearbyScreen() {
         </View>
       </LinearGradient>
 
-      {/* Large Map Container */}
-      <View style={styles.largeMapContainer}>
+      {/* Extra Large Map Container - Takes up 3/4 of the screen */}
+      <View style={styles.extraLargeMapContainer}>
         {location && (
           <MapBoxMap
             userLocations={nearbyUsers}
@@ -855,20 +855,21 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.6,
   },
-  // Large Map Container - Takes up most of the screen
-  largeMapContainer: {
-    flex: 1,
+  // Extra Large Map Container - Takes up 3/4 of the screen
+  extraLargeMapContainer: {
+    flex: 3, // Takes 3/4 of the available space
     margin: 16,
     marginBottom: 8,
-    borderRadius: 20,
+    borderRadius: 24,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 16,
     position: 'relative',
     backgroundColor: '#FFFFFF',
+    minHeight: 400, // Ensure minimum height
   },
   map: {
     flex: 1,
@@ -918,8 +919,9 @@ const styles = StyleSheet.create({
   metricsHeaderRight: {
     padding: 4,
   },
-  // Collapsible User List
+  // Collapsible User List - Takes up remaining 1/4 space
   nearbyUsersList: {
+    flex: 1, // Takes the remaining 1/4 of the space
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
