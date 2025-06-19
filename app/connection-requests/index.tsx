@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Search, Filter, X, Check, Users } from 'lucide-react-native';
 import { router } from 'expo-router';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ConnectionRequest {
-  id: number;
+  id: string;
   name: string;
   role: string;
   company: string;
@@ -16,102 +17,79 @@ interface ConnectionRequest {
   mutualConnections: number;
 }
 
-// Same data as in the home screen
-const connectionRequests: ConnectionRequest[] = [
-  {
-    id: 1,
-    name: 'Emily Rodriguez',
-    role: 'UX Researcher',
-    company: 'Meta',
-    message: 'Hi! I saw your presentation on design systems. Would love to connect and discuss collaboration opportunities.',
-    image: 'https://images.pexels.com/photos/1181686/pexels-photo-1181686.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timestamp: '2m ago',
-    tags: ['Design Systems', 'UX Research'],
-    mutualConnections: 3,
-  },
-  {
-    id: 2,
-    name: 'James Wilson',
-    role: 'Product Manager',
-    company: 'Tesla',
-    message: 'Interested in your work on AI-powered design tools. Let\'s connect!',
-    image: 'https://images.pexels.com/photos/2379005/pexels-photo-2379005.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timestamp: '15m ago',
-    tags: ['AI/ML', 'Product Strategy'],
-    mutualConnections: 1,
-  },
-  {
-    id: 3,
-    name: 'Maria Garcia',
-    role: 'Frontend Developer',
-    company: 'Stripe',
-    message: 'Love your portfolio! Would be great to connect and share experiences.',
-    image: 'https://images.pexels.com/photos/1181424/pexels-photo-1181424.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timestamp: '1h ago',
-    tags: ['Frontend', 'React'],
-    mutualConnections: 5,
-  },
-  {
-    id: 4,
-    name: 'David Chen',
-    role: 'Backend Engineer',
-    company: 'Spotify',
-    message: 'Saw your work on microservices architecture. Would love to discuss best practices!',
-    image: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timestamp: '2h ago',
-    tags: ['Backend', 'Microservices'],
-    mutualConnections: 2,
-  },
-  {
-    id: 5,
-    name: 'Sophie Martinez',
-    role: 'Data Scientist',
-    company: 'Google',
-    message: 'Your machine learning insights are fascinating! Let\'s connect and share knowledge.',
-    image: 'https://images.pexels.com/photos/1239288/pexels-photo-1239288.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timestamp: '3h ago',
-    tags: ['Machine Learning', 'Data Science'],
-    mutualConnections: 4,
-  },
-  {
-    id: 6,
-    name: 'Alex Thompson',
-    role: 'Mobile Developer',
-    company: 'Airbnb',
-    message: 'Your React Native expertise would be valuable for our team. Let\'s connect!',
-    image: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timestamp: '4h ago',
-    tags: ['React Native', 'Mobile'],
-    mutualConnections: 6,
-  },
-  {
-    id: 7,
-    name: 'Lisa Wang',
-    role: 'Product Designer',
-    company: 'Figma',
-    message: 'Love your design philosophy! Would be great to exchange ideas and collaborate.',
-    image: 'https://images.pexels.com/photos/1130626/pexels-photo-1130626.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timestamp: '5h ago',
-    tags: ['Product Design', 'Figma'],
-    mutualConnections: 8,
-  },
-  {
-    id: 8,
-    name: 'Michael Brown',
-    role: 'DevOps Engineer',
-    company: 'AWS',
-    message: 'Interested in your cloud architecture insights. Let\'s connect and share experiences!',
-    image: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
-    timestamp: '6h ago',
-    tags: ['DevOps', 'Cloud'],
-    mutualConnections: 3,
-  },
-];
-
 export default function ConnectionRequestsScreen() {
-  const [requests, setRequests] = useState<ConnectionRequest[]>(connectionRequests);
-  const [filteredRequests, setFilteredRequests] = useState<ConnectionRequest[]>(connectionRequests);
+  const { getConnectionRequests, acceptConnectionRequest, declineConnectionRequest } = useAuth();
+  const [requests, setRequests] = useState<ConnectionRequest[]>([]);
+  const [filteredRequests, setFilteredRequests] = useState<ConnectionRequest[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [processingRequests, setProcessingRequests] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    loadConnectionRequests();
+  }, []);
+
+  const loadConnectionRequests = async () => {
+    try {
+      setLoading(true);
+      console.log('📨 Loading connection requests for dedicated screen...');
+      
+      const { data, error } = await getConnectionRequests();
+      
+      if (error) {
+        console.error('❌ Error loading connection requests:', error);
+        Alert.alert('Error', 'Failed to load connection requests. Please try again.');
+        return;
+      }
+
+      if (data) {
+        // Transform the data to match the expected format with proper null checking
+        const transformedRequests: ConnectionRequest[] = data.map((request: any) => ({
+          id: request.id,
+          name: request.sender?.full_name || request.sender?.username || 'Unknown User',
+          role: request.sender?.role || 'Professional',
+          company: request.sender?.company || 'OpenAnts',
+          message: request.message || 'Would like to connect with you.',
+          timestamp: formatTimestamp(request.created_at),
+          image: request.sender?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          tags: ['Connection', 'Networking'],
+          mutualConnections: Math.floor(Math.random() * 10) + 1, // Mock data for now
+        }));
+
+        setRequests(transformedRequests);
+        setFilteredRequests(transformedRequests);
+        console.log('✅ Connection requests loaded successfully:', transformedRequests.length, 'requests');
+      }
+    } catch (error) {
+      console.error('💥 Unexpected error loading connection requests:', error);
+      Alert.alert('Error', 'An unexpected error occurred while loading connection requests.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatTimestamp = (timestamp: string): string => {
+    const now = new Date();
+    const requestTime = new Date(timestamp);
+    const diffMs = now.getTime() - requestTime.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    
+    return requestTime.toLocaleDateString();
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadConnectionRequests();
+    setRefreshing(false);
+  };
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -134,73 +112,172 @@ export default function ConnectionRequestsScreen() {
     setFilteredRequests(results);
   };
 
-  const handleAcceptRequest = (requestId: number) => {
-    setRequests(prev => prev.filter(req => req.id !== requestId));
-    setFilteredRequests(prev => prev.filter(req => req.id !== requestId));
+  const handleAcceptRequest = async (requestId: string) => {
+    if (processingRequests.has(requestId)) return;
+
+    try {
+      setProcessingRequests(prev => new Set(prev).add(requestId));
+      
+      const { error } = await acceptConnectionRequest(requestId);
+      
+      if (error) {
+        console.error('❌ Error accepting connection request:', error);
+        Alert.alert('Error', 'Failed to accept connection request. Please try again.');
+      } else {
+        // Remove the request from local state
+        const updatedRequests = requests.filter(req => req.id !== requestId);
+        setRequests(updatedRequests);
+        setFilteredRequests(updatedRequests.filter(req => 
+          searchQuery.trim() === '' || 
+          req.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          req.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          req.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          req.message.toLowerCase().includes(searchQuery.toLowerCase())
+        ));
+        Alert.alert('Success', 'Connection request accepted! You are now connected.');
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error accepting connection request:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setProcessingRequests(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(requestId);
+        return newSet;
+      });
+    }
   };
 
-  const handleDeclineRequest = (requestId: number) => {
-    setRequests(prev => prev.filter(req => req.id !== requestId));
-    setFilteredRequests(prev => prev.filter(req => req.id !== requestId));
+  const handleDeclineRequest = async (requestId: string) => {
+    if (processingRequests.has(requestId)) return;
+
+    try {
+      setProcessingRequests(prev => new Set(prev).add(requestId));
+      
+      const { error } = await declineConnectionRequest(requestId);
+      
+      if (error) {
+        console.error('❌ Error declining connection request:', error);
+        Alert.alert('Error', 'Failed to decline connection request. Please try again.');
+      } else {
+        // Remove the request from local state
+        const updatedRequests = requests.filter(req => req.id !== requestId);
+        setRequests(updatedRequests);
+        setFilteredRequests(updatedRequests.filter(req => 
+          searchQuery.trim() === '' || 
+          req.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          req.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          req.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          req.message.toLowerCase().includes(searchQuery.toLowerCase())
+        ));
+        Alert.alert('Request Declined', 'Connection request has been declined.');
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error declining connection request:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setProcessingRequests(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(requestId);
+        return newSet;
+      });
+    }
   };
 
-  const ConnectionRequestCard = ({ request }: { request: ConnectionRequest }) => (
-    <View style={styles.requestCard}>
-      <View style={styles.requestHeader}>
-        <Image source={{ uri: request.image }} style={styles.requestAvatar} />
-        <View style={styles.requestInfo}>
-          <View style={styles.requestNameRow}>
-            <Text style={styles.requestName}>{request.name}</Text>
-            <Text style={styles.requestTimestamp}>{request.timestamp}</Text>
+  const ConnectionRequestCard = ({ request }: { request: ConnectionRequest }) => {
+    const isProcessing = processingRequests.has(request.id);
+    
+    return (
+      <View style={styles.requestCard}>
+        <View style={styles.requestHeader}>
+          <Image source={{ uri: request.image }} style={styles.requestAvatar} />
+          <View style={styles.requestInfo}>
+            <View style={styles.requestNameRow}>
+              <Text style={styles.requestName}>{request.name}</Text>
+              <Text style={styles.requestTimestamp}>{request.timestamp}</Text>
+            </View>
+            <Text style={styles.requestRole}>{request.role} at {request.company}</Text>
+            {request.mutualConnections > 0 && (
+              <View style={styles.mutualConnectionsRow}>
+                <Users size={12} color="#6366F1" />
+                <Text style={styles.mutualConnections}>
+                  {request.mutualConnections} mutual connection{request.mutualConnections > 1 ? 's' : ''}
+                </Text>
+              </View>
+            )}
           </View>
-          <Text style={styles.requestRole}>{request.role} at {request.company}</Text>
-          {request.mutualConnections > 0 && (
-            <View style={styles.mutualConnectionsRow}>
-              <Users size={12} color="#6366F1" />
-              <Text style={styles.mutualConnections}>
-                {request.mutualConnections} mutual connection{request.mutualConnections > 1 ? 's' : ''}
+        </View>
+        
+        <Text style={styles.requestMessage}>{request.message}</Text>
+        
+        <View style={styles.requestTags}>
+          {request.tags.map((tag, index) => (
+            <View key={index} style={[
+              styles.requestTag,
+              index === 0 ? styles.blueRequestTag : styles.greenRequestTag
+            ]}>
+              <Text style={[
+                styles.requestTagText,
+                index === 0 ? styles.blueRequestTagText : styles.greenRequestTagText
+              ]}>
+                {tag}
               </Text>
             </View>
-          )}
+          ))}
+        </View>
+        
+        <View style={styles.requestActions}>
+          <TouchableOpacity 
+            style={[styles.acceptButton, isProcessing && styles.buttonDisabled]}
+            onPress={() => handleAcceptRequest(request.id)}
+            disabled={isProcessing}
+          >
+            {isProcessing ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Check size={16} color="#FFFFFF" />
+            )}
+            <Text style={styles.acceptButtonText}>
+              {isProcessing ? 'Processing...' : 'Accept'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.declineButton, isProcessing && styles.buttonDisabled]}
+            onPress={() => handleDeclineRequest(request.id)}
+            disabled={isProcessing}
+          >
+            <X size={16} color="#6B7280" />
+            <Text style={styles.declineButtonText}>Decline</Text>
+          </TouchableOpacity>
         </View>
       </View>
-      
-      <Text style={styles.requestMessage}>{request.message}</Text>
-      
-      <View style={styles.requestTags}>
-        {request.tags.map((tag, index) => (
-          <View key={index} style={[
-            styles.requestTag,
-            index === 0 ? styles.blueRequestTag : styles.greenRequestTag
-          ]}>
-            <Text style={[
-              styles.requestTagText,
-              index === 0 ? styles.blueRequestTagText : styles.greenRequestTagText
-            ]}>
-              {tag}
-            </Text>
-          </View>
-        ))}
-      </View>
-      
-      <View style={styles.requestActions}>
-        <TouchableOpacity 
-          style={styles.acceptButton}
-          onPress={() => handleAcceptRequest(request.id)}
-        >
-          <Check size={16} color="#FFFFFF" />
-          <Text style={styles.acceptButtonText}>Accept</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.declineButton}
-          onPress={() => handleDeclineRequest(request.id)}
-        >
-          <X size={16} color="#6B7280" />
-          <Text style={styles.declineButtonText}>Decline</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <ArrowLeft size={20} color="#6B7280" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Connection Requests</Text>
+          <TouchableOpacity style={styles.filterButton}>
+            <Filter size={20} color="#6B7280" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6366F1" />
+          <Text style={styles.loadingText}>Loading connection requests...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -247,7 +324,18 @@ export default function ConnectionRequestsScreen() {
       </View>
 
       {/* Requests List */}
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#6366F1']}
+            tintColor="#6366F1"
+          />
+        }
+      >
         {searchQuery.trim() !== '' && filteredRequests.length === 0 && (
           <View style={styles.noResults}>
             <Text style={styles.noResultsText}>No requests found</Text>
@@ -278,6 +366,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
   },
   header: {
     flexDirection: 'row',
@@ -479,6 +578,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#6B7280',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   noResults: {
     alignItems: 'center',
