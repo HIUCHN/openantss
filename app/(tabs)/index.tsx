@@ -108,15 +108,15 @@ export default function HomeScreen() {
       if (error) {
         console.error('❌ Error loading connection requests:', error);
       } else {
-        // Transform the data to match the expected format
+        // Transform the data to match the expected format with proper null checking
         const transformedRequests = data?.map((request: any) => ({
           id: request.id,
-          name: request.sender.full_name || request.sender.username,
-          role: request.sender.role || 'Professional',
-          company: request.sender.company || 'OpenAnts',
-          message: request.message,
+          name: request.sender?.full_name || request.sender?.username || 'Unknown User',
+          role: request.sender?.role || 'Professional',
+          company: request.sender?.company || 'OpenAnts',
+          message: request.message || 'Would like to connect with you.',
           timestamp: formatTimestamp(request.created_at),
-          image: request.sender.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          image: request.sender?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
           tags: ['Connection', 'Networking'],
           mutualConnections: Math.floor(Math.random() * 10) + 1, // Mock data for now
         })) || [];
