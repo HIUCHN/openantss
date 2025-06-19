@@ -864,29 +864,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('🤝 Sending connection request to:', receiverId);
       
-      // Check if a request already exists
-      const { data: existingRequest } = await supabase
+      // Check if a request already exists (use maybeSingle to handle no results)
+      const { data: existingRequest, error: checkError } = await supabase
         .from('connection_requests')
         .select('id')
         .eq('sender_id', user.id)
         .eq('receiver_id', receiverId)
-        .single();
+        .maybeSingle();
+
+      if (checkError) {
+        console.error('❌ Error checking existing request:', checkError);
+        return { error: checkError };
+      }
 
       if (existingRequest) {
         return { error: new Error('Connection request already sent') };
       }
 
-      // Check if users are already connected
-      const { data: existingConnection } = await supabase
+      // Check if users are already connected (use maybeSingle to handle no results)
+      const { data: existingConnection, error: connectionError } = await supabase
         .from('connections')
         .select('id')
         .or(`and(user1_id.eq.${user.id},user2_id.eq.${receiverId}),and(user1_id.eq.${receiverId},user2_id.eq.${user.id})`)
-        .single();
+        .maybeSingle();
+
+      if (connectionError) {
+        console.error('❌ Error checking existing connection:', connectionError);
+        return { error: connectionError };
+      }
 
       if (existingConnection) {
         return { error: new Error('Already connected with this user') };
       }
 
+      // Send the connection request
       const { error } = await supabase
         .from('connection_requests')
         .insert({
@@ -1027,12 +1038,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('🔍 Checking connection status with user:', userId);
       
-      // Check if already connected
-      const { data: connection } = await supabase
+      // Check if already connected (use maybeSingle to handle no results)
+      const { data: connection, error: connectionError } = await supabase
         .from('connections')
         .select('id')
         .or(`and(user1_id.eq.${user.id},user2_id.eq.${userId}),and(user1_id.eq.${userId},user2_id.eq.${user.id})`)
-        .single();
+        .maybeSingle();
+
+      if (connectionError) {
+        console.error('❌ Error checking connection:', connectionError);
+        return { data: null, error: connectionError };
+      }
 
       if (connection) {
         return { 
@@ -1041,14 +1057,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      // Check if there's a pending request
-      const { data: request } = await supabase
+      // Check if there's a pending request (use maybeSingle to handle no results)
+      const { data: request, error: requestError } = await supabase
         .from('connection_requests')
         .select('id')
         .eq('sender_id', user.id)
         .eq('receiver_id', userId)
         .eq('status', 'pending')
-        .single();
+        .maybeSingle();
+
+      if (requestError) {
+        console.error('❌ Error checking pending request:', requestError);
+        return { data: null, error: requestError };
+      }
 
       return { 
         data: { 
