@@ -8,29 +8,36 @@ import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import EducationForm from '@/components/EducationForm';
 import ExperienceForm from '@/components/ExperienceForm';
+import SkillForm from '@/components/SkillForm';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
 
 type UserEducation = Database['public']['Tables']['user_education']['Row'];
 type Experience = Database['public']['Tables']['experiences']['Row'];
+type Skill = Database['public']['Tables']['skills']['Row'];
 
 export default function ProfileScreen() {
   const { user, profile, signOut } = useAuth();
   const [showEducationForm, setShowEducationForm] = useState(false);
   const [showExperienceForm, setShowExperienceForm] = useState(false);
+  const [showSkillForm, setShowSkillForm] = useState(false);
   const [editingExperience, setEditingExperience] = useState<Experience | null>(null);
   const [userEducation, setUserEducation] = useState<UserEducation[]>([]);
   const [experiences, setExperiences] = useState<Experience[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
   const [loadingEducation, setLoadingEducation] = useState(true);
   const [loadingExperiences, setLoadingExperiences] = useState(true);
+  const [loadingSkills, setLoadingSkills] = useState(true);
   const [deletingEducationId, setDeletingEducationId] = useState<string | null>(null);
   const [deletingExperienceId, setDeletingExperienceId] = useState<string | null>(null);
+  const [deletingSkillId, setDeletingSkillId] = useState<string | null>(null);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
 
-  // Fetch user education data
+  // Fetch user data
   useEffect(() => {
     if (user) {
       fetchUserEducation();
       fetchExperiences();
+      fetchSkills();
     }
   }, [user]);
 
@@ -90,6 +97,35 @@ export default function ProfileScreen() {
     }
   };
 
+  const fetchSkills = async () => {
+    if (!user) return;
+    
+    try {
+      setLoadingSkills(true);
+      console.log('🎯 Fetching skills for user:', user.id);
+      
+      const { data, error } = await supabase
+        .from('skills')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('is_featured', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Error fetching skills:', error);
+        Alert.alert('Error', 'Failed to load skills data');
+      } else {
+        console.log('✅ Skills fetched:', data);
+        setSkills(data || []);
+      }
+    } catch (error) {
+      console.error('💥 Unexpected error fetching skills:', error);
+      Alert.alert('Error', 'An unexpected error occurred while loading skills data');
+    } finally {
+      setLoadingSkills(false);
+    }
+  };
+
   const handleEducationAdded = (newEducation: UserEducation) => {
     setUserEducation(prev => [newEducation, ...prev]);
     setShowEducationForm(false);
@@ -97,16 +133,19 @@ export default function ProfileScreen() {
 
   const handleExperienceAdded = (newExperience: Experience) => {
     if (editingExperience) {
-      // Update existing experience
       setExperiences(prev => prev.map(exp => 
         exp.id === editingExperience.id ? newExperience : exp
       ));
       setEditingExperience(null);
     } else {
-      // Add new experience
       setExperiences(prev => [newExperience, ...prev]);
     }
     setShowExperienceForm(false);
+  };
+
+  const handleSkillAdded = (newSkill: Skill) => {
+    setSkills(prev => [newSkill, ...prev]);
+    setShowSkillForm(false);
   };
 
   const handleDeleteEducation = async (educationId: string) => {
@@ -114,10 +153,7 @@ export default function ProfileScreen() {
       'Delete Education',
       'Are you sure you want to delete this education record? This action cannot be undone.',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
@@ -130,14 +166,13 @@ export default function ProfileScreen() {
                 .from('user_education')
                 .delete()
                 .eq('id', educationId)
-                .eq('user_id', user?.id); // Extra security check
+                .eq('user_id', user?.id);
 
               if (error) {
                 console.error('❌ Error deleting education:', error);
                 Alert.alert('Error', 'Failed to delete education record. Please try again.');
               } else {
                 console.log('✅ Education record deleted successfully');
-                // Remove from local state
                 setUserEducation(prev => prev.filter(edu => edu.id !== educationId));
                 Alert.alert('Success', 'Education record deleted successfully');
               }
@@ -158,10 +193,7 @@ export default function ProfileScreen() {
       'Delete Experience',
       'Are you sure you want to delete this experience record? This action cannot be undone.',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
@@ -174,14 +206,13 @@ export default function ProfileScreen() {
                 .from('experiences')
                 .delete()
                 .eq('id', experienceId)
-                .eq('user_id', user?.id); // Extra security check
+                .eq('user_id', user?.id);
 
               if (error) {
                 console.error('❌ Error deleting experience:', error);
                 Alert.alert('Error', 'Failed to delete experience record. Please try again.');
               } else {
                 console.log('✅ Experience record deleted successfully');
-                // Remove from local state
                 setExperiences(prev => prev.filter(exp => exp.id !== experienceId));
                 Alert.alert('Success', 'Experience record deleted successfully');
               }
@@ -190,6 +221,46 @@ export default function ProfileScreen() {
               Alert.alert('Error', 'An unexpected error occurred. Please try again.');
             } finally {
               setDeletingExperienceId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteSkill = async (skillId: string) => {
+    Alert.alert(
+      'Delete Skill',
+      'Are you sure you want to delete this skill? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeletingSkillId(skillId);
+              console.log('🗑️ Deleting skill:', skillId);
+
+              const { error } = await supabase
+                .from('skills')
+                .delete()
+                .eq('id', skillId)
+                .eq('user_id', user?.id);
+
+              if (error) {
+                console.error('❌ Error deleting skill:', error);
+                Alert.alert('Error', 'Failed to delete skill. Please try again.');
+              } else {
+                console.log('✅ Skill deleted successfully');
+                setSkills(prev => prev.filter(skill => skill.id !== skillId));
+                Alert.alert('Success', 'Skill deleted successfully');
+              }
+            } catch (error) {
+              console.error('💥 Unexpected error deleting skill:', error);
+              Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+            } finally {
+              setDeletingSkillId(null);
             }
           },
         },
@@ -209,6 +280,21 @@ export default function ProfileScreen() {
 
   const handleProfilePress = () => {
     setShowAccountSettings(true);
+  };
+
+  const getSkillLevelColor = (level: string | null) => {
+    switch (level) {
+      case 'beginner': return '#F59E0B';
+      case 'intermediate': return '#3B82F6';
+      case 'advanced': return '#10B981';
+      case 'expert': return '#8B5CF6';
+      default: return '#6B7280';
+    }
+  };
+
+  const getSkillLevelText = (level: string | null) => {
+    if (!level) return '';
+    return level.charAt(0).toUpperCase() + level.slice(1);
   };
 
   if (!user || !profile) {
@@ -509,22 +595,78 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Skills & Expertise</Text>
-            <TouchableOpacity style={styles.addButton}>
+            <TouchableOpacity 
+              style={styles.addButton}
+              onPress={() => setShowSkillForm(true)}
+            >
               <Plus size={16} color="#6366F1" />
               <Text style={styles.addButtonText}>Add Skill</Text>
             </TouchableOpacity>
           </View>
-          
-          <View style={styles.skillsContainer}>
-            {(profile.skills || ['UI/UX Design', 'Figma', 'Prototyping', 'User Research']).map((skill, index) => (
-              <View key={index} style={styles.skillTag}>
-                <Text style={styles.skillText}>{skill}</Text>
-                <TouchableOpacity style={styles.removeSkill}>
-                  <Text style={styles.removeSkillText}>×</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
+
+          {showSkillForm && (
+            <SkillForm
+              onSuccess={handleSkillAdded}
+              onCancel={() => setShowSkillForm(false)}
+              existingSkills={skills.map(skill => skill.name)}
+            />
+          )}
+
+          {loadingSkills ? (
+            <View style={styles.loadingSection}>
+              <ActivityIndicator size="small" color="#6366F1" />
+              <Text style={styles.loadingText}>Loading skills...</Text>
+            </View>
+          ) : skills.length > 0 ? (
+            <View style={styles.skillsContainer}>
+              {skills.map((skill) => (
+                <View key={skill.id} style={[
+                  styles.skillTag,
+                  skill.is_featured && styles.featuredSkillTag
+                ]}>
+                  <View style={styles.skillContent}>
+                    <Text style={[
+                      styles.skillText,
+                      skill.is_featured && styles.featuredSkillText
+                    ]}>
+                      {skill.name}
+                    </Text>
+                    {skill.level && (
+                      <View style={[
+                        styles.skillLevel,
+                        { backgroundColor: getSkillLevelColor(skill.level) }
+                      ]}>
+                        <Text style={styles.skillLevelText}>
+                          {getSkillLevelText(skill.level)}
+                        </Text>
+                      </View>
+                    )}
+                    {skill.years_experience && (
+                      <Text style={styles.skillExperience}>
+                        {skill.years_experience}+ years
+                      </Text>
+                    )}
+                  </View>
+                  <TouchableOpacity 
+                    style={styles.removeSkill}
+                    onPress={() => handleDeleteSkill(skill.id)}
+                    disabled={deletingSkillId === skill.id}
+                  >
+                    {deletingSkillId === skill.id ? (
+                      <ActivityIndicator size="small" color="#EF4444" />
+                    ) : (
+                      <Trash2 size={12} color="#EF4444" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No skills added yet</Text>
+              <Text style={styles.emptyStateSubtext}>Add your skills and expertise to showcase your abilities</Text>
+            </View>
+          )}
         </View>
 
         {/* Portfolio Section */}
@@ -1002,34 +1144,56 @@ const styles = StyleSheet.create({
   skillsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 12,
   },
   skillTag: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  featuredSkillTag: {
     backgroundColor: '#EEF2FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    borderColor: '#6366F1',
+    borderWidth: 2,
+  },
+  skillContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
   },
   skillText: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
+    color: '#374151',
+  },
+  featuredSkillText: {
     color: '#6366F1',
+    fontFamily: 'Inter-SemiBold',
+  },
+  skillLevel: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  skillLevelText: {
+    fontSize: 10,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+  },
+  skillExperience: {
+    fontSize: 11,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
   },
   removeSkill: {
-    width: 16,
-    height: 16,
-    backgroundColor: '#6366F1',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeSkillText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Bold',
-    color: '#FFFFFF',
+    padding: 2,
   },
   portfolioGrid: {
     flexDirection: 'row',
