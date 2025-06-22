@@ -9,6 +9,7 @@ import { Database } from '@/types/database';
 import EducationForm from '@/components/EducationForm';
 import ExperienceForm from '@/components/ExperienceForm';
 import SkillForm from '@/components/SkillForm';
+import AvatarUpload from '@/components/AvatarUpload';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
 
 type UserEducation = Database['public']['Tables']['user_education']['Row'];
@@ -31,6 +32,12 @@ export default function ProfileScreen() {
   const [deletingExperienceId, setDeletingExperienceId] = useState<string | null>(null);
   const [deletingSkillId, setDeletingSkillId] = useState<string | null>(null);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
+  const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string | null>(profile?.avatar_url || null);
+
+  // Update avatar URL when profile changes
+  useEffect(() => {
+    setCurrentAvatarUrl(profile?.avatar_url || null);
+  }, [profile?.avatar_url]);
 
   // Fetch user data
   useEffect(() => {
@@ -146,6 +153,10 @@ export default function ProfileScreen() {
   const handleSkillAdded = (newSkill: Skill) => {
     setSkills(prev => [newSkill, ...prev]);
     setShowSkillForm(false);
+  };
+
+  const handleAvatarUpdate = (newAvatarUrl: string) => {
+    setCurrentAvatarUrl(newAvatarUrl || null);
   };
 
   const handleDeleteEducation = async (educationId: string) => {
@@ -334,15 +345,13 @@ export default function ProfileScreen() {
           style={styles.profileHeader}
         >
           <View style={styles.profileInfo}>
-            <TouchableOpacity style={styles.avatarContainer}>
-              <Image 
-                source={{ uri: profile.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
-                style={styles.avatar} 
+            <View style={styles.avatarContainer}>
+              <AvatarUpload
+                currentAvatarUrl={currentAvatarUrl}
+                onAvatarUpdate={handleAvatarUpdate}
+                size={80}
               />
-              <View style={styles.editAvatarButton}>
-                <Edit size={12} color="#FFFFFF" />
-              </View>
-            </TouchableOpacity>
+            </View>
             
             <View style={styles.userInfo}>
               <TouchableOpacity style={styles.editableField}>
@@ -420,7 +429,7 @@ export default function ProfileScreen() {
           {/* Sample Post */}
           <View style={styles.postCard}>
             <View style={styles.postHeader}>
-              <Image source={{ uri: profile.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} style={styles.postAvatar} />
+              <Image source={{ uri: currentAvatarUrl || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} style={styles.postAvatar} />
               <View style={styles.postInfo}>
                 <Text style={styles.postAuthor}>{profile.full_name}</Text>
                 <Text style={styles.postTime}>2 days ago</Text>
@@ -815,28 +824,7 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   avatarContainer: {
-    position: 'relative',
     marginRight: 20,
-  },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-  },
-  editAvatarButton: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 24,
-    height: 24,
-    backgroundColor: '#6366F1',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
   },
   userInfo: {
     flex: 1,
