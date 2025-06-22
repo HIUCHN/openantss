@@ -975,6 +975,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: fetchError || new Error('Request not found') };
       }
 
+      // Check if connection already exists before creating a new one
+      const { data: existingConnection, error: connectionCheckError } = await supabase
+        .from('connections')
+        .select('id')
+        .or(`and(user1_id.eq.${request.sender_id},user2_id.eq.${request.receiver_id}),and(user1_id.eq.${request.receiver_id},user2_id.eq.${request.sender_id})`)
+        .maybeSingle();
+
+      if (connectionCheckError) {
+        console.error('❌ Error checking existing connection:', connectionCheckError);
+        return { error: connectionCheckError };
+      }
+
+      if (existingConnection) {
+        console.log('⚠️ Connection already exists, just removing the request');
+        // Connection already exists, just delete the request
+        const { error: deleteError } = await supabase
+          .from('connection_requests')
+          .delete()
+          .eq('id', requestId);
+
+        if (deleteError) {
+          console.error('❌ Error deleting connection request:', deleteError);
+          return { error: deleteError };
+        }
+
+        console.log('✅ Connection request removed (connection already existed)');
+        return { error: null };
+      }
+
       // Create the connection
       const { error: connectionError } = await supabase
         .from('connections')
