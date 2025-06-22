@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CreditCard as Edit, Plus, Trash2, MapPin, Calendar, Users, Eye, Heart, MessageCircle, Share, MoveHorizontal as MoreHorizontal, GraduationCap, Briefcase, Settings, Bell } from 'lucide-react-native';
@@ -33,6 +33,7 @@ export default function ProfileScreen() {
   const [deletingSkillId, setDeletingSkillId] = useState<string | null>(null);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string | null>(profile?.avatar_url || null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Update avatar URL when profile changes
   useEffect(() => {
@@ -47,6 +48,18 @@ export default function ProfileScreen() {
       fetchSkills();
     }
   }, [user]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    if (user) {
+      await Promise.all([
+        fetchUserEducation(),
+        fetchExperiences(),
+        fetchSkills()
+      ]);
+    }
+    setRefreshing(false);
+  };
 
   const fetchUserEducation = async () => {
     if (!user) return;
@@ -338,7 +351,18 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#6366F1']}
+            tintColor="#6366F1"
+          />
+        }
+      >
         {/* Profile Header */}
         <LinearGradient
           colors={['#6366F1', '#8B5CF6']}
