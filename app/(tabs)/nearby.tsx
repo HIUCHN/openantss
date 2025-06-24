@@ -25,6 +25,13 @@ interface NearbyUser {
   isOnline: boolean;
 }
 
+interface LocationData {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  timestamp: number;
+}
+
 export default function NearbyScreen() {
   const { profile, storeUserLocation, getNearbyUsers, togglePublicMode, clearUserLocation } = useAuth();
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
@@ -41,8 +48,23 @@ export default function NearbyScreen() {
   const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
   const [showNearbyMetrics, setShowNearbyMetrics] = useState(true);
   const [debugInfo, setDebugInfo] = useState<string>('');
+  
+  // Location stability improvements
+  const [locationHistory, setLocationHistory] = useState<LocationData[]>([]);
+  const [stableLocation, setStableLocation] = useState<LocationData | null>(null);
+  const [locationStabilityCount, setLocationStabilityCount] = useState(0);
+  
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
+  const stabilityTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // Configuration for location stability
+  const LOCATION_HISTORY_SIZE = 10;
+  const STABILITY_THRESHOLD = 20; // meters
+  const STABILITY_REQUIRED_COUNT = 3; // number of consistent readings
+  const MIN_ACCURACY_THRESHOLD = 50; // meters
+  const LOCATION_UPDATE_INTERVAL = 5000; // 5 seconds
+  const STABILITY_CHECK_INTERVAL = 2000; // 2 seconds
 
   // Check if user has public mode enabled
   const isPublicMode = profile?.is_public ?? false;
@@ -58,6 +80,8 @@ export default function NearbyScreen() {
       setNearbyUsers([]);
       setErrorMessage(null);
       setDebugInfo('');
+      setLocationHistory([]);
+      setStableLocation(null);
     }
 
     return () => {
@@ -66,25 +90,149 @@ export default function NearbyScreen() {
   }, [isPublicMode]);
 
   useEffect(() => {
-    if (isPublicMode && location) {
+    if (isPublicMode && stableLocation) {
       startLocationTracking();
       startPeriodicRefresh();
     } else {
       stopLocationTracking();
       stopPeriodicRefresh();
     }
-  }, [isPublicMode, location]);
+  }, [isPublicMode, stableLocation]);
 
   const cleanup = () => {
     stopLocationTracking();
     stopPeriodicRefresh();
+    if (stabilityTimer.current) {
+      clearTimeout(stabilityTimer.current);
+      stabilityTimer.current = null;
+    }
+  };
+
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lng2 - lng1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c;
+  };
+
+  const isLocationStable = (newLocation: LocationData, history: LocationData[]): boolean => {
+    if (history.length < 2) return false;
+
+    // Check if the new location is consistent with recent history
+    const recentLocations = history.slice(-3); // Last 3 locations
+    let consistentCount = 0;
+
+    for (const historicalLocation of recentLocations) {
+      const distance = calculateDistance(
+        newLocation.latitude,
+        newLocation.longitude,
+        historicalLocation.latitude,
+        historicalLocation.longitude
+      );
+
+      if (distance <= STABILITY_THRESHOLD) {
+        consistentCount++;
+      }
+    }
+
+    return consistentCount >= Math.min(recentLocations.length, STABILITY_REQUIRED_COUNT - 1);
+  };
+
+  const getAverageLocation = (locations: LocationData[]): LocationData => {
+    if (locations.length === 0) throw new Error('No locations to average');
+
+    const sum = locations.reduce(
+      (acc, loc) => ({
+        latitude: acc.latitude + loc.latitude,
+        longitude: acc.longitude + loc.longitude,
+        accuracy: acc.accuracy + loc.accuracy,
+        timestamp: Math.max(acc.timestamp, loc.timestamp),
+      }),
+      { latitude: 0, longitude: 0, accuracy: 0, timestamp: 0 }
+    );
+
+    return {
+      latitude: sum.latitude / locations.length,
+      longitude: sum.longitude / locations.length,
+      accuracy: sum.accuracy / locations.length,
+      timestamp: sum.timestamp,
+    };
+  };
+
+  const processLocationUpdate = (newLocationObj: Location.LocationObject) => {
+    const newLocation: LocationData = {
+      latitude: newLocationObj.coords.latitude,
+      longitude: newLocationObj.coords.longitude,
+      accuracy: newLocationObj.coords.accuracy || 999,
+      timestamp: newLocationObj.timestamp,
+    };
+
+    // Only process locations with reasonable accuracy
+    if (newLocation.accuracy > MIN_ACCURACY_THRESHOLD) {
+      console.log('📍 Location accuracy too low:', newLocation.accuracy, 'm - skipping');
+      setDebugInfo(`Low accuracy: ${Math.round(newLocation.accuracy)}m - waiting for better signal`);
+      return;
+    }
+
+    setLocationHistory(prevHistory => {
+      const updatedHistory = [...prevHistory, newLocation].slice(-LOCATION_HISTORY_SIZE);
+      
+      // Check if location is stable
+      if (isLocationStable(newLocation, updatedHistory)) {
+        setLocationStabilityCount(prev => prev + 1);
+        
+        if (locationStabilityCount >= STABILITY_REQUIRED_COUNT - 1) {
+          // Location is stable, calculate average of recent stable locations
+          const stableLocations = updatedHistory.slice(-STABILITY_REQUIRED_COUNT);
+          const averageLocation = getAverageLocation(stableLocations);
+          
+          console.log('📍 Location stabilized:', {
+            latitude: averageLocation.latitude.toFixed(6),
+            longitude: averageLocation.longitude.toFixed(6),
+            accuracy: Math.round(averageLocation.accuracy),
+            stabilityCount: locationStabilityCount + 1
+          });
+
+          setStableLocation(averageLocation);
+          setLocation(newLocationObj); // Keep original for display
+          setLocationAccuracy(averageLocation.accuracy);
+          setDebugInfo(`Stable location: ${averageLocation.latitude.toFixed(6)}, ${averageLocation.longitude.toFixed(6)} (±${Math.round(averageLocation.accuracy)}m)`);
+          
+          // Store the stable location
+          if (isPublicMode) {
+            storeUserLocation({
+              latitude: averageLocation.latitude,
+              longitude: averageLocation.longitude,
+              accuracy: averageLocation.accuracy,
+              timestamp: new Date(averageLocation.timestamp),
+            });
+          }
+        } else {
+          setDebugInfo(`Stabilizing... ${locationStabilityCount + 1}/${STABILITY_REQUIRED_COUNT} consistent readings`);
+        }
+      } else {
+        // Location changed significantly, reset stability counter
+        setLocationStabilityCount(0);
+        setDebugInfo(`Location changed - resetting stability check (±${Math.round(newLocation.accuracy)}m)`);
+      }
+
+      return updatedHistory;
+    });
   };
 
   const initializeLocation = async () => {
     try {
       setLoading(true);
       setErrorMessage(null);
-      setDebugInfo('Initializing location...');
+      setDebugInfo('Initializing high-accuracy location...');
 
       // Check if location services are enabled
       const enabled = await Location.hasServicesEnabledAsync();
@@ -95,7 +243,7 @@ export default function NearbyScreen() {
         return;
       }
 
-      // Request location permissions with more specific permissions
+      // Request location permissions with high accuracy
       const { status } = await Location.requestForegroundPermissionsAsync();
       setLocationPermission(status);
 
@@ -106,39 +254,26 @@ export default function NearbyScreen() {
         return;
       }
 
-      // Get current location with high accuracy
-      console.log('📍 Getting high-accuracy location...');
-      setDebugInfo('Getting location...');
+      // Get initial high-accuracy location
+      console.log('📍 Getting initial high-accuracy location...');
+      setDebugInfo('Getting initial location...');
       
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.BestForNavigation,
-        maximumAge: 10000,
-        timeout: 15000,
+        maximumAge: 5000, // Accept cached location up to 5 seconds old
+        timeout: 20000, // 20 second timeout
       });
 
-      console.log('📍 Location obtained:', {
+      console.log('📍 Initial location obtained:', {
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude,
         accuracy: currentLocation.coords.accuracy,
       });
 
-      setLocation(currentLocation);
-      setLocationAccuracy(currentLocation.coords.accuracy || null);
-      setDebugInfo(`Location: ${currentLocation.coords.latitude.toFixed(6)}, ${currentLocation.coords.longitude.toFixed(6)}`);
+      // Process the initial location
+      processLocationUpdate(currentLocation);
 
       if (isPublicMode) {
-        // Store location in database
-        console.log('📍 Storing location in database...');
-        await storeUserLocation({
-          latitude: currentLocation.coords.latitude,
-          longitude: currentLocation.coords.longitude,
-          accuracy: currentLocation.coords.accuracy || undefined,
-          altitude: currentLocation.coords.altitude || undefined,
-          heading: currentLocation.coords.heading || undefined,
-          speed: currentLocation.coords.speed || undefined,
-          timestamp: new Date(currentLocation.timestamp),
-        });
-
         // Fetch nearby users
         await fetchNearbyUsers();
       }
@@ -167,32 +302,17 @@ export default function NearbyScreen() {
       locationSubscription.current = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 15000,
-          distanceInterval: 10,
+          timeInterval: LOCATION_UPDATE_INTERVAL,
+          distanceInterval: 5, // Update every 5 meters
         },
-        async (newLocation) => {
-          console.log('📍 Location updated:', {
+        (newLocation) => {
+          console.log('📍 Location update received:', {
             latitude: newLocation.coords.latitude,
             longitude: newLocation.coords.longitude,
             accuracy: newLocation.coords.accuracy,
           });
 
-          setLocation(newLocation);
-          setLocationAccuracy(newLocation.coords.accuracy || null);
-          setDebugInfo(`Updated: ${newLocation.coords.latitude.toFixed(6)}, ${newLocation.coords.longitude.toFixed(6)}`);
-          
-          // Only store location if still in public mode
-          if (isPublicMode) {
-            await storeUserLocation({
-              latitude: newLocation.coords.latitude,
-              longitude: newLocation.coords.longitude,
-              accuracy: newLocation.coords.accuracy || undefined,
-              altitude: newLocation.coords.altitude || undefined,
-              heading: newLocation.coords.heading || undefined,
-              speed: newLocation.coords.speed || undefined,
-              timestamp: new Date(newLocation.timestamp),
-            });
-          }
+          processLocationUpdate(newLocation);
         }
       );
     } catch (error) {
@@ -219,7 +339,7 @@ export default function NearbyScreen() {
     if (refreshInterval.current) return;
 
     refreshInterval.current = setInterval(() => {
-      if (isPublicMode && location) {
+      if (isPublicMode && stableLocation) {
         fetchNearbyUsers();
       }
     }, 30000);
@@ -233,7 +353,7 @@ export default function NearbyScreen() {
   };
 
   const fetchNearbyUsers = async () => {
-    if (!isPublicMode || !location) return;
+    if (!isPublicMode || !stableLocation) return;
 
     try {
       console.log('🔍 Fetching nearby users...');
@@ -251,8 +371,8 @@ export default function NearbyScreen() {
         const formattedUsers: NearbyUser[] = data.map((userLocation: any, index: number) => {
           const user = userLocation.profiles || userLocation;
           const distance = userLocation.distance || calculateDistance(
-            location.coords.latitude,
-            location.coords.longitude,
+            stableLocation.latitude,
+            stableLocation.longitude,
             userLocation.latitude,
             userLocation.longitude
           );
@@ -298,21 +418,6 @@ export default function NearbyScreen() {
     }
   };
 
-  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-    const R = 6371e3; // Earth's radius in meters
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180;
-    const Δλ = (lng2 - lng1) * Math.PI / 180;
-
-    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-    return R * c;
-  };
-
   const formatLastSeen = (timestamp: string): string => {
     if (!timestamp) return 'Unknown';
     
@@ -343,7 +448,10 @@ export default function NearbyScreen() {
     
     setRefreshing(true);
     setDebugInfo('Refreshing...');
-    // Refresh both location and nearby users
+    // Reset location stability and get fresh location
+    setLocationHistory([]);
+    setStableLocation(null);
+    setLocationStabilityCount(0);
     await initializeLocation();
     setRefreshing(false);
   };
@@ -379,6 +487,8 @@ export default function NearbyScreen() {
         setNearbyUsers([]);
         setErrorMessage(null);
         setDebugInfo('');
+        setLocationHistory([]);
+        setStableLocation(null);
       }
 
       const message = newValue 
@@ -403,17 +513,17 @@ export default function NearbyScreen() {
   const getLocationAccuracyText = () => {
     if (!locationAccuracy) return '';
     if (locationAccuracy < 10) return 'Very High Accuracy';
-    if (locationAccuracy < 50) return 'High Accuracy';
-    if (locationAccuracy < 100) return 'Good Accuracy';
+    if (locationAccuracy < 20) return 'High Accuracy';
+    if (locationAccuracy < 50) return 'Good Accuracy';
     return 'Low Accuracy';
   };
 
   const getLocationAccuracyColor = () => {
     if (!locationAccuracy) return '#6B7280';
     if (locationAccuracy < 10) return '#10B981';
+    if (locationAccuracy < 20) return '#3B82F6';
     if (locationAccuracy < 50) return '#F59E0B';
-    if (locationAccuracy < 100) return '#EF4444';
-    return '#6B7280';
+    return '#EF4444';
   };
 
   const UserModal = () => {
@@ -565,7 +675,7 @@ export default function NearbyScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#6366F1" />
           <Text style={styles.loadingText}>Getting your precise location...</Text>
-          <Text style={styles.loadingSubtext}>This may take a few seconds for best accuracy</Text>
+          <Text style={styles.loadingSubtext}>Using high-accuracy GPS for best results</Text>
           {debugInfo && (
             <Text style={styles.debugText}>{debugInfo}</Text>
           )}
@@ -644,11 +754,13 @@ export default function NearbyScreen() {
               <Text style={styles.statusTitle}>Public Mode Active</Text>
               <View style={styles.statusSubtitleRow}>
                 <Text style={styles.statusSubtitle}>
-                  {isTrackingLocation ? 'Live tracking' : 'Location shared'}
+                  {stableLocation ? 'Location stabilized' : 'Stabilizing location...'}
                 </Text>
                 {locationAccuracy && (
-                  <View style={styles.accuracyBadge}>
-                    <Text style={styles.accuracyText}>{getLocationAccuracyText()}</Text>
+                  <View style={[styles.accuracyBadge, { backgroundColor: getLocationAccuracyColor() + '40' }]}>
+                    <Text style={[styles.accuracyText, { color: getLocationAccuracyColor() }]}>
+                      {getLocationAccuracyText()}
+                    </Text>
                   </View>
                 )}
               </View>
@@ -672,19 +784,24 @@ export default function NearbyScreen() {
       {debugInfo && (
         <View style={styles.debugContainer}>
           <Text style={styles.debugText}>{debugInfo}</Text>
+          {locationHistory.length > 0 && (
+            <Text style={styles.debugSubtext}>
+              Stability: {locationStabilityCount}/{STABILITY_REQUIRED_COUNT} • History: {locationHistory.length}/{LOCATION_HISTORY_SIZE}
+            </Text>
+          )}
         </View>
       )}
 
       {/* Extra Large Map Container */}
       <View style={styles.extraLargeMapContainer}>
-        {location && (
+        {stableLocation && (
           <MapBoxMap
             userLocations={nearbyUsers}
             currentUserLocation={{
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
-              accuracy: location.coords.accuracy || undefined,
-              timestamp: location.timestamp,
+              latitude: stableLocation.latitude,
+              longitude: stableLocation.longitude,
+              accuracy: stableLocation.accuracy,
+              timestamp: stableLocation.timestamp,
             }}
             onUserPinPress={handleUserPinPress}
             style={styles.map}
@@ -803,6 +920,13 @@ const styles = StyleSheet.create({
     color: '#92400E',
     textAlign: 'center',
   },
+  debugSubtext: {
+    fontSize: 10,
+    fontFamily: 'Inter-Regular',
+    color: '#92400E',
+    textAlign: 'center',
+    marginTop: 2,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -884,7 +1008,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF80',
   },
   accuracyBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 8,
@@ -892,7 +1015,6 @@ const styles = StyleSheet.create({
   accuracyText: {
     fontSize: 10,
     fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
   },
   toggleButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
