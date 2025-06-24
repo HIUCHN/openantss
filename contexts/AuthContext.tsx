@@ -461,64 +461,75 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { data: null, error: new Error('User must be in public mode to see nearby users') };
     }
 
-    if (!profile?.latitude || !profile?.longitude) {
-      console.log('❌ User location not available for nearby search');
-      return { data: null, error: new Error('User location not available') };
-    }
-
     try {
       console.log('🔍 Fetching nearby users within', radius, 'meters...');
-      console.log('📍 Current user location:', { lat: profile.latitude, lng: profile.longitude });
       
-      // First, let's get all public users with location data from profiles table
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, username, full_name, avatar_url, role, company, is_public, latitude, longitude, last_location_update')
-        .eq('is_public', true)
-        .neq('id', user.id)
-        .not('latitude', 'is', null)
-        .not('longitude', 'is', null);
+      // First, get the current user's latest location from user_location table
+      const { data: currentUserLocation, error: locationError } = await supabase
+        .from('user_location')
+        .select('latitude, longitude')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .single();
 
-      if (profilesError) {
-        console.error('❌ Error fetching profiles with location:', profilesError);
-        return { data: null, error: profilesError };
+      if (locationError || !currentUserLocation) {
+        console.log('❌ Current user location not available:', locationError);
+        return { data: null, error: new Error('User location not available') };
       }
 
-      console.log('📊 Found', profilesData?.length || 0, 'public profiles with location data');
+      console.log('📍 Current user location:', currentUserLocation);
 
-      if (!profilesData || profilesData.length === 0) {
-        console.log('📭 No public users with location found');
+      // Get all active locations from other public users
+      const { data: userLocations, error: locationsError } = await supabase
+        .from('user_location')
+        .select(`
+          *,
+          profiles!inner(
+            id,
+            username,
+            full_name,
+            avatar_url,
+            role,
+            company,
+            is_public
+          )
+        `)
+        .eq('is_active', true)
+        .eq('profiles.is_public', true)
+        .neq('user_id', user.id);
+
+      if (locationsError) {
+        console.error('❌ Error fetching user locations:', locationsError);
+        return { data: null, error: locationsError };
+      }
+
+      console.log('📊 Found', userLocations?.length || 0, 'active locations from public users');
+
+      if (!userLocations || userLocations.length === 0) {
+        console.log('📭 No public users with active location found');
         return { data: [], error: null };
       }
 
       // Filter by distance and transform to expected format
-      const userLat = profile.latitude;
-      const userLng = profile.longitude;
+      const userLat = currentUserLocation.latitude;
+      const userLng = currentUserLocation.longitude;
       
-      const nearbyUsers = profilesData
-        .map((profileLocation: any) => {
+      const nearbyUsers = userLocations
+        .map((userLocation: any) => {
           const distance = calculateDistance(
             userLat,
             userLng,
-            profileLocation.latitude,
-            profileLocation.longitude
+            userLocation.latitude,
+            userLocation.longitude
           );
           
           return {
-            ...profileLocation,
+            ...userLocation,
             distance,
-            // Transform to match expected format
-            profiles: {
-              id: profileLocation.id,
-              username: profileLocation.username,
-              full_name: profileLocation.full_name,
-              avatar_url: profileLocation.avatar_url,
-              role: profileLocation.role,
-              company: profileLocation.company,
-              is_public: profileLocation.is_public,
-            },
-            // Add timestamp for compatibility
-            timestamp: profileLocation.last_location_update || new Date().toISOString(),
+            // Keep the profiles data structure for compatibility
+            profiles: userLocation.profiles,
           };
         })
         .filter((location: any) => location.distance <= radius)
@@ -529,7 +540,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Log details for debugging
       nearbyUsers.forEach((user: any, index: number) => {
         console.log(`👤 User ${index + 1}:`, {
-          name: user.full_name || user.username,
+          name: user.profiles.full_name || user.profiles.username,
           distance: Math.round(user.distance),
           location: { lat: user.latitude, lng: user.longitude }
         });
