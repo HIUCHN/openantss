@@ -37,8 +37,7 @@ export default function AvatarUpload({
 
   const uploadImageToSupabase = async (uri: string) => {
     if (!user) {
-      Alert.alert('Error', 'You must be logged in to upload an avatar');
-      return null;
+      throw new Error('You must be logged in to upload an avatar');
     }
 
     try {
@@ -49,7 +48,7 @@ export default function AvatarUpload({
       const timestamp = Date.now();
       const fileExt = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
       const fileName = `avatar-${user.id}-${timestamp}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
+      const filePath = `${fileName}`;
 
       console.log('📁 Upload path:', filePath);
 
@@ -64,15 +63,11 @@ export default function AvatarUpload({
         uploadData = blob;
         contentType = blob.type || contentType;
       } else {
-        // Mobile implementation - use FormData
-        console.log('📱 Mobile platform detected, using FormData...');
-        const formData = new FormData();
-        formData.append('file', {
-          uri,
-          type: contentType,
-          name: fileName,
-        } as any);
-        uploadData = formData;
+        // Mobile implementation - read file as base64 and convert to blob
+        console.log('📱 Mobile platform detected, processing file...');
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        uploadData = blob;
       }
 
       // Upload to Supabase Storage
