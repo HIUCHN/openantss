@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Image, ScrollView, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,6 +30,15 @@ interface LocationData {
   longitude: number;
   accuracy: number;
   timestamp: number;
+  altitude?: number;
+  heading?: number;
+  speed?: number;
+}
+
+interface LocationCluster {
+  center: LocationData;
+  points: LocationData[];
+  confidence: number;
 }
 
 export default function NearbyScreen() {
@@ -49,22 +58,29 @@ export default function NearbyScreen() {
   const [showNearbyMetrics, setShowNearbyMetrics] = useState(true);
   const [debugInfo, setDebugInfo] = useState<string>('');
   
-  // Location stability improvements
+  // Enhanced location stability system
   const [locationHistory, setLocationHistory] = useState<LocationData[]>([]);
   const [stableLocation, setStableLocation] = useState<LocationData | null>(null);
-  const [locationStabilityCount, setLocationStabilityCount] = useState(0);
+  const [locationClusters, setLocationClusters] = useState<LocationCluster[]>([]);
+  const [locationConfidence, setLocationConfidence] = useState(0);
+  const [isLocationStabilizing, setIsLocationStabilizing] = useState(false);
   
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
   const stabilityTimer = useRef<NodeJS.Timeout | null>(null);
+  const accuracyTimer = useRef<NodeJS.Timeout | null>(null);
 
-  // Configuration for location stability
-  const LOCATION_HISTORY_SIZE = 10;
-  const STABILITY_THRESHOLD = 20; // meters
-  const STABILITY_REQUIRED_COUNT = 3; // number of consistent readings
-  const MIN_ACCURACY_THRESHOLD = 50; // meters
-  const LOCATION_UPDATE_INTERVAL = 5000; // 5 seconds
-  const STABILITY_CHECK_INTERVAL = 2000; // 2 seconds
+  // Enhanced configuration for maximum accuracy
+  const LOCATION_HISTORY_SIZE = 20;
+  const CLUSTER_DISTANCE_THRESHOLD = 15; // meters
+  const MIN_CLUSTER_SIZE = 3;
+  const CONFIDENCE_THRESHOLD = 0.8;
+  const MAX_ACCURACY_THRESHOLD = 20; // meters
+  const GOOD_ACCURACY_THRESHOLD = 10; // meters
+  const EXCELLENT_ACCURACY_THRESHOLD = 5; // meters
+  const LOCATION_UPDATE_INTERVAL = 3000; // 3 seconds
+  const STABILITY_CHECK_INTERVAL = 1000; // 1 second
+  const ACCURACY_IMPROVEMENT_TIMEOUT = 30000; // 30 seconds
 
   // Check if user has public mode enabled
   const isPublicMode = profile?.is_public ?? false;
@@ -82,6 +98,7 @@ export default function NearbyScreen() {
       setDebugInfo('');
       setLocationHistory([]);
       setStableLocation(null);
+      setLocationClusters([]);
     }
 
     return () => {
@@ -106,6 +123,10 @@ export default function NearbyScreen() {
       clearTimeout(stabilityTimer.current);
       stabilityTimer.current = null;
     }
+    if (accuracyTimer.current) {
+      clearTimeout(accuracyTimer.current);
+      accuracyTimer.current = null;
+    }
   };
 
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -123,48 +144,104 @@ export default function NearbyScreen() {
     return R * c;
   };
 
-  const isLocationStable = (newLocation: LocationData, history: LocationData[]): boolean => {
-    if (history.length < 2) return false;
+  const createLocationClusters = (locations: LocationData[]): LocationCluster[] => {
+    if (locations.length < MIN_CLUSTER_SIZE) return [];
 
-    // Check if the new location is consistent with recent history
-    const recentLocations = history.slice(-3); // Last 3 locations
-    let consistentCount = 0;
+    const clusters: LocationCluster[] = [];
+    const used = new Set<number>();
 
-    for (const historicalLocation of recentLocations) {
-      const distance = calculateDistance(
-        newLocation.latitude,
-        newLocation.longitude,
-        historicalLocation.latitude,
-        historicalLocation.longitude
-      );
+    for (let i = 0; i < locations.length; i++) {
+      if (used.has(i)) continue;
 
-      if (distance <= STABILITY_THRESHOLD) {
-        consistentCount++;
+      const cluster: LocationData[] = [locations[i]];
+      used.add(i);
+
+      for (let j = i + 1; j < locations.length; j++) {
+        if (used.has(j)) continue;
+
+        const distance = calculateDistance(
+          locations[i].latitude,
+          locations[i].longitude,
+          locations[j].latitude,
+          locations[j].longitude
+        );
+
+        if (distance <= CLUSTER_DISTANCE_THRESHOLD) {
+          cluster.push(locations[j]);
+          used.add(j);
+        }
+      }
+
+      if (cluster.length >= MIN_CLUSTER_SIZE) {
+        const center = calculateClusterCenter(cluster);
+        const confidence = calculateClusterConfidence(cluster);
+        
+        clusters.push({
+          center,
+          points: cluster,
+          confidence
+        });
       }
     }
 
-    return consistentCount >= Math.min(recentLocations.length, STABILITY_REQUIRED_COUNT - 1);
+    return clusters.sort((a, b) => b.confidence - a.confidence);
   };
 
-  const getAverageLocation = (locations: LocationData[]): LocationData => {
-    if (locations.length === 0) throw new Error('No locations to average');
-
-    const sum = locations.reduce(
-      (acc, loc) => ({
-        latitude: acc.latitude + loc.latitude,
-        longitude: acc.longitude + loc.longitude,
-        accuracy: acc.accuracy + loc.accuracy,
-        timestamp: Math.max(acc.timestamp, loc.timestamp),
-      }),
+  const calculateClusterCenter = (locations: LocationData[]): LocationData => {
+    // Weight by accuracy (better accuracy = higher weight)
+    const totalWeight = locations.reduce((sum, loc) => sum + (1 / Math.max(loc.accuracy, 1)), 0);
+    
+    const weightedSum = locations.reduce(
+      (acc, loc) => {
+        const weight = (1 / Math.max(loc.accuracy, 1)) / totalWeight;
+        return {
+          latitude: acc.latitude + loc.latitude * weight,
+          longitude: acc.longitude + loc.longitude * weight,
+          accuracy: acc.accuracy + loc.accuracy * weight,
+          timestamp: Math.max(acc.timestamp, loc.timestamp),
+        };
+      },
       { latitude: 0, longitude: 0, accuracy: 0, timestamp: 0 }
     );
 
     return {
-      latitude: sum.latitude / locations.length,
-      longitude: sum.longitude / locations.length,
-      accuracy: sum.accuracy / locations.length,
-      timestamp: sum.timestamp,
+      latitude: weightedSum.latitude,
+      longitude: weightedSum.longitude,
+      accuracy: Math.min(...locations.map(l => l.accuracy)), // Use best accuracy in cluster
+      timestamp: weightedSum.timestamp,
     };
+  };
+
+  const calculateClusterConfidence = (locations: LocationData[]): number => {
+    if (locations.length < MIN_CLUSTER_SIZE) return 0;
+
+    // Factors for confidence calculation
+    const sizeScore = Math.min(locations.length / 10, 1); // More points = higher confidence
+    const accuracyScore = 1 - (Math.min(...locations.map(l => l.accuracy)) / 100); // Better accuracy = higher confidence
+    const consistencyScore = calculateConsistencyScore(locations);
+    const timeScore = calculateTimeScore(locations);
+
+    return (sizeScore * 0.3 + accuracyScore * 0.4 + consistencyScore * 0.2 + timeScore * 0.1);
+  };
+
+  const calculateConsistencyScore = (locations: LocationData[]): number => {
+    if (locations.length < 2) return 0;
+
+    const center = calculateClusterCenter(locations);
+    const distances = locations.map(loc => 
+      calculateDistance(loc.latitude, loc.longitude, center.latitude, center.longitude)
+    );
+    
+    const avgDistance = distances.reduce((sum, d) => sum + d, 0) / distances.length;
+    return Math.max(0, 1 - (avgDistance / CLUSTER_DISTANCE_THRESHOLD));
+  };
+
+  const calculateTimeScore = (locations: LocationData[]): number => {
+    if (locations.length < 2) return 0;
+
+    const now = Date.now();
+    const recentCount = locations.filter(loc => (now - loc.timestamp) < 30000).length; // Last 30 seconds
+    return recentCount / locations.length;
   };
 
   const processLocationUpdate = (newLocationObj: Location.LocationObject) => {
@@ -173,55 +250,76 @@ export default function NearbyScreen() {
       longitude: newLocationObj.coords.longitude,
       accuracy: newLocationObj.coords.accuracy || 999,
       timestamp: newLocationObj.timestamp,
+      altitude: newLocationObj.coords.altitude || undefined,
+      heading: newLocationObj.coords.heading || undefined,
+      speed: newLocationObj.coords.speed || undefined,
     };
 
-    // Only process locations with reasonable accuracy
-    if (newLocation.accuracy > MIN_ACCURACY_THRESHOLD) {
-      console.log('📍 Location accuracy too low:', newLocation.accuracy, 'm - skipping');
-      setDebugInfo(`Low accuracy: ${Math.round(newLocation.accuracy)}m - waiting for better signal`);
-      return;
-    }
+    console.log('📍 Processing location update:', {
+      accuracy: Math.round(newLocation.accuracy),
+      latitude: newLocation.latitude.toFixed(6),
+      longitude: newLocation.longitude.toFixed(6)
+    });
 
+    // Always add to history, but filter by accuracy for processing
     setLocationHistory(prevHistory => {
       const updatedHistory = [...prevHistory, newLocation].slice(-LOCATION_HISTORY_SIZE);
       
-      // Check if location is stable
-      if (isLocationStable(newLocation, updatedHistory)) {
-        setLocationStabilityCount(prev => prev + 1);
+      // Only process high-quality locations for stability
+      const qualityLocations = updatedHistory.filter(loc => loc.accuracy <= MAX_ACCURACY_THRESHOLD);
+      
+      if (qualityLocations.length >= MIN_CLUSTER_SIZE) {
+        const clusters = createLocationClusters(qualityLocations);
+        setLocationClusters(clusters);
         
-        if (locationStabilityCount >= STABILITY_REQUIRED_COUNT - 1) {
-          // Location is stable, calculate average of recent stable locations
-          const stableLocations = updatedHistory.slice(-STABILITY_REQUIRED_COUNT);
-          const averageLocation = getAverageLocation(stableLocations);
+        if (clusters.length > 0) {
+          const bestCluster = clusters[0];
+          setLocationConfidence(bestCluster.confidence);
           
-          console.log('📍 Location stabilized:', {
-            latitude: averageLocation.latitude.toFixed(6),
-            longitude: averageLocation.longitude.toFixed(6),
-            accuracy: Math.round(averageLocation.accuracy),
-            stabilityCount: locationStabilityCount + 1
-          });
-
-          setStableLocation(averageLocation);
-          setLocation(newLocationObj); // Keep original for display
-          setLocationAccuracy(averageLocation.accuracy);
-          setDebugInfo(`Stable location: ${averageLocation.latitude.toFixed(6)}, ${averageLocation.longitude.toFixed(6)} (±${Math.round(averageLocation.accuracy)}m)`);
-          
-          // Store the stable location
-          if (isPublicMode) {
-            storeUserLocation({
-              latitude: averageLocation.latitude,
-              longitude: averageLocation.longitude,
-              accuracy: averageLocation.accuracy,
-              timestamp: new Date(averageLocation.timestamp),
+          if (bestCluster.confidence >= CONFIDENCE_THRESHOLD) {
+            const newStableLocation = bestCluster.center;
+            
+            console.log('📍 High-confidence location established:', {
+              latitude: newStableLocation.latitude.toFixed(6),
+              longitude: newStableLocation.longitude.toFixed(6),
+              accuracy: Math.round(newStableLocation.accuracy),
+              confidence: Math.round(bestCluster.confidence * 100),
+              clusterSize: bestCluster.points.length
             });
+
+            setStableLocation(newStableLocation);
+            setLocation(newLocationObj); // Keep original for display
+            setLocationAccuracy(newStableLocation.accuracy);
+            setIsLocationStabilizing(false);
+            
+            setDebugInfo(`Stable location: ${newStableLocation.latitude.toFixed(6)}, ${newStableLocation.longitude.toFixed(6)} (±${Math.round(newStableLocation.accuracy)}m, ${Math.round(bestCluster.confidence * 100)}% confidence)`);
+            
+            // Store the stable location
+            if (isPublicMode) {
+              storeUserLocation({
+                latitude: newStableLocation.latitude,
+                longitude: newStableLocation.longitude,
+                accuracy: newStableLocation.accuracy,
+                altitude: newStableLocation.altitude,
+                heading: newStableLocation.heading,
+                speed: newStableLocation.speed,
+                timestamp: new Date(newStableLocation.timestamp),
+              });
+            }
+          } else {
+            setIsLocationStabilizing(true);
+            setDebugInfo(`Stabilizing location... ${Math.round(bestCluster.confidence * 100)}% confidence (need ${Math.round(CONFIDENCE_THRESHOLD * 100)}%)`);
           }
         } else {
-          setDebugInfo(`Stabilizing... ${locationStabilityCount + 1}/${STABILITY_REQUIRED_COUNT} consistent readings`);
+          setIsLocationStabilizing(true);
+          setDebugInfo(`Collecting location data... ${qualityLocations.length}/${MIN_CLUSTER_SIZE} quality readings`);
         }
       } else {
-        // Location changed significantly, reset stability counter
-        setLocationStabilityCount(0);
-        setDebugInfo(`Location changed - resetting stability check (±${Math.round(newLocation.accuracy)}m)`);
+        setIsLocationStabilizing(true);
+        const accuracyStatus = newLocation.accuracy <= EXCELLENT_ACCURACY_THRESHOLD ? 'excellent' :
+                             newLocation.accuracy <= GOOD_ACCURACY_THRESHOLD ? 'good' :
+                             newLocation.accuracy <= MAX_ACCURACY_THRESHOLD ? 'acceptable' : 'poor';
+        setDebugInfo(`Waiting for quality GPS signal... Current: ${Math.round(newLocation.accuracy)}m (${accuracyStatus})`);
       }
 
       return updatedHistory;
@@ -232,7 +330,8 @@ export default function NearbyScreen() {
     try {
       setLoading(true);
       setErrorMessage(null);
-      setDebugInfo('Initializing high-accuracy location...');
+      setIsLocationStabilizing(true);
+      setDebugInfo('Initializing ultra-high-accuracy GPS...');
 
       // Check if location services are enabled
       const enabled = await Location.hasServicesEnabledAsync();
@@ -254,34 +353,55 @@ export default function NearbyScreen() {
         return;
       }
 
-      // Get initial high-accuracy location
-      console.log('📍 Getting initial high-accuracy location...');
-      setDebugInfo('Getting initial location...');
+      // Get initial high-accuracy location with multiple attempts
+      console.log('📍 Getting initial ultra-high-accuracy location...');
+      setDebugInfo('Getting initial location with maximum accuracy...');
       
-      const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation,
-        maximumAge: 5000, // Accept cached location up to 5 seconds old
-        timeout: 20000, // 20 second timeout
-      });
+      // Try multiple location requests for better accuracy
+      const locationAttempts = [];
+      for (let i = 0; i < 3; i++) {
+        try {
+          const currentLocation = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.BestForNavigation,
+            maximumAge: 1000, // Very fresh location
+            timeout: 15000,
+          });
+          locationAttempts.push(currentLocation);
+          
+          // Process each attempt
+          processLocationUpdate(currentLocation);
+          
+          // Small delay between attempts
+          if (i < 2) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        } catch (error) {
+          console.warn(`Location attempt ${i + 1} failed:`, error);
+        }
+      }
 
-      console.log('📍 Initial location obtained:', {
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
-        accuracy: currentLocation.coords.accuracy,
-      });
-
-      // Process the initial location
-      processLocationUpdate(currentLocation);
+      if (locationAttempts.length === 0) {
+        throw new Error('Failed to get location after multiple attempts');
+      }
 
       if (isPublicMode) {
         // Fetch nearby users
         await fetchNearbyUsers();
       }
+
+      // Set timeout for accuracy improvement
+      accuracyTimer.current = setTimeout(() => {
+        if (isLocationStabilizing) {
+          setDebugInfo('Location stabilization taking longer than expected. Using best available location.');
+          setIsLocationStabilizing(false);
+        }
+      }, ACCURACY_IMPROVEMENT_TIMEOUT);
+
     } catch (error) {
       console.error('Error initializing location:', error);
       setDebugInfo(`Error: ${error.message}`);
       if (error.code === 'E_LOCATION_TIMEOUT') {
-        setErrorMessage('Location request timed out. Please try again.');
+        setErrorMessage('Location request timed out. Please ensure you have a clear view of the sky and try again.');
       } else if (error.code === 'E_LOCATION_UNAVAILABLE') {
         setErrorMessage('Location is temporarily unavailable. Please try again.');
       } else {
@@ -297,13 +417,13 @@ export default function NearbyScreen() {
 
     try {
       setIsTrackingLocation(true);
-      console.log('📍 Starting high-accuracy location tracking...');
+      console.log('📍 Starting ultra-high-accuracy location tracking...');
       
       locationSubscription.current = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.BestForNavigation,
           timeInterval: LOCATION_UPDATE_INTERVAL,
-          distanceInterval: 5, // Update every 5 meters
+          distanceInterval: 3, // Update every 3 meters
         },
         (newLocation) => {
           console.log('📍 Location update received:', {
@@ -400,7 +520,6 @@ export default function NearbyScreen() {
         });
 
         setNearbyUsers(formattedUsers);
-        setDebugInfo(`Found ${formattedUsers.length} nearby users`);
         
         // Log user details for debugging
         console.log('👥 Formatted nearby users:', formattedUsers.map(u => ({
@@ -410,7 +529,6 @@ export default function NearbyScreen() {
         })));
       } else {
         setNearbyUsers([]);
-        setDebugInfo('No nearby users found');
       }
     } catch (error) {
       console.error('Error fetching nearby users:', error);
@@ -447,11 +565,12 @@ export default function NearbyScreen() {
     if (!isPublicMode) return;
     
     setRefreshing(true);
-    setDebugInfo('Refreshing...');
+    setDebugInfo('Refreshing with enhanced accuracy...');
     // Reset location stability and get fresh location
     setLocationHistory([]);
     setStableLocation(null);
-    setLocationStabilityCount(0);
+    setLocationClusters([]);
+    setLocationConfidence(0);
     await initializeLocation();
     setRefreshing(false);
   };
@@ -512,6 +631,7 @@ export default function NearbyScreen() {
 
   const getLocationAccuracyText = () => {
     if (!locationAccuracy) return '';
+    if (locationAccuracy < 5) return 'Ultra High Accuracy';
     if (locationAccuracy < 10) return 'Very High Accuracy';
     if (locationAccuracy < 20) return 'High Accuracy';
     if (locationAccuracy < 50) return 'Good Accuracy';
@@ -520,10 +640,20 @@ export default function NearbyScreen() {
 
   const getLocationAccuracyColor = () => {
     if (!locationAccuracy) return '#6B7280';
-    if (locationAccuracy < 10) return '#10B981';
-    if (locationAccuracy < 20) return '#3B82F6';
-    if (locationAccuracy < 50) return '#F59E0B';
+    if (locationAccuracy < 5) return '#10B981';
+    if (locationAccuracy < 10) return '#3B82F6';
+    if (locationAccuracy < 20) return '#F59E0B';
     return '#EF4444';
+  };
+
+  const getLocationStatusText = () => {
+    if (isLocationStabilizing) {
+      return `Stabilizing GPS... ${Math.round(locationConfidence * 100)}% confidence`;
+    }
+    if (stableLocation) {
+      return `GPS Stabilized (${Math.round(locationConfidence * 100)}% confidence)`;
+    }
+    return 'Acquiring GPS signal...';
   };
 
   const UserModal = () => {
@@ -617,12 +747,12 @@ export default function NearbyScreen() {
         <View style={styles.permissionIcon}>
           <MapPin size={48} color="#6366F1" />
         </View>
-        <Text style={styles.permissionTitle}>Location Access Required</Text>
+        <Text style={styles.permissionTitle}>Ultra-Precise Location Access Required</Text>
         <Text style={styles.permissionDescription}>
-          To see nearby professionals and enable networking opportunities, we need access to your location.
+          To see nearby professionals with maximum accuracy, we need access to your precise location using advanced GPS technology.
         </Text>
         <TouchableOpacity style={styles.permissionButton} onPress={initializeLocation}>
-          <Text style={styles.permissionButtonText}>Enable Location</Text>
+          <Text style={styles.permissionButtonText}>Enable Ultra-Precise Location</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -636,7 +766,7 @@ export default function NearbyScreen() {
         </View>
         <Text style={styles.privateModeTitle}>Private Mode Enabled</Text>
         <Text style={styles.privateModeDescription}>
-          Your location is not being shared. Enable Public Mode to see nearby professionals and be discoverable by others.
+          Your location is not being shared. Enable Public Mode to see nearby professionals and be discoverable by others with ultra-precise accuracy.
         </Text>
         <TouchableOpacity 
           style={[styles.enablePublicButton, isTogglingMode && styles.buttonDisabled]} 
@@ -674,10 +804,15 @@ export default function NearbyScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#6366F1" />
-          <Text style={styles.loadingText}>Getting your precise location...</Text>
-          <Text style={styles.loadingSubtext}>Using high-accuracy GPS for best results</Text>
+          <Text style={styles.loadingText}>Getting ultra-precise location...</Text>
+          <Text style={styles.loadingSubtext}>Using advanced GPS clustering for maximum accuracy</Text>
           {debugInfo && (
             <Text style={styles.debugText}>{debugInfo}</Text>
+          )}
+          {locationHistory.length > 0 && (
+            <Text style={styles.debugSubtext}>
+              GPS readings: {locationHistory.length}/{LOCATION_HISTORY_SIZE} • Clusters: {locationClusters.length}
+            </Text>
           )}
         </View>
       </SafeAreaView>
@@ -740,9 +875,9 @@ export default function NearbyScreen() {
         </View>
       </View>
 
-      {/* Status Banner */}
+      {/* Enhanced Status Banner */}
       <LinearGradient
-        colors={['#10B981', '#059669']}
+        colors={stableLocation ? ['#10B981', '#059669'] : ['#3B82F6', '#2563EB']}
         style={styles.statusBanner}
       >
         <View style={styles.statusContent}>
@@ -751,10 +886,10 @@ export default function NearbyScreen() {
               <Eye size={16} color="#FFFFFF" />
             </View>
             <View>
-              <Text style={styles.statusTitle}>Public Mode Active</Text>
+              <Text style={styles.statusTitle}>Ultra-Precise Mode Active</Text>
               <View style={styles.statusSubtitleRow}>
                 <Text style={styles.statusSubtitle}>
-                  {stableLocation ? 'Location stabilized' : 'Stabilizing location...'}
+                  {getLocationStatusText()}
                 </Text>
                 {locationAccuracy && (
                   <View style={[styles.accuracyBadge, { backgroundColor: getLocationAccuracyColor() + '40' }]}>
@@ -780,14 +915,20 @@ export default function NearbyScreen() {
         </View>
       </LinearGradient>
 
-      {/* Debug Info */}
+      {/* Enhanced Debug Info */}
       {debugInfo && (
         <View style={styles.debugContainer}>
           <Text style={styles.debugText}>{debugInfo}</Text>
           {locationHistory.length > 0 && (
             <Text style={styles.debugSubtext}>
-              Stability: {locationStabilityCount}/{STABILITY_REQUIRED_COUNT} • History: {locationHistory.length}/{LOCATION_HISTORY_SIZE}
+              GPS readings: {locationHistory.length}/{LOCATION_HISTORY_SIZE} • Clusters: {locationClusters.length} • Confidence: {Math.round(locationConfidence * 100)}%
             </Text>
+          )}
+          {isLocationStabilizing && (
+            <View style={styles.stabilizingIndicator}>
+              <ActivityIndicator size="small" color="#F59E0B" />
+              <Text style={styles.stabilizingText}>Stabilizing GPS signal...</Text>
+            </View>
           )}
         </View>
       )}
@@ -808,7 +949,7 @@ export default function NearbyScreen() {
           />
         )}
         
-        {/* Map Overlay Info */}
+        {/* Enhanced Map Overlay Info */}
         <View style={styles.mapOverlay}>
           <View style={styles.mapInfo}>
             <Navigation size={12} color="#FFFFFF" />
@@ -816,6 +957,13 @@ export default function NearbyScreen() {
               {locationAccuracy ? `±${Math.round(locationAccuracy)}m` : 'Locating...'}
             </Text>
           </View>
+          {locationConfidence > 0 && (
+            <View style={[styles.confidenceInfo, { backgroundColor: getLocationAccuracyColor() + 'CC' }]}>
+              <Text style={styles.confidenceText}>
+                {Math.round(locationConfidence * 100)}% confidence
+              </Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -840,7 +988,7 @@ export default function NearbyScreen() {
         </View>
       </TouchableOpacity>
 
-      {/* Collapsible User List */}
+      {/* Collaps ible User List */}
       {showNearbyMetrics && (
         <View style={styles.nearbyUsersList}>
           <ScrollView 
@@ -849,7 +997,7 @@ export default function NearbyScreen() {
             style={styles.userList}
             contentContainerStyle={styles.userListContent}
           >
-            {nearbyUsers.map((user) => (
+            {nearbyUsers.map((user, index) => (
               <TouchableOpacity 
                 key={user.id} 
                 style={styles.compactUserCard}
@@ -926,6 +1074,18 @@ const styles = StyleSheet.create({
     color: '#92400E',
     textAlign: 'center',
     marginTop: 2,
+  },
+  stabilizingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+    gap: 6,
+  },
+  stabilizingText: {
+    fontSize: 10,
+    fontFamily: 'Inter-Medium',
+    color: '#92400E',
   },
   header: {
     flexDirection: 'row',
@@ -1056,6 +1216,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 16,
     right: 16,
+    gap: 8,
   },
   mapInfo: {
     flexDirection: 'row',
@@ -1067,6 +1228,19 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   mapInfoText: {
+    fontSize: 11,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+  },
+  confidenceInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    justifyContent: 'center',
+  },
+  confidenceText: {
     fontSize: 11,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',

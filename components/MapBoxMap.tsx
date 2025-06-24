@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, StyleSheet, Platform, Alert, Dimensions } from 'react-native';
+import { View, StyleSheet, Platform, Alert, Dimensions, Text } from 'react-native';
 import * as Location from 'expo-location';
 
 const { width, height } = Dimensions.get('window');
@@ -30,6 +30,7 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
   const map = useRef<any>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const currentUserMarker = useRef<any>(null);
+  const accuracyCircle = useRef<any>(null);
   const userMarkers = useRef<any[]>([]);
 
   useEffect(() => {
@@ -122,9 +123,15 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
     // @ts-ignore
     const mapboxgl = window.mapboxgl;
 
-    // Remove existing current user marker
+    // Remove existing current user marker and accuracy circle
     if (currentUserMarker.current) {
       currentUserMarker.current.remove();
+    }
+    
+    if (accuracyCircle.current) {
+      map.current.removeLayer(accuracyCircle.current);
+      map.current.removeSource(accuracyCircle.current + '-source');
+      accuracyCircle.current = null;
     }
 
     // Create pulsing current user marker
@@ -159,6 +166,42 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
     currentUserMarker.current = new mapboxgl.Marker(currentUserElement)
       .setLngLat([currentUserLocation.longitude, currentUserLocation.latitude])
       .addTo(map.current);
+
+    // Add accuracy circle if accuracy is available
+    if (currentUserLocation.accuracy) {
+      const circleId = 'accuracy-circle-' + Date.now();
+      accuracyCircle.current = circleId;
+      
+      map.current.addSource(circleId + '-source', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [currentUserLocation.longitude, currentUserLocation.latitude]
+          },
+          properties: {}
+        }
+      });
+      
+      map.current.addLayer({
+        id: circleId,
+        type: 'circle',
+        source: circleId + '-source',
+        paint: {
+          'circle-radius': {
+            stops: [
+              [0, 0],
+              [20, currentUserLocation.accuracy * map.current.getZoom() * 0.5]
+            ],
+            base: 2
+          },
+          'circle-color': 'rgba(99, 102, 241, 0.2)',
+          'circle-stroke-width': 1,
+          'circle-stroke-color': 'rgba(99, 102, 241, 0.6)'
+        }
+      });
+    }
 
     // Center map on current user location
     map.current.flyTo({
@@ -240,6 +283,15 @@ const FallbackMap = ({ userLocations, currentUserLocation, onUserPinPress, style
         {currentUserLocation && (
           <View style={[styles.currentUserPin, { top: '50%', left: '50%' }]}>
             <View style={styles.currentUserPinInner} />
+            {currentUserLocation.accuracy && (
+              <View style={[styles.accuracyCircle, { 
+                width: Math.min(300, currentUserLocation.accuracy * 2), 
+                height: Math.min(300, currentUserLocation.accuracy * 2),
+                borderRadius: Math.min(300, currentUserLocation.accuracy * 2) / 2,
+                top: -Math.min(300, currentUserLocation.accuracy),
+                left: -Math.min(300, currentUserLocation.accuracy),
+              }]} />
+            )}
           </View>
         )}
         
@@ -262,6 +314,15 @@ const FallbackMap = ({ userLocations, currentUserLocation, onUserPinPress, style
             </View>
           </View>
         ))}
+
+        {/* Accuracy indicator */}
+        {currentUserLocation?.accuracy && (
+          <View style={styles.accuracyIndicator}>
+            <Text style={styles.accuracyText}>
+              Accuracy: ±{Math.round(currentUserLocation.accuracy)}m
+            </Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -304,12 +365,20 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 8,
     transform: [{ translateX: -25 }, { translateY: -25 }],
+    zIndex: 10,
   },
   currentUserPinInner: {
     width: 20,
     height: 20,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
+  },
+  accuracyCircle: {
+    position: 'absolute',
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.6)',
+    zIndex: 5,
   },
   userPin: {
     position: 'absolute',
@@ -325,11 +394,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5,
+    zIndex: 8,
   },
   pinImage: {
     width: 28,
     height: 28,
     borderRadius: 14,
     backgroundColor: '#FFFFFF',
+  },
+  accuracyIndicator: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  accuracyText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
   },
 });
