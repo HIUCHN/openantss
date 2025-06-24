@@ -392,6 +392,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('📍 Storing user location in user_location table:', locationData);
       
+      // First, set all existing locations for this user to inactive
+      const { error: deactivateError } = await supabase
+        .from('user_location')
+        .update({ is_active: false })
+        .eq('user_id', user.id);
+
+      if (deactivateError) {
+        console.error('❌ Error deactivating previous locations:', deactivateError);
+      }
+
+      // Then insert the new location as active
       const locationRecord = {
         user_id: user.id,
         latitude: locationData.latitude,
@@ -401,7 +412,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         heading: locationData.heading || null,
         speed: locationData.speed || null,
         timestamp: (locationData.timestamp || new Date()).toISOString(),
-        is_active: true,
+        is_active: true, // Explicitly set to true
       };
 
       const { error } = await supabase
@@ -409,7 +420,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .insert(locationRecord);
 
       if (!error) {
-        console.log('✅ User location stored successfully in user_location table');
+        console.log('✅ User location stored successfully in user_location table with is_active = true');
         
         // Also update the profile table for backward compatibility
         await updateUserLocation(locationData.latitude, locationData.longitude);
