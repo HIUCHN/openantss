@@ -39,7 +39,7 @@ export default function NearbyScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isTogglingMode, setIsTogglingMode] = useState(false);
   const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
-  const [showNearbyMetrics, setShowNearbyMetrics] = useState(true);
+  const [showNearbyMetrics, setShowNearbyMetrics] = useState(true); // New state for toggling metrics
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -104,9 +104,9 @@ export default function NearbyScreen() {
       // Get current location with high accuracy
       console.log('📍 Getting high-accuracy location...');
       const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation,
-        maximumAge: 10000,
-        timeout: 15000,
+        accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy
+        maximumAge: 10000, // Use cached location if less than 10 seconds old
+        timeout: 15000, // 15 second timeout
       });
 
       console.log('📍 Location obtained:', {
@@ -156,9 +156,9 @@ export default function NearbyScreen() {
       
       locationSubscription.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 15000,
-          distanceInterval: 10,
+          accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy
+          timeInterval: 15000, // Update every 15 seconds (more frequent)
+          distanceInterval: 10, // Update when moved 10 meters (more sensitive)
         },
         async (newLocation) => {
           console.log('📍 Location updated:', {
@@ -211,7 +211,7 @@ export default function NearbyScreen() {
       if (isPublicMode && location) {
         fetchNearbyUsers();
       }
-    }, 30000);
+    }, 30000); // Refresh every 30 seconds (more frequent)
   };
 
   const stopPeriodicRefresh = () => {
@@ -225,7 +225,6 @@ export default function NearbyScreen() {
     if (!isPublicMode || !location) return;
 
     try {
-      console.log('🔍 Fetching nearby users...');
       const { data, error } = await getNearbyUsers(2000); // 2km radius
       
       if (error) {
@@ -234,8 +233,6 @@ export default function NearbyScreen() {
       }
 
       if (data) {
-        console.log('📍 Raw nearby users data:', data);
-        
         const formattedUsers: NearbyUser[] = data.map((userLocation: any, index: number) => {
           const user = userLocation.profiles;
           const distance = calculateDistance(
@@ -267,7 +264,6 @@ export default function NearbyScreen() {
           };
         });
 
-        console.log('✅ Formatted nearby users:', formattedUsers.length, 'users');
         setNearbyUsers(formattedUsers);
       }
     } catch (error) {
@@ -321,7 +317,6 @@ export default function NearbyScreen() {
   };
 
   const handleUserPinPress = (user: NearbyUser) => {
-    console.log('📍 User pin pressed:', user.name);
     setSelectedUser(user);
     setShowUserModal(true);
   };
@@ -693,14 +688,6 @@ export default function NearbyScreen() {
             showsHorizontalScrollIndicator={false}
             style={styles.userList}
             contentContainerStyle={styles.userListContent}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={handleRefresh}
-                colors={['#6366F1']}
-                tintColor="#6366F1"
-              />
-            }
           >
             {nearbyUsers.map((user) => (
               <TouchableOpacity 
