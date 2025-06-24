@@ -4,8 +4,6 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { encode, decode } from 'base-64';
 
-console.log("anhnq1 create supabase")
-
 // Get environment variables with fallbacks for development
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
