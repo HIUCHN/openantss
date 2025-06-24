@@ -30,6 +30,7 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
   const map = useRef<any>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const currentUserMarker = useRef<any>(null);
+  const userMarkers = useRef<any[]>([]);
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -71,17 +72,28 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
 
     // @ts-ignore - MapBox GL is loaded dynamically
     const mapboxgl = window.mapboxgl;
-    mapboxgl.accessToken = 'pk.eyJ1IjoiaGl1Y2hhbiIsImEiOiJjbWJzZ3JnMzUwaWxzMmlxdXVsZXkxcG1jIn0.cruZNFJhtA4rM45hlzjsyA';
+    
+    // Get access token from environment variable
+    const accessToken = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN;
+    
+    if (!accessToken) {
+      console.error('❌ Mapbox access token not found. Please add EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN to your .env file');
+      Alert.alert('Map Error', 'Mapbox access token not configured. Please contact support.');
+      return;
+    }
+    
+    mapboxgl.accessToken = accessToken;
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12', // Changed from light-v11 to streets-v12
-      center: [-0.1276, 51.5074], // London coordinates
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center: [-0.1276, 51.5074], // London coordinates as default
       zoom: 15,
       attributionControl: false,
     });
 
     map.current.on('load', () => {
+      console.log('✅ Mapbox map loaded successfully');
       setMapLoaded(true);
       
       // Add geolocate control for user location tracking
@@ -125,6 +137,7 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
     currentUserElement.style.boxShadow = '0 0 0 0 rgba(99, 102, 241, 0.7)';
     currentUserElement.style.animation = 'pulse 2s infinite';
     currentUserElement.style.cursor = 'default';
+    currentUserElement.style.zIndex = '1000';
     
     // Add pulsing animation
     const style = document.createElement('style');
@@ -154,6 +167,8 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
       zoom: 16,
       duration: 1000
     });
+
+    console.log('✅ Current user location updated on map:', currentUserLocation);
   };
 
   const addUserMarkers = () => {
@@ -161,6 +176,12 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
 
     // @ts-ignore
     const mapboxgl = window.mapboxgl;
+
+    // Remove existing user markers
+    userMarkers.current.forEach(marker => marker.remove());
+    userMarkers.current = [];
+
+    console.log('📍 Adding', userLocations.length, 'user markers to map');
 
     userLocations.forEach((user) => {
       // Create custom marker element
@@ -175,26 +196,58 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
       markerElement.style.backgroundPosition = 'center';
       markerElement.style.cursor = 'pointer';
       markerElement.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+      markerElement.style.zIndex = '999';
+
+      // Add hover effect
+      markerElement.addEventListener('mouseenter', () => {
+        markerElement.style.transform = 'scale(1.1)';
+        markerElement.style.transition = 'transform 0.2s ease';
+      });
+
+      markerElement.addEventListener('mouseleave', () => {
+        markerElement.style.transform = 'scale(1)';
+      });
 
       // Add click handler
       markerElement.addEventListener('click', () => {
+        console.log('📍 User marker clicked:', user.name);
         onUserPinPress(user);
       });
 
       // Create marker
-      new mapboxgl.Marker(markerElement)
+      const marker = new mapboxgl.Marker(markerElement)
         .setLngLat([user.longitude, user.latitude])
         .addTo(map.current);
+
+      userMarkers.current.push(marker);
+
+      console.log('📍 Added marker for user:', user.name, 'at', user.latitude, user.longitude);
     });
 
-    // Fit map to show all markers if no current user location
-    if (userLocations.length > 0 && !currentUserLocation) {
+    // Fit map to show all markers if we have user locations
+    if (userLocations.length > 0) {
       const bounds = new mapboxgl.LngLatBounds();
+      
+      // Add current user location to bounds if available
+      if (currentUserLocation) {
+        bounds.extend([currentUserLocation.longitude, currentUserLocation.latitude]);
+      }
+      
+      // Add all user locations to bounds
       userLocations.forEach(user => {
         bounds.extend([user.longitude, user.latitude]);
       });
-      map.current.fitBounds(bounds, { padding: 50 });
+      
+      // Only fit bounds if we have multiple points
+      if (userLocations.length > 1 || (userLocations.length > 0 && currentUserLocation)) {
+        map.current.fitBounds(bounds, { 
+          padding: 50,
+          maxZoom: 16 // Don't zoom in too much
+        });
+      }
     }
+
+    console.log('✅ All user markers added successfully');
   };
 
   return (
@@ -212,7 +265,7 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
   );
 };
 
-// Fallback component for mobile (shows static map with overlays)
+// Enhanced fallback component for mobile with better user location display
 const FallbackMap = ({ userLocations, currentUserLocation, onUserPinPress, style }: MapBoxMapProps) => {
   return (
     <View style={[styles.container, style]}>
@@ -224,32 +277,70 @@ const FallbackMap = ({ userLocations, currentUserLocation, onUserPinPress, style
           </View>
         )}
         
-        {/* Other user pins */}
-        {userLocations.map((user, index) => (
-          <View
-            key={user.id}
-            style={[
-              styles.userPin,
-              {
-                top: `${30 + index * 15}%`,
-                left: `${40 + index * 10}%`,
-                backgroundColor: user.pinColor,
-              }
-            ]}
-            onTouchEnd={() => onUserPinPress(user)}
-          >
-            <View style={styles.pinImage}>
-              {/* Placeholder for user image */}
+        {/* Other user pins - distributed around the map */}
+        {userLocations.map((user, index) => {
+          // Calculate position based on relative distance from current user
+          let top = '50%';
+          let left = '50%';
+          
+          if (currentUserLocation) {
+            // Simple positioning based on lat/lng difference
+            const latDiff = user.latitude - currentUserLocation.latitude;
+            const lngDiff = user.longitude - currentUserLocation.longitude;
+            
+            // Convert to percentage positions (simplified)
+            const topPercent = Math.max(10, Math.min(90, 50 - (latDiff * 1000)));
+            const leftPercent = Math.max(10, Math.min(90, 50 + (lngDiff * 1000)));
+            
+            top = `${topPercent}%`;
+            left = `${leftPercent}%`;
+          } else {
+            // Fallback to distributed positioning
+            top = `${30 + (index * 15) % 40}%`;
+            left = `${40 + (index * 10) % 20}%`;
+          }
+          
+          return (
+            <View
+              key={user.id}
+              style={[
+                styles.userPin,
+                {
+                  top,
+                  left,
+                  backgroundColor: user.pinColor,
+                }
+              ]}
+              onTouchEnd={() => onUserPinPress(user)}
+            >
+              <View style={styles.pinImage}>
+                {/* Placeholder for user image */}
+                <View style={styles.pinImagePlaceholder} />
+              </View>
             </View>
+          );
+        })}
+        
+        {/* Map info overlay */}
+        <View style={styles.mapInfoOverlay}>
+          <View style={styles.mapInfoCard}>
+            <Text style={styles.mapInfoText}>
+              {userLocations.length} nearby user{userLocations.length !== 1 ? 's' : ''}
+            </Text>
+            {currentUserLocation && (
+              <Text style={styles.mapInfoSubtext}>
+                Your location: {currentUserLocation.latitude.toFixed(4)}, {currentUserLocation.longitude.toFixed(4)}
+              </Text>
+            )}
           </View>
-        ))}
+        </View>
       </View>
     </View>
   );
 };
 
 export default function MapBoxMap(props: MapBoxMapProps) {
-  // Use web implementation on web, fallback on mobile
+  // Use web implementation on web, enhanced fallback on mobile
   if (Platform.OS === 'web') {
     return <WebMapBox {...props} />;
   } else {
@@ -285,6 +376,7 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 8,
     transform: [{ translateX: -25 }, { translateY: -25 }],
+    zIndex: 1000,
   },
   currentUserPinInner: {
     width: 20,
@@ -306,11 +398,46 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5,
+    transform: [{ translateX: -20 }, { translateY: -20 }],
+    zIndex: 999,
   },
   pinImage: {
     width: 28,
     height: 28,
     borderRadius: 14,
     backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  pinImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#D1D5DB',
+  },
+  mapInfoOverlay: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    right: 16,
+  },
+  mapInfoCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 8,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  mapInfoText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  mapInfoSubtext: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
   },
 });
