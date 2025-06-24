@@ -26,7 +26,6 @@ interface AuthContextType {
   ) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: any }>;
-  updateUserLocation: (latitude: number, longitude: number) => Promise<{ error: any }>;
   storeUserLocation: (locationData: {
     latitude: number;
     longitude: number;
@@ -340,38 +339,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateUserLocation = async (latitude: number, longitude: number) => {
-    if (!user) return { error: new Error('No user logged in') };
-
-    try {
-      console.log('📍 Updating user location in database:', { latitude, longitude });
-      
-      const locationUpdate = {
-        latitude,
-        longitude,
-        last_location_update: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from('profiles')
-        .update(locationUpdate)
-        .eq('id', user.id);
-
-      if (!error && profile) {
-        setProfile({ ...profile, ...locationUpdate });
-        console.log('✅ User location updated successfully in database');
-      } else if (error) {
-        console.error('❌ Error updating user location in database:', error);
-      }
-
-      return { error };
-    } catch (error) {
-      console.error('❌ Unexpected location update error:', error);
-      return { error };
-    }
-  };
-
   const storeUserLocation = async (locationData: {
     latitude: number;
     longitude: number;
@@ -421,9 +388,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!error) {
         console.log('✅ User location stored successfully in user_location table with is_active = true');
-        
-        // Also update the profile table for backward compatibility
-        await updateUserLocation(locationData.latitude, locationData.longitude);
       } else {
         console.error('❌ Error storing user location in user_location table:', error);
       }
@@ -619,33 +583,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('❌ Error clearing user location data:', locationError);
       }
 
-      // Clear location from profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ 
-          latitude: null, 
-          longitude: null, 
-          last_location_update: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
-
-      if (profileError) {
-        console.error('❌ Error clearing profile location:', profileError);
-      }
-
-      // Update local profile state
-      if (profile) {
-        setProfile({
-          ...profile,
-          latitude: null,
-          longitude: null,
-          last_location_update: null,
-        });
-      }
-
       console.log('✅ User location data cleared successfully');
-      return { error: locationError || profileError };
+      return { error: locationError };
     } catch (error) {
       console.error('❌ Unexpected error clearing location:', error);
       return { error };
@@ -1195,7 +1134,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signUp,
     signOut,
     updateProfile,
-    updateUserLocation,
     storeUserLocation,
     getUserLocationHistory,
     getNearbyUsers,
