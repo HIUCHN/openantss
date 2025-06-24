@@ -30,6 +30,7 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
   const map = useRef<any>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const currentUserMarker = useRef<any>(null);
+  const userMarkers = useRef<any[]>([]);
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -55,8 +56,13 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
   }, []);
 
   useEffect(() => {
-    if (mapLoaded && userLocations.length > 0) {
-      addUserMarkers();
+    if (mapLoaded) {
+      // Clear existing markers when userLocations change
+      clearUserMarkers();
+      
+      if (userLocations.length > 0) {
+        addUserMarkers();
+      }
     }
   }, [mapLoaded, userLocations]);
 
@@ -102,6 +108,12 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
 
     // Add navigation controls
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+  };
+
+  const clearUserMarkers = () => {
+    // Remove all existing user markers
+    userMarkers.current.forEach(marker => marker.remove());
+    userMarkers.current = [];
   };
 
   const updateCurrentUserLocation = () => {
@@ -162,6 +174,8 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
     // @ts-ignore
     const mapboxgl = window.mapboxgl;
 
+    console.log('🗺️ Adding markers for', userLocations.length, 'users');
+
     userLocations.forEach((user) => {
       // Create custom marker element
       const markerElement = document.createElement('div');
@@ -182,9 +196,14 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
       });
 
       // Create marker
-      new mapboxgl.Marker(markerElement)
+      const marker = new mapboxgl.Marker(markerElement)
         .setLngLat([user.longitude, user.latitude])
         .addTo(map.current);
+      
+      // Store marker reference for later removal
+      userMarkers.current.push(marker);
+      
+      console.log('📍 Added marker for user:', user.name, 'at', user.latitude, user.longitude);
     });
 
     // Fit map to show all markers if no current user location

@@ -450,58 +450,91 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const getNearbyUsers = async (radius: number = 1000) => {
-    if (!user || !profile?.latitude || !profile?.longitude) {
-      return { data: null, error: new Error('No user location available') };
+  const getNearbyUsers = async (radius: number = 2000) => {
+    if (!user) {
+      console.log('❌ No user logged in for nearby users search');
+      return { data: null, error: new Error('No user logged in') };
+    }
+
+    if (!profile?.is_public) {
+      console.log('❌ User is in private mode, cannot search for nearby users');
+      return { data: null, error: new Error('User must be in public mode to see nearby users') };
+    }
+
+    if (!profile?.latitude || !profile?.longitude) {
+      console.log('❌ User location not available for nearby search');
+      return { data: null, error: new Error('User location not available') };
     }
 
     try {
       console.log('🔍 Fetching nearby users within', radius, 'meters...');
+      console.log('📍 Current user location:', { lat: profile.latitude, lng: profile.longitude });
       
-      // This is a simplified proximity search
-      // In production, you might want to use PostGIS for more accurate distance calculations
-      const { data, error } = await supabase
-        .from('user_location')
-        .select(`
-          *,
-          profiles!inner(
-            id,
-            username,
-            full_name,
-            avatar_url,
-            role,
-            company,
-            is_public
-          )
-        `)
-        .eq('is_active', true)
-        .neq('user_id', user.id)
+      // First, let's get all public users with location data from profiles table
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username, full_name, avatar_url, role, company, is_public, latitude, longitude, last_location_update')
+        .eq('is_public', true)
+        .neq('id', user.id)
         .not('latitude', 'is', null)
         .not('longitude', 'is', null);
 
-      if (error) {
-        console.error('❌ Error fetching nearby users:', error);
-        return { data: null, error };
+      if (profilesError) {
+        console.error('❌ Error fetching profiles with location:', profilesError);
+        return { data: null, error: profilesError };
       }
 
-      // Filter by distance (simplified calculation)
+      console.log('📊 Found', profilesData?.length || 0, 'public profiles with location data');
+
+      if (!profilesData || profilesData.length === 0) {
+        console.log('📭 No public users with location found');
+        return { data: [], error: null };
+      }
+
+      // Filter by distance and transform to expected format
       const userLat = profile.latitude;
       const userLng = profile.longitude;
       
-      const nearbyUsers = data?.filter((location: any) => {
-        if (!location.profiles?.is_public) return false;
-        
-        const distance = calculateDistance(
-          userLat,
-          userLng,
-          location.latitude,
-          location.longitude
-        );
-        
-        return distance <= radius;
-      }) || [];
+      const nearbyUsers = profilesData
+        .map((profileLocation: any) => {
+          const distance = calculateDistance(
+            userLat,
+            userLng,
+            profileLocation.latitude,
+            profileLocation.longitude
+          );
+          
+          return {
+            ...profileLocation,
+            distance,
+            // Transform to match expected format
+            profiles: {
+              id: profileLocation.id,
+              username: profileLocation.username,
+              full_name: profileLocation.full_name,
+              avatar_url: profileLocation.avatar_url,
+              role: profileLocation.role,
+              company: profileLocation.company,
+              is_public: profileLocation.is_public,
+            },
+            // Add timestamp for compatibility
+            timestamp: profileLocation.last_location_update || new Date().toISOString(),
+          };
+        })
+        .filter((location: any) => location.distance <= radius)
+        .sort((a: any, b: any) => a.distance - b.distance);
 
-      console.log('✅ Found', nearbyUsers.length, 'nearby users');
+      console.log('✅ Found', nearbyUsers.length, 'nearby users within', radius, 'meters');
+      
+      // Log details for debugging
+      nearbyUsers.forEach((user: any, index: number) => {
+        console.log(`👤 User ${index + 1}:`, {
+          name: user.full_name || user.username,
+          distance: Math.round(user.distance),
+          location: { lat: user.latitude, lng: user.longitude }
+        });
+      });
+
       return { data: nearbyUsers, error: null };
     } catch (error) {
       console.error('❌ Unexpected error fetching nearby users:', error);

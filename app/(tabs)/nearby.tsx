@@ -39,7 +39,8 @@ export default function NearbyScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isTogglingMode, setIsTogglingMode] = useState(false);
   const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
-  const [showNearbyMetrics, setShowNearbyMetrics] = useState(true); // New state for toggling metrics
+  const [showNearbyMetrics, setShowNearbyMetrics] = useState(true);
+  const [debugInfo, setDebugInfo] = useState<string>('');
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -56,6 +57,7 @@ export default function NearbyScreen() {
       setLocation(null);
       setNearbyUsers([]);
       setErrorMessage(null);
+      setDebugInfo('');
     }
 
     return () => {
@@ -82,11 +84,13 @@ export default function NearbyScreen() {
     try {
       setLoading(true);
       setErrorMessage(null);
+      setDebugInfo('Initializing location...');
 
       // Check if location services are enabled
       const enabled = await Location.hasServicesEnabledAsync();
       if (!enabled) {
         setErrorMessage('Location services are disabled. Please enable them in your device settings.');
+        setDebugInfo('Location services disabled');
         setLoading(false);
         return;
       }
@@ -97,16 +101,19 @@ export default function NearbyScreen() {
 
       if (status !== 'granted') {
         setErrorMessage('Location permission is required to see nearby professionals. Please grant permission in settings.');
+        setDebugInfo('Location permission denied');
         setLoading(false);
         return;
       }
 
       // Get current location with high accuracy
       console.log('📍 Getting high-accuracy location...');
+      setDebugInfo('Getting location...');
+      
       const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy
-        maximumAge: 10000, // Use cached location if less than 10 seconds old
-        timeout: 15000, // 15 second timeout
+        accuracy: Location.Accuracy.BestForNavigation,
+        maximumAge: 10000,
+        timeout: 15000,
       });
 
       console.log('📍 Location obtained:', {
@@ -117,9 +124,11 @@ export default function NearbyScreen() {
 
       setLocation(currentLocation);
       setLocationAccuracy(currentLocation.coords.accuracy || null);
+      setDebugInfo(`Location: ${currentLocation.coords.latitude.toFixed(6)}, ${currentLocation.coords.longitude.toFixed(6)}`);
 
       if (isPublicMode) {
         // Store location in database
+        console.log('📍 Storing location in database...');
         await storeUserLocation({
           latitude: currentLocation.coords.latitude,
           longitude: currentLocation.coords.longitude,
@@ -135,6 +144,7 @@ export default function NearbyScreen() {
       }
     } catch (error) {
       console.error('Error initializing location:', error);
+      setDebugInfo(`Error: ${error.message}`);
       if (error.code === 'E_LOCATION_TIMEOUT') {
         setErrorMessage('Location request timed out. Please try again.');
       } else if (error.code === 'E_LOCATION_UNAVAILABLE') {
@@ -156,9 +166,9 @@ export default function NearbyScreen() {
       
       locationSubscription.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy
-          timeInterval: 15000, // Update every 15 seconds (more frequent)
-          distanceInterval: 10, // Update when moved 10 meters (more sensitive)
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 15000,
+          distanceInterval: 10,
         },
         async (newLocation) => {
           console.log('📍 Location updated:', {
@@ -169,6 +179,7 @@ export default function NearbyScreen() {
 
           setLocation(newLocation);
           setLocationAccuracy(newLocation.coords.accuracy || null);
+          setDebugInfo(`Updated: ${newLocation.coords.latitude.toFixed(6)}, ${newLocation.coords.longitude.toFixed(6)}`);
           
           // Only store location if still in public mode
           if (isPublicMode) {
@@ -211,7 +222,7 @@ export default function NearbyScreen() {
       if (isPublicMode && location) {
         fetchNearbyUsers();
       }
-    }, 30000); // Refresh every 30 seconds (more frequent)
+    }, 30000);
   };
 
   const stopPeriodicRefresh = () => {
@@ -225,17 +236,21 @@ export default function NearbyScreen() {
     if (!isPublicMode || !location) return;
 
     try {
+      console.log('🔍 Fetching nearby users...');
       const { data, error } = await getNearbyUsers(2000); // 2km radius
       
       if (error) {
         console.error('Error fetching nearby users:', error);
+        setDebugInfo(`Error fetching users: ${error.message}`);
         return;
       }
 
+      console.log('📊 Raw nearby users data:', data);
+
       if (data) {
         const formattedUsers: NearbyUser[] = data.map((userLocation: any, index: number) => {
-          const user = userLocation.profiles;
-          const distance = calculateDistance(
+          const user = userLocation.profiles || userLocation;
+          const distance = userLocation.distance || calculateDistance(
             location.coords.latitude,
             location.coords.longitude,
             userLocation.latitude,
@@ -254,20 +269,32 @@ export default function NearbyScreen() {
             latitude: userLocation.latitude,
             longitude: userLocation.longitude,
             distance: Math.round(distance),
-            lastSeen: formatLastSeen(userLocation.timestamp),
+            lastSeen: formatLastSeen(userLocation.timestamp || userLocation.last_location_update),
             image: user.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
             pinColor,
             statusText: distance < 100 ? 'Very Close' : distance < 500 ? 'Nearby' : 'In Area',
             bio: user.bio,
             skills: user.skills,
-            isOnline: isRecentLocation(userLocation.timestamp),
+            isOnline: isRecentLocation(userLocation.timestamp || userLocation.last_location_update),
           };
         });
 
         setNearbyUsers(formattedUsers);
+        setDebugInfo(`Found ${formattedUsers.length} nearby users`);
+        
+        // Log user details for debugging
+        console.log('👥 Formatted nearby users:', formattedUsers.map(u => ({
+          name: u.name,
+          distance: u.distance,
+          location: { lat: u.latitude, lng: u.longitude }
+        })));
+      } else {
+        setNearbyUsers([]);
+        setDebugInfo('No nearby users found');
       }
     } catch (error) {
       console.error('Error fetching nearby users:', error);
+      setDebugInfo(`Fetch error: ${error.message}`);
     }
   };
 
@@ -287,6 +314,8 @@ export default function NearbyScreen() {
   };
 
   const formatLastSeen = (timestamp: string): string => {
+    if (!timestamp) return 'Unknown';
+    
     const now = new Date();
     const lastSeen = new Date(timestamp);
     const diffMs = now.getTime() - lastSeen.getTime();
@@ -301,6 +330,8 @@ export default function NearbyScreen() {
   };
 
   const isRecentLocation = (timestamp: string): boolean => {
+    if (!timestamp) return false;
+    
     const now = new Date();
     const lastSeen = new Date(timestamp);
     const diffMs = now.getTime() - lastSeen.getTime();
@@ -311,6 +342,7 @@ export default function NearbyScreen() {
     if (!isPublicMode) return;
     
     setRefreshing(true);
+    setDebugInfo('Refreshing...');
     // Refresh both location and nearby users
     await initializeLocation();
     setRefreshing(false);
@@ -346,6 +378,7 @@ export default function NearbyScreen() {
         setLocation(null);
         setNearbyUsers([]);
         setErrorMessage(null);
+        setDebugInfo('');
       }
 
       const message = newValue 
@@ -533,6 +566,9 @@ export default function NearbyScreen() {
           <ActivityIndicator size="large" color="#6366F1" />
           <Text style={styles.loadingText}>Getting your precise location...</Text>
           <Text style={styles.loadingSubtext}>This may take a few seconds for best accuracy</Text>
+          {debugInfo && (
+            <Text style={styles.debugText}>{debugInfo}</Text>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -632,7 +668,14 @@ export default function NearbyScreen() {
         </View>
       </LinearGradient>
 
-      {/* Extra Large Map Container - Takes up 3/4 of the screen */}
+      {/* Debug Info */}
+      {debugInfo && (
+        <View style={styles.debugContainer}>
+          <Text style={styles.debugText}>{debugInfo}</Text>
+        </View>
+      )}
+
+      {/* Extra Large Map Container */}
       <View style={styles.extraLargeMapContainer}>
         {location && (
           <MapBoxMap
@@ -745,6 +788,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
+    textAlign: 'center',
+  },
+  debugContainer: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F59E0B',
+  },
+  debugText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#92400E',
     textAlign: 'center',
   },
   header: {
