@@ -42,48 +42,60 @@ export default function AvatarUpload({
 
     try {
       setUploading(true);
+      console.log('🖼️ Starting avatar upload process...');
 
       // Create a unique filename
       const fileExt = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
       const fileName = `${user.id}-${Date.now()}.${fileExt}`;
       const filePath = `avatars/${fileName}`;
 
-      // Convert image to blob for upload
-      let formData = new FormData();
-      
+      console.log('📁 File path:', filePath);
+
+      let uploadData;
+
       if (Platform.OS === 'web') {
-        // Web implementation
+        // Web implementation - convert to blob
+        console.log('🌐 Web platform detected, converting to blob...');
         const response = await fetch(uri);
         const blob = await response.blob();
-        formData.append('file', blob, fileName);
+        uploadData = blob;
       } else {
-        // Mobile implementation
+        // Mobile implementation - use FormData
+        console.log('📱 Mobile platform detected, using FormData...');
+        const formData = new FormData();
         formData.append('file', {
           uri,
           type: `image/${fileExt}`,
           name: fileName,
         } as any);
+        uploadData = formData;
       }
 
       // Upload to Supabase Storage
+      console.log('☁️ Uploading to Supabase storage...');
       const { data, error } = await supabase.storage
         .from('avatars')
-        .upload(filePath, formData, {
+        .upload(filePath, uploadData, {
           cacheControl: '3600',
           upsert: false,
         });
 
       if (error) {
-        console.error('Upload error:', error);
+        console.error('❌ Upload error:', error);
         throw error;
       }
+
+      console.log('✅ Upload successful:', data);
 
       // Get the public URL
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
 
+      console.log('🔗 Public URL:', publicUrl);
+
       // Update the user's profile with the new avatar URL
+      console.log('👤 Updating profile with new avatar URL...');
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ 
@@ -93,9 +105,11 @@ export default function AvatarUpload({
         .eq('id', user.id);
 
       if (updateError) {
-        console.error('Profile update error:', updateError);
+        console.error('❌ Profile update error:', updateError);
         throw updateError;
       }
+
+      console.log('✅ Profile updated successfully');
 
       // Call the callback to update the UI
       onAvatarUpdate(publicUrl);
@@ -103,8 +117,8 @@ export default function AvatarUpload({
       
       Alert.alert('Success', 'Avatar updated successfully!');
     } catch (error) {
-      console.error('Error uploading avatar:', error);
-      Alert.alert('Error', 'Failed to upload avatar. Please try again.');
+      console.error('❌ Error uploading avatar:', error);
+      Alert.alert('Error', `Failed to upload avatar: ${error.message}`);
     } finally {
       setUploading(false);
     }
@@ -115,6 +129,7 @@ export default function AvatarUpload({
     if (!hasPermission) return;
 
     try {
+      console.log('📷 Opening image picker...');
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -123,11 +138,14 @@ export default function AvatarUpload({
         base64: false,
       });
 
+      console.log('📷 Image picker result:', result);
+
       if (!result.canceled && result.assets[0]) {
+        console.log('🖼️ Image selected:', result.assets[0].uri);
         await uploadImage(result.assets[0].uri);
       }
     } catch (error) {
-      console.error('Error picking image:', error);
+      console.error('❌ Error picking image:', error);
       Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   };
@@ -159,7 +177,7 @@ export default function AvatarUpload({
         await uploadImage(result.assets[0].uri);
       }
     } catch (error) {
-      console.error('Error taking photo:', error);
+      console.error('❌ Error taking photo:', error);
       Alert.alert('Error', 'Failed to take photo. Please try again.');
     }
   };
@@ -193,7 +211,7 @@ export default function AvatarUpload({
               onAvatarUpdate('');
               Alert.alert('Success', 'Avatar removed successfully!');
             } catch (error) {
-              console.error('Error removing avatar:', error);
+              console.error('❌ Error removing avatar:', error);
               Alert.alert('Error', 'Failed to remove avatar. Please try again.');
             } finally {
               setUploading(false);
