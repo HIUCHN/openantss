@@ -19,6 +19,7 @@ export default function AvatarUpload({
   const { user, profile } = useAuth();
   const [uploading, setUploading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [localImageUri, setLocalImageUri] = useState<string | null>(null);
 
   const requestPermissions = async () => {
     if (Platform.OS !== 'web') {
@@ -34,24 +35,26 @@ export default function AvatarUpload({
     return true;
   };
 
-  const uploadImage = async (uri: string) => {
+  const uploadImageToSupabase = async (uri: string) => {
     if (!user) {
       Alert.alert('Error', 'You must be logged in to upload an avatar');
-      return;
+      return null;
     }
 
     try {
-      setUploading(true);
       console.log('🖼️ Starting avatar upload process...');
+      console.log('📁 Image URI:', uri);
 
-      // Create a unique filename
+      // Create a unique filename with timestamp
+      const timestamp = Date.now();
       const fileExt = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const fileName = `avatar-${user.id}-${timestamp}.${fileExt}`;
       const filePath = `avatars/${fileName}`;
 
-      console.log('📁 File path:', filePath);
+      console.log('📁 Upload path:', filePath);
 
       let uploadData;
+      let contentType = `image/${fileExt}`;
 
       if (Platform.OS === 'web') {
         // Web implementation - convert to blob
@@ -59,13 +62,14 @@ export default function AvatarUpload({
         const response = await fetch(uri);
         const blob = await response.blob();
         uploadData = blob;
+        contentType = blob.type || contentType;
       } else {
         // Mobile implementation - use FormData
         console.log('📱 Mobile platform detected, using FormData...');
         const formData = new FormData();
         formData.append('file', {
           uri,
-          type: `image/${fileExt}`,
+          type: contentType,
           name: fileName,
         } as any);
         uploadData = formData;
@@ -77,7 +81,8 @@ export default function AvatarUpload({
         .from('avatars')
         .upload(filePath, uploadData, {
           cacheControl: '3600',
-          upsert: false,
+          upsert: true, // Allow overwriting
+          contentType: contentType,
         });
 
       if (error) {
@@ -87,37 +92,77 @@ export default function AvatarUpload({
 
       console.log('✅ Upload successful:', data);
 
-      // Get the public URL
+      // Get the public URL with cache busting
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
 
-      console.log('🔗 Public URL:', publicUrl);
+      // Add cache busting parameter
+      const finalUrl = `${publicUrl}?t=${timestamp}`;
+      console.log('🔗 Final public URL:', finalUrl);
 
-      // Update the user's profile with the new avatar URL
+      return finalUrl;
+    } catch (error) {
+      console.error('❌ Error uploading to Supabase:', error);
+      throw error;
+    }
+  };
+
+  const updateProfileAvatar = async (avatarUrl: string) => {
+    if (!user) return;
+
+    try {
       console.log('👤 Updating profile with new avatar URL...');
-      const { error: updateError } = await supabase
+      
+      // Update the profile in the database
+      const { error } = await supabase
         .from('profiles')
         .update({ 
-          avatar_url: publicUrl,
+          avatar_url: avatarUrl,
           updated_at: new Date().toISOString()
         })
         .eq('id', user.id);
 
-      if (updateError) {
-        console.error('❌ Profile update error:', updateError);
-        throw updateError;
+      if (error) {
+        console.error('❌ Profile update error:', error);
+        throw error;
       }
 
       console.log('✅ Profile updated successfully');
+      return true;
+    } catch (error) {
+      console.error('❌ Error updating profile:', error);
+      throw error;
+    }
+  };
 
-      // Call the callback to update the UI
-      onAvatarUpdate(publicUrl);
+  const uploadImage = async (uri: string) => {
+    try {
+      setUploading(true);
+      console.log('🚀 Starting complete upload process...');
+
+      // First, set the local image immediately for instant feedback
+      setLocalImageUri(uri);
+
+      // Upload to Supabase
+      const avatarUrl = await uploadImageToSupabase(uri);
+      
+      if (!avatarUrl) {
+        throw new Error('Failed to get avatar URL');
+      }
+
+      // Update the profile
+      await updateProfileAvatar(avatarUrl);
+
+      // Update the UI
+      onAvatarUpdate(avatarUrl);
       setShowOptions(false);
       
       Alert.alert('Success', 'Avatar updated successfully!');
+      console.log('✅ Complete upload process finished');
     } catch (error) {
-      console.error('❌ Error uploading avatar:', error);
+      console.error('❌ Error in complete upload process:', error);
+      setLocalImageUri(null); // Reset local image on error
       Alert.alert('Error', `Failed to upload avatar: ${error.message}`);
     } finally {
       setUploading(false);
@@ -208,6 +253,7 @@ export default function AvatarUpload({
 
               if (error) throw error;
 
+              setLocalImageUri(null);
               onAvatarUpdate('');
               Alert.alert('Success', 'Avatar removed successfully!');
             } catch (error) {
@@ -220,6 +266,13 @@ export default function AvatarUpload({
         }
       ]
     );
+  };
+
+  const getDisplayImage = () => {
+    // Priority: local image (for immediate feedback) > current avatar > placeholder
+    if (localImageUri) return localImageUri;
+    if (currentAvatarUrl) return currentAvatarUrl;
+    return null;
   };
 
   const OptionsModal = () => {
@@ -259,7 +312,7 @@ export default function AvatarUpload({
               </TouchableOpacity>
             )}
 
-            {currentAvatarUrl && (
+            {(currentAvatarUrl || localImageUri) && (
               <TouchableOpacity 
                 style={[styles.optionButton, styles.removeButton]}
                 onPress={removeAvatar}
@@ -275,6 +328,8 @@ export default function AvatarUpload({
     );
   };
 
+  const displayImage = getDisplayImage();
+
   return (
     <>
       <TouchableOpacity 
@@ -283,10 +338,14 @@ export default function AvatarUpload({
         disabled={uploading}
         activeOpacity={0.7}
       >
-        {currentAvatarUrl ? (
+        {displayImage ? (
           <Image 
-            source={{ uri: currentAvatarUrl }} 
+            source={{ uri: displayImage }} 
             style={[styles.avatar, { width: size, height: size }]} 
+            onError={(error) => {
+              console.error('❌ Image load error:', error);
+              setLocalImageUri(null); // Reset on error
+            }}
           />
         ) : (
           <View style={[styles.placeholderAvatar, { width: size, height: size }]}>
