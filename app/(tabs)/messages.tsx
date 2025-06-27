@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Alert, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Search, Plus, Calendar, Paperclip, Users, MessageCircle, CheckCircle as Check, Clock, MapPin, Bell, ArrowLeft, Send } from 'lucide-react-native';
+import { Search, Plus, Calendar, Paperclip, Users, MessageCircle, CircleCheck as Check, Clock, MapPin, Bell, ArrowLeft, Send } from 'lucide-react-native';
 import SearchBar from '@/components/SearchBar';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
 import { useAuth } from '@/contexts/AuthContext';
