@@ -1,111 +1,178 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Alert, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Search, Plus, Calendar, Paperclip, Users, Handshake, CircleCheck as CheckCircle, Clock, MapPin, Bell, ArrowLeft } from 'lucide-react-native';
+import { Search, Plus, Calendar, Paperclip, Users, MessageCircle, CheckCircle as Check, Clock, MapPin, Bell, ArrowLeft, Send } from 'lucide-react-native';
 import SearchBar from '@/components/SearchBar';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
+import { useAuth } from '@/contexts/AuthContext';
+import { router } from 'expo-router';
+import ContinuousTextInput from '@/components/ContinuousTextInput';
 
-type TabType = 'inbox' | 'requests' | 'handshakes';
+type TabType = 'inbox' | 'connections';
 
-const conversations = [
-  {
-    id: 1,
-    name: 'Alex Chen',
-    role: 'Senior Product Designer',
-    lastMessage: 'Thanks for connecting! Would love to discuss the design thinking workshop...',
-    timestamp: '2m',
-    image: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
-    unread: true,
-    online: true,
-  },
-  {
-    id: 2,
-    name: 'Sarah Williams',
-    role: 'Frontend Developer',
-    lastMessage: 'Shared portfolio link with you',
-    timestamp: '15m',
-    image: 'https://images.pexels.com/photos/1130626/pexels-photo-1130626.jpeg?auto=compress&cs=tinysrgb&w=400',
-    unread: false,
-    online: false,
-    hasAttachment: true,
-    attachmentName: 'Portfolio.pdf',
-  },
-  {
-    id: 3,
-    name: 'React Meetup Group',
-    role: '5 members',
-    lastMessage: 'Mike: Who\'s going to the next workshop?',
-    timestamp: '1h',
-    image: null,
-    unread: true,
-    online: false,
-    isGroup: true,
-  },
-];
+interface Conversation {
+  conversation_partner_id: string;
+  conversation_partner_name: string;
+  conversation_partner_avatar: string;
+  conversation_partner_role: string;
+  last_message_content: string;
+  last_message_time: string;
+  unread_count: number;
+  is_online: boolean;
+}
 
-const connectionRequests = [
-  {
-    id: 1,
-    name: 'Mike Johnson',
-    role: 'Product Manager at Meta',
-    message: 'Hi! Saw your talk about user research. Would love to connect and learn more about your methods.',
-    timestamp: '5m ago',
-    image: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400',
-    tags: ['Product Strategy', 'UX Research'],
-  },
-  {
-    id: 2,
-    name: 'Lisa Park',
-    role: 'Data Scientist at Airbnb',
-    message: 'Interested in collaborating on ML projects. Love your portfolio!',
-    timestamp: '12m ago',
-    image: 'https://images.pexels.com/photos/1239288/pexels-photo-1239288.jpeg?auto=compress&cs=tinysrgb&w=400',
-    tags: ['Machine Learning', 'Collaboration'],
-  },
-];
+interface Connection {
+  id: string;
+  partner_id: string;
+  name: string;
+  role: string;
+  company: string;
+  image: string;
+  connected_at: string;
+  is_online: boolean;
+}
 
-const handshakeRequests = [
-  {
-    id: 1,
-    name: 'David Lee',
-    role: 'iOS Developer at Spotify',
-    message: 'Would love to meet at the coffee bar near booth 12. Available for the next 30 minutes!',
-    timestamp: 'pending',
-    image: 'https://images.pexels.com/photos/2379005/pexels-photo-2379005.jpeg?auto=compress&cs=tinysrgb&w=400',
-    location: 'Coffee Central, Booth 12',
-    status: 'pending',
-    type: 'meeting',
-  },
-  {
-    id: 2,
-    name: 'James Wilson',
-    role: 'Marketing Director at Tesla',
-    message: 'Great! See you at table 4 in 10 minutes. Looking forward to our chat!',
-    timestamp: 'accepted',
-    image: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=400',
-    location: 'Table 4',
-    status: 'accepted',
-    type: 'meeting',
-    timeLeft: 'In 10 minutes',
-  },
-];
+interface Message {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  content: string;
+  is_read: boolean;
+  created_at: string;
+  sender_name: string;
+  sender_avatar: string;
+}
 
 export default function MessagesScreen() {
+  const { profile, getConversations, getUserConnections, sendMessage, getConversationMessages, markMessageAsRead } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('inbox');
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredConversations, setFilteredConversations] = useState(conversations);
-  const [filteredRequests, setFilteredRequests] = useState(connectionRequests);
-  const [filteredHandshakes, setFilteredHandshakes] = useState(handshakeRequests);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [filteredConversations, setFilteredConversations] = useState<Conversation[]>([]);
+  const [filteredConnections, setFilteredConnections] = useState<Connection[]>([]);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+
+  // Load conversations and connections on component mount
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Load messages when a conversation is selected
+  useEffect(() => {
+    if (selectedConversation) {
+      loadConversationMessages(selectedConversation);
+    }
+  }, [selectedConversation]);
+
+  const loadData = async () => {
+    setLoading(true);
+    await Promise.all([
+      loadConversations(),
+      loadConnections()
+    ]);
+    setLoading(false);
+  };
+
+  const loadConversations = async () => {
+    try {
+      const { data, error } = await getConversations();
+      
+      if (error) {
+        console.error('❌ Error loading conversations:', error);
+        Alert.alert('Error', 'Failed to load conversations. Please try again.');
+        return;
+      }
+
+      if (data) {
+        setConversations(data);
+        setFilteredConversations(data);
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error loading conversations:', error);
+      Alert.alert('Error', 'An unexpected error occurred while loading conversations.');
+    }
+  };
+
+  const loadConnections = async () => {
+    try {
+      const { data, error } = await getUserConnections();
+      
+      if (error) {
+        console.error('❌ Error loading connections:', error);
+        Alert.alert('Error', 'Failed to load connections. Please try again.');
+        return;
+      }
+
+      if (data) {
+        setConnections(data);
+        setFilteredConnections(data);
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error loading connections:', error);
+      Alert.alert('Error', 'An unexpected error occurred while loading connections.');
+    }
+  };
+
+  const loadConversationMessages = async (userId: string) => {
+    try {
+      setLoadingMessages(true);
+      
+      const { data, error } = await getConversationMessages(userId);
+      
+      if (error) {
+        console.error('❌ Error loading messages:', error);
+        Alert.alert('Error', 'Failed to load messages. Please try again.');
+        return;
+      }
+
+      if (data) {
+        setMessages(data);
+        
+        // Mark unread messages as read
+        const unreadMessages = data.filter(
+          msg => msg.receiver_id === profile?.id && !msg.is_read
+        );
+        
+        for (const msg of unreadMessages) {
+          await markMessageAsRead(msg.id);
+        }
+        
+        // Refresh conversations to update unread counts
+        if (unreadMessages.length > 0) {
+          loadConversations();
+        }
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error loading messages:', error);
+      Alert.alert('Error', 'An unexpected error occurred while loading messages.');
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    if (selectedConversation) {
+      await loadConversationMessages(selectedConversation);
+    }
+    setRefreshing(false);
+  };
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
     
     if (query.trim() === '') {
       setFilteredConversations(conversations);
-      setFilteredRequests(connectionRequests);
-      setFilteredHandshakes(handshakeRequests);
+      setFilteredConnections(connections);
       return;
     }
 
@@ -113,33 +180,76 @@ export default function MessagesScreen() {
     
     // Filter conversations
     const conversationResults = conversations.filter(conv => 
-      conv.name.toLowerCase().includes(lowercaseQuery) ||
-      conv.role.toLowerCase().includes(lowercaseQuery) ||
-      conv.lastMessage.toLowerCase().includes(lowercaseQuery)
+      conv.conversation_partner_name.toLowerCase().includes(lowercaseQuery) ||
+      conv.conversation_partner_role.toLowerCase().includes(lowercaseQuery) ||
+      conv.last_message_content.toLowerCase().includes(lowercaseQuery)
     );
     
-    // Filter requests
-    const requestResults = connectionRequests.filter(req =>
-      req.name.toLowerCase().includes(lowercaseQuery) ||
-      req.role.toLowerCase().includes(lowercaseQuery) ||
-      req.message.toLowerCase().includes(lowercaseQuery) ||
-      req.tags.some(tag => tag.toLowerCase().includes(lowercaseQuery))
-    );
-    
-    // Filter handshakes
-    const handshakeResults = handshakeRequests.filter(handshake =>
-      handshake.name.toLowerCase().includes(lowercaseQuery) ||
-      handshake.role.toLowerCase().includes(lowercaseQuery) ||
-      handshake.message.toLowerCase().includes(lowercaseQuery)
+    // Filter connections
+    const connectionResults = connections.filter(conn =>
+      conn.name.toLowerCase().includes(lowercaseQuery) ||
+      conn.role.toLowerCase().includes(lowercaseQuery) ||
+      conn.company.toLowerCase().includes(lowercaseQuery)
     );
     
     setFilteredConversations(conversationResults);
-    setFilteredRequests(requestResults);
-    setFilteredHandshakes(handshakeResults);
+    setFilteredConnections(connectionResults);
+  };
+
+  const handleSendMessage = async (content: string, receiverId: string) => {
+    if (!content.trim()) return;
+    
+    try {
+      setSendingMessage(true);
+      
+      const { data, error } = await sendMessage(receiverId, content);
+      
+      if (error) {
+        console.error('❌ Error sending message:', error);
+        Alert.alert('Error', 'Failed to send message. Please try again.');
+        return;
+      }
+
+      if (data) {
+        // Add the new message to the messages list
+        setMessages(prev => [...prev, data]);
+        
+        // If this is a new conversation, refresh conversations
+        if (!conversations.some(c => c.conversation_partner_id === receiverId)) {
+          loadConversations();
+        }
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error sending message:', error);
+      Alert.alert('Error', 'An unexpected error occurred while sending your message.');
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+
+  const handleStartNewConversation = (connection: Connection) => {
+    setSelectedConversation(connection.partner_id);
+    setActiveTab('inbox');
   };
 
   const handleProfilePress = () => {
     setShowAccountSettings(true);
+  };
+
+  const formatTimestamp = (timestamp: string): string => {
+    const now = new Date();
+    const messageTime = new Date(timestamp);
+    const diffMs = now.getTime() - messageTime.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    
+    return messageTime.toLocaleDateString();
   };
 
   const TabButton = ({ tab, title, count, isActive, onPress }: {
@@ -159,8 +269,7 @@ export default function MessagesScreen() {
       {count > 0 && (
         <View style={[
           styles.tabBadge,
-          tab === 'requests' && styles.redBadge,
-          tab === 'handshakes' && styles.orangeBadge,
+          tab === 'inbox' && styles.redBadge
         ]}>
           <Text style={styles.tabBadgeText}>{count}</Text>
         </View>
@@ -168,164 +277,220 @@ export default function MessagesScreen() {
     </TouchableOpacity>
   );
 
-  const ConversationCard = ({ conversation }) => (
-    <TouchableOpacity style={styles.conversationCard}>
+  const ConversationCard = ({ conversation, isSelected }: { conversation: Conversation, isSelected: boolean }) => (
+    <TouchableOpacity 
+      style={[styles.conversationCard, isSelected && styles.selectedConversationCard]}
+      onPress={() => setSelectedConversation(conversation.conversation_partner_id)}
+    >
       <View style={styles.avatarContainer}>
-        {conversation.isGroup ? (
-          <LinearGradient
-            colors={['#8B5CF6', '#EC4899']}
-            style={styles.groupAvatar}
-          >
-            <Users size={20} color="#FFFFFF" />
-          </LinearGradient>
-        ) : (
-          <Image source={{ uri: conversation.image }} style={styles.avatar} />
-        )}
-        {conversation.online && !conversation.isGroup && (
+        <Image 
+          source={{ uri: conversation.conversation_partner_avatar || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
+          style={styles.avatar} 
+        />
+        {conversation.is_online && (
           <View style={styles.onlineIndicator} />
         )}
       </View>
       <View style={styles.conversationInfo}>
         <View style={styles.conversationHeader}>
-          <Text style={styles.senderName}>{conversation.name}</Text>
-          <Text style={styles.timestamp}>{conversation.timestamp}</Text>
+          <Text style={styles.senderName}>{conversation.conversation_partner_name}</Text>
+          <Text style={styles.timestamp}>{formatTimestamp(conversation.last_message_time)}</Text>
         </View>
-        <Text style={styles.senderRole}>{conversation.role}</Text>
+        <Text style={styles.senderRole}>{conversation.conversation_partner_role}</Text>
         <Text style={[
           styles.lastMessage,
-          conversation.unread && styles.unreadMessage
+          conversation.unread_count > 0 && styles.unreadMessage
         ]} numberOfLines={1}>
-          {conversation.lastMessage}
+          {conversation.last_message_content}
         </Text>
-        {conversation.hasAttachment && (
-          <View style={styles.attachmentRow}>
-            <Paperclip size={12} color="#6B7280" />
-            <Text style={styles.attachmentText}>{conversation.attachmentName}</Text>
-          </View>
-        )}
       </View>
-      {conversation.unread && (
-        <View style={styles.unreadDot} />
+      {conversation.unread_count > 0 && (
+        <View style={styles.unreadBadge}>
+          <Text style={styles.unreadBadgeText}>{conversation.unread_count}</Text>
+        </View>
       )}
     </TouchableOpacity>
   );
 
-  const RequestCard = ({ request }) => (
-    <View style={styles.requestCard}>
-      <View style={styles.requestHeader}>
-        <Image source={{ uri: request.image }} style={styles.avatar} />
-        <View style={styles.requestInfo}>
-          <View style={styles.requestNameRow}>
-            <Text style={styles.requestName}>{request.name}</Text>
-            <Text style={styles.requestTimestamp}>{request.timestamp}</Text>
-          </View>
-          <Text style={styles.requestRole}>{request.role}</Text>
-        </View>
-      </View>
-      <Text style={styles.requestMessage}>{request.message}</Text>
-      <View style={styles.tagsContainer}>
-        {request.tags.map((tag, index) => (
-          <View key={index} style={[
-            styles.tag,
-            index === 0 ? styles.blueTag : styles.greenTag
-          ]}>
-            <Text style={[
-              styles.tagText,
-              index === 0 ? styles.blueTagText : styles.greenTagText
-            ]}>
-              {tag}
-            </Text>
-          </View>
-        ))}
-      </View>
-      <View style={styles.requestActions}>
-        <TouchableOpacity style={styles.acceptButton}>
-          <Text style={styles.acceptButtonText}>Accept</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.declineButton}>
-          <Text style={styles.declineButtonText}>Decline</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  const HandshakeCard = ({ handshake }) => (
-    <View style={styles.handshakeCard}>
-      <View style={styles.handshakeHeader}>
-        <Image source={{ uri: handshake.image }} style={styles.avatar} />
-        <View style={styles.handshakeInfo}>
-          <View style={styles.handshakeNameRow}>
-            <Text style={styles.handshakeName}>{handshake.name}</Text>
-            <View style={[
-              styles.statusBadge,
-              handshake.status === 'accepted' ? styles.acceptedBadge : styles.pendingBadge
-            ]}>
-              <Text style={[
-                styles.statusBadgeText,
-                handshake.status === 'accepted' ? styles.acceptedBadgeText : styles.pendingBadgeText
-              ]}>
-                {handshake.status === 'accepted' ? 'Accepted' : 'Pending'}
+  const ConnectionCard = ({ connection }: { connection: Connection }) => (
+    <View style={styles.connectionCard}>
+      <View style={styles.connectionHeader}>
+        <Image 
+          source={{ uri: connection.image || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
+          style={styles.connectionAvatar} 
+        />
+        <View style={styles.connectionInfo}>
+          <Text style={styles.connectionName}>{connection.name}</Text>
+          <Text style={styles.connectionRole}>{connection.role} at {connection.company}</Text>
+          <View style={styles.connectionStatus}>
+            {connection.is_online ? (
+              <View style={styles.onlineStatus}>
+                <View style={styles.onlineDot} />
+                <Text style={styles.onlineText}>Online now</Text>
+              </View>
+            ) : (
+              <Text style={styles.connectedSince}>
+                Connected {formatTimestamp(connection.connected_at)}
               </Text>
-            </View>
+            )}
           </View>
-          <Text style={styles.handshakeRole}>{handshake.role}</Text>
         </View>
       </View>
       
-      <View style={[
-        styles.meetingContainer,
-        handshake.status === 'accepted' ? styles.acceptedMeeting : styles.pendingMeeting
-      ]}>
-        <View style={styles.meetingHeader}>
-          {handshake.status === 'accepted' ? (
-            <CheckCircle size={16} color="#10B981" />
-          ) : (
-            <Handshake size={16} color="#3B82F6" />
-          )}
-          <Text style={[
-            styles.meetingTitle,
-            handshake.status === 'accepted' ? styles.acceptedMeetingTitle : styles.pendingMeetingTitle
-          ]}>
-            {handshake.status === 'accepted' ? 'Meeting Confirmed' : 'Meeting Request'}
-          </Text>
-        </View>
-        <Text style={[
-          styles.meetingMessage,
-          handshake.status === 'accepted' ? styles.acceptedMeetingMessage : styles.pendingMeetingMessage
-        ]}>
-          {handshake.message}
-        </Text>
-        <View style={styles.meetingMeta}>
-          {handshake.status === 'accepted' ? (
-            <View style={styles.metaRow}>
-              <Clock size={12} color="#10B981" />
-              <Text style={styles.acceptedMetaText}>{handshake.timeLeft}</Text>
-            </View>
-          ) : (
-            <View style={styles.metaRow}>
-              <MapPin size={12} color="#3B82F6" />
-              <Text style={styles.pendingMetaText}>{handshake.location}</Text>
-            </View>
-          )}
-        </View>
-      </View>
-
-      {handshake.status === 'pending' ? (
-        <View style={styles.handshakeActions}>
-          <TouchableOpacity style={styles.acceptMeetButton}>
-            <Text style={styles.acceptMeetButtonText}>Accept Meet</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.declineButton}>
-            <Text style={styles.declineButtonText}>Decline</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <TouchableOpacity style={styles.sendMessageButton}>
-          <Text style={styles.sendMessageButtonText}>Send Message</Text>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity 
+        style={styles.messageButton}
+        onPress={() => handleStartNewConversation(connection)}
+      >
+        <MessageCircle size={16} color="#FFFFFF" />
+        <Text style={styles.messageButtonText}>Send Message</Text>
+      </TouchableOpacity>
     </View>
   );
+
+  const ConversationView = () => {
+    if (!selectedConversation) {
+      return (
+        <View style={styles.noConversationSelected}>
+          <MessageCircle size={48} color="#D1D5DB" />
+          <Text style={styles.noConversationTitle}>No conversation selected</Text>
+          <Text style={styles.noConversationSubtitle}>Select a conversation from the list or start a new one</Text>
+        </View>
+      );
+    }
+
+    const partner = conversations.find(c => c.conversation_partner_id === selectedConversation) || 
+                    connections.find(c => c.partner_id === selectedConversation);
+    
+    if (!partner) {
+      return (
+        <View style={styles.noConversationSelected}>
+          <MessageCircle size={48} color="#D1D5DB" />
+          <Text style={styles.noConversationTitle}>Conversation not found</Text>
+          <Text style={styles.noConversationSubtitle}>The selected conversation could not be found</Text>
+        </View>
+      );
+    }
+
+    const partnerName = 'conversation_partner_name' in partner ? 
+                        partner.conversation_partner_name : 
+                        partner.name;
+    
+    const partnerAvatar = 'conversation_partner_avatar' in partner ? 
+                          partner.conversation_partner_avatar : 
+                          partner.image;
+    
+    const partnerRole = 'conversation_partner_role' in partner ? 
+                        partner.conversation_partner_role : 
+                        partner.role;
+    
+    const isOnline = 'is_online' in partner ? partner.is_online : false;
+
+    return (
+      <View style={styles.conversationView}>
+        <View style={styles.conversationHeader}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => setSelectedConversation(null)}
+          >
+            <ArrowLeft size={20} color="#6B7280" />
+          </TouchableOpacity>
+          <View style={styles.conversationPartnerInfo}>
+            <Image 
+              source={{ uri: partnerAvatar || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
+              style={styles.conversationPartnerAvatar} 
+            />
+            <View>
+              <Text style={styles.conversationPartnerName}>{partnerName}</Text>
+              <View style={styles.conversationPartnerStatus}>
+                {isOnline ? (
+                  <View style={styles.onlineStatusSmall}>
+                    <View style={styles.onlineDotSmall} />
+                    <Text style={styles.onlineTextSmall}>Online</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.partnerRole}>{partnerRole}</Text>
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <ScrollView 
+          style={styles.messagesContainer}
+          contentContainerStyle={styles.messagesContent}
+          inverted={true}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={loadingMessages}
+              onRefresh={() => loadConversationMessages(selectedConversation)}
+              colors={['#6366F1']}
+              tintColor="#6366F1"
+            />
+          }
+        >
+          {messages.length === 0 && !loadingMessages ? (
+            <View style={styles.noMessagesContainer}>
+              <Text style={styles.noMessagesText}>No messages yet</Text>
+              <Text style={styles.noMessagesSubtext}>Start the conversation by sending a message</Text>
+            </View>
+          ) : (
+            [...messages].reverse().map((message) => {
+              const isOwnMessage = message.sender_id === profile?.id;
+              
+              return (
+                <View 
+                  key={message.id} 
+                  style={[
+                    styles.messageItem,
+                    isOwnMessage ? styles.ownMessageItem : styles.otherMessageItem
+                  ]}
+                >
+                  {!isOwnMessage && (
+                    <Image 
+                      source={{ uri: message.sender_avatar || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
+                      style={styles.messageAvatar} 
+                    />
+                  )}
+                  <View 
+                    style={[
+                      styles.messageBubble,
+                      isOwnMessage ? styles.ownMessageBubble : styles.otherMessageBubble
+                    ]}
+                  >
+                    <Text style={[
+                      styles.messageText,
+                      isOwnMessage ? styles.ownMessageText : styles.otherMessageText
+                    ]}>
+                      {message.content}
+                    </Text>
+                    <Text style={[
+                      styles.messageTime,
+                      isOwnMessage ? styles.ownMessageTime : styles.otherMessageTime
+                    ]}>
+                      {formatTimestamp(message.created_at)}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
+
+        <View style={styles.messageInputContainer}>
+          <ContinuousTextInput
+            placeholder="Type a message..."
+            onSave={(text) => handleSendMessage(text, selectedConversation)}
+            maxLength={500}
+            showWordCount={false}
+            minHeight={40}
+            maxHeight={100}
+            multiline={true}
+          />
+        </View>
+      </View>
+    );
+  };
 
   const ScheduledChatBanner = () => (
     <LinearGradient
@@ -347,63 +512,20 @@ export default function MessagesScreen() {
     </LinearGradient>
   );
 
-  const getFilteredData = () => {
-    switch (activeTab) {
-      case 'inbox':
-        return filteredConversations;
-      case 'requests':
-        return filteredRequests;
-      case 'handshakes':
-        return filteredHandshakes;
-      default:
-        return [];
-    }
+  const getUnreadCount = () => {
+    return conversations.reduce((total, conv) => total + conv.unread_count, 0);
   };
 
-  const renderTabContent = () => {
-    const data = getFilteredData();
-    
-    if (searchQuery.trim() !== '' && data.length === 0) {
-      return (
-        <View style={styles.noResults}>
-          <Text style={styles.noResultsText}>No results found</Text>
-          <Text style={styles.noResultsSubtext}>Try adjusting your search terms</Text>
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6366F1" />
+          <Text style={styles.loadingText}>Loading messages...</Text>
         </View>
-      );
-    }
-
-    switch (activeTab) {
-      case 'inbox':
-        return (
-          <View style={styles.tabContent}>
-            {searchQuery.trim() === '' && <ScheduledChatBanner />}
-            <View style={styles.conversationsList}>
-              {filteredConversations.map((conversation) => (
-                <ConversationCard key={conversation.id} conversation={conversation} />
-              ))}
-            </View>
-          </View>
-        );
-      case 'requests':
-        return (
-          <View style={styles.tabContent}>
-            {filteredRequests.map((request) => (
-              <RequestCard key={request.id} request={request} />
-            ))}
-          </View>
-        );
-      case 'handshakes':
-        return (
-          <View style={styles.tabContent}>
-            {filteredHandshakes.map((handshake) => (
-              <HandshakeCard key={handshake.id} handshake={handshake} />
-            ))}
-          </View>
-        );
-      default:
-        return null;
-    }
-  };
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -411,7 +533,10 @@ export default function MessagesScreen() {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity style={styles.backButton}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => router.back()}
+            >
               <ArrowLeft size={20} color="#6B7280" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Messages</Text>
@@ -423,12 +548,12 @@ export default function MessagesScreen() {
             <TouchableOpacity style={styles.notificationButton}>
               <Bell size={20} color="#6B7280" />
               <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>3</Text>
+                <Text style={styles.notificationBadgeText}>{getUnreadCount()}</Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity onPress={handleProfilePress}>
               <Image 
-                source={{ uri: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
+                source={{ uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
                 style={styles.profileImage} 
               />
             </TouchableOpacity>
@@ -436,44 +561,108 @@ export default function MessagesScreen() {
         </View>
       </View>
 
-      {/* Search Bar */}
-      <SearchBar
-        placeholder="Search messages, people, requests..."
-        onSearch={handleSearch}
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-      />
+      {/* Main Content */}
+      <View style={styles.mainContent}>
+        {/* Left Panel - Conversations List */}
+        <View style={styles.leftPanel}>
+          {/* Search Bar */}
+          <SearchBar
+            placeholder="Search messages, people..."
+            onSearch={handleSearch}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
 
-      {/* Message Tabs */}
-      <View style={styles.tabsContainer}>
-        <TabButton
-          tab="inbox"
-          title="Inbox"
-          count={filteredConversations.length}
-          isActive={activeTab === 'inbox'}
-          onPress={() => setActiveTab('inbox')}
-        />
-        <TabButton
-          tab="requests"
-          title="Requests"
-          count={filteredRequests.length}
-          isActive={activeTab === 'requests'}
-          onPress={() => setActiveTab('requests')}
-        />
-        <TabButton
-          tab="handshakes"
-          title="Handshakes"
-          count={filteredHandshakes.length}
-          isActive={activeTab === 'handshakes'}
-          onPress={() => setActiveTab('handshakes')}
-        />
+          {/* Message Tabs */}
+          <View style={styles.tabsContainer}>
+            <TabButton
+              tab="inbox"
+              title="Inbox"
+              count={getUnreadCount()}
+              isActive={activeTab === 'inbox'}
+              onPress={() => setActiveTab('inbox')}
+            />
+            <TabButton
+              tab="connections"
+              title="Connections"
+              count={connections.length}
+              isActive={activeTab === 'connections'}
+              onPress={() => setActiveTab('connections')}
+            />
+          </View>
+
+          {/* Tab Content */}
+          <ScrollView 
+            style={styles.tabContent} 
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                colors={['#6366F1']}
+                tintColor="#6366F1"
+              />
+            }
+          >
+            {activeTab === 'inbox' && (
+              <View style={styles.inboxContent}>
+                {searchQuery.trim() === '' && conversations.length > 0 && <ScheduledChatBanner />}
+                
+                {filteredConversations.length === 0 && (
+                  <View style={styles.noResults}>
+                    <MessageCircle size={32} color="#D1D5DB" />
+                    <Text style={styles.noResultsText}>
+                      {searchQuery.trim() !== '' ? 'No conversations found' : 'No conversations yet'}
+                    </Text>
+                    <Text style={styles.noResultsSubtext}>
+                      {searchQuery.trim() !== '' ? 'Try adjusting your search terms' : 'Start a conversation with your connections'}
+                    </Text>
+                  </View>
+                )}
+                
+                <View style={styles.conversationsList}>
+                  {filteredConversations.map((conversation) => (
+                    <ConversationCard 
+                      key={conversation.conversation_partner_id} 
+                      conversation={conversation}
+                      isSelected={selectedConversation === conversation.conversation_partner_id}
+                    />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {activeTab === 'connections' && (
+              <View style={styles.connectionsContent}>
+                {filteredConnections.length === 0 && (
+                  <View style={styles.noResults}>
+                    <Users size={32} color="#D1D5DB" />
+                    <Text style={styles.noResultsText}>
+                      {searchQuery.trim() !== '' ? 'No connections found' : 'No connections yet'}
+                    </Text>
+                    <Text style={styles.noResultsSubtext}>
+                      {searchQuery.trim() !== '' ? 'Try adjusting your search terms' : 'Connect with professionals to start messaging'}
+                    </Text>
+                  </View>
+                )}
+                
+                <View style={styles.connectionsList}>
+                  {filteredConnections.map((connection) => (
+                    <ConnectionCard key={connection.partner_id} connection={connection} />
+                  ))}
+                </View>
+              </View>
+            )}
+            
+            <View style={styles.bottomPadding} />
+          </ScrollView>
+        </View>
+
+        {/* Right Panel - Conversation View */}
+        <View style={styles.rightPanel}>
+          <ConversationView />
+        </View>
       </View>
-
-      {/* Tab Content */}
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {renderTabContent()}
-        <View style={styles.bottomPadding} />
-      </ScrollView>
 
       {/* Account Settings Modal */}
       <AccountSettingsModal 
@@ -488,6 +677,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
   },
   header: {
     backgroundColor: '#FFFFFF',
@@ -547,20 +747,19 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 16,
   },
-  noResults: {
-    alignItems: 'center',
-    paddingVertical: 48,
+  mainContent: {
+    flex: 1,
+    flexDirection: 'row',
   },
-  noResultsText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#6B7280',
-    marginBottom: 4,
+  leftPanel: {
+    width: 320,
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
   },
-  noResultsSubtext: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#9CA3AF',
+  rightPanel: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
   },
   tabsContainer: {
     flexDirection: 'row',
@@ -601,18 +800,19 @@ const styles = StyleSheet.create({
   redBadge: {
     backgroundColor: '#EF4444',
   },
-  orangeBadge: {
-    backgroundColor: '#F59E0B',
-  },
   tabBadgeText: {
     fontSize: 10,
     fontFamily: 'Inter-Bold',
     color: '#FFFFFF',
   },
-  content: {
+  tabContent: {
     flex: 1,
   },
-  tabContent: {
+  inboxContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  connectionsContent: {
     paddingHorizontal: 16,
     paddingTop: 8,
   },
@@ -670,6 +870,11 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: '#F3F4F6',
+    marginBottom: 8,
+  },
+  selectedConversationCard: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
   },
   avatarContainer: {
     position: 'relative',
@@ -679,13 +884,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-  },
-  groupAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   onlineIndicator: {
     position: 'absolute',
@@ -732,264 +930,272 @@ const styles = StyleSheet.create({
     color: '#374151',
     fontFamily: 'Inter-Medium',
   },
-  attachmentRow: {
-    flexDirection: 'row',
+  unreadBadge: {
+    width: 20,
+    height: 20,
+    backgroundColor: '#6366F1',
+    borderRadius: 10,
     alignItems: 'center',
-    marginTop: 4,
-    gap: 4,
+    justifyContent: 'center',
+    marginLeft: 8,
   },
-  attachmentText: {
-    fontSize: 12,
+  unreadBadgeText: {
+    fontSize: 10,
+    fontFamily: 'Inter-Bold',
+    color: '#FFFFFF',
+  },
+  connectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  connectionHeader: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  connectionAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 12,
+  },
+  connectionInfo: {
+    flex: 1,
+  },
+  connectionName: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  connectionRole: {
+    fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
+    marginBottom: 4,
   },
-  unreadDot: {
+  connectionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  onlineStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  onlineDot: {
     width: 8,
     height: 8,
-    backgroundColor: '#6366F1',
-    borderRadius: 4,
-    marginTop: 8,
-  },
-  requestCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-  },
-  requestHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  requestInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  requestNameRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  requestName: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#111827',
-  },
-  requestTimestamp: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  requestRole: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  requestMessage: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#374151',
-    marginBottom: 12,
-    lineHeight: 20,
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  tag: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-  },
-  blueTag: {
-    backgroundColor: '#DBEAFE',
-  },
-  greenTag: {
-    backgroundColor: '#D1FAE5',
-  },
-  tagText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-  },
-  blueTagText: {
-    color: '#1D4ED8',
-  },
-  greenTagText: {
-    color: '#059669',
-  },
-  requestActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  acceptButton: {
-    flex: 1,
-    backgroundColor: '#6366F1',
-    borderRadius: 8,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  acceptButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  declineButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  declineButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#6B7280',
-  },
-  handshakeCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-  },
-  handshakeHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  handshakeInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  handshakeNameRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  handshakeName: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#111827',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-  },
-  pendingBadge: {
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-  },
-  acceptedBadge: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-  },
-  statusBadgeText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-  },
-  pendingBadgeText: {
-    color: '#F59E0B',
-  },
-  acceptedBadgeText: {
-    color: '#10B981',
-  },
-  handshakeRole: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  meetingContainer: {
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-  },
-  pendingMeeting: {
-    backgroundColor: '#EBF8FF',
-  },
-  acceptedMeeting: {
-    backgroundColor: '#F0FDF4',
-  },
-  meetingHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    gap: 8,
-  },
-  meetingTitle: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-  },
-  pendingMeetingTitle: {
-    color: '#1E40AF',
-  },
-  acceptedMeetingTitle: {
-    color: '#065F46',
-  },
-  meetingMessage: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    marginBottom: 8,
-    lineHeight: 20,
-  },
-  pendingMeetingMessage: {
-    color: '#1E40AF',
-  },
-  acceptedMeetingMessage: {
-    color: '#065F46',
-  },
-  meetingMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  pendingMetaText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#3B82F6',
-  },
-  acceptedMetaText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#10B981',
-  },
-  handshakeActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  acceptMeetButton: {
-    flex: 1,
     backgroundColor: '#10B981',
-    borderRadius: 8,
-    paddingVertical: 8,
-    alignItems: 'center',
+    borderRadius: 4,
+    marginRight: 4,
   },
-  acceptMeetButtonText: {
+  onlineText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#10B981',
+  },
+  connectedSince: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
+  messageButton: {
+    backgroundColor: '#6366F1',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  messageButtonText: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
   },
-  sendMessageButton: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    paddingVertical: 8,
+  noResults: {
     alignItems: 'center',
+    paddingVertical: 48,
   },
-  sendMessageButtonText: {
-    fontSize: 14,
+  noResultsText: {
+    fontSize: 16,
     fontFamily: 'Inter-Medium',
-    color: '#374151',
+    color: '#6B7280',
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  noResultsSubtext: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingHorizontal: 24,
   },
   bottomPadding: {
-    height: 100,
+    height: 32,
+  },
+  conversationView: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  conversationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  conversationPartnerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  conversationPartnerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  conversationPartnerName: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
+  },
+  conversationPartnerStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  onlineStatusSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  onlineDotSmall: {
+    width: 6,
+    height: 6,
+    backgroundColor: '#10B981',
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  onlineTextSmall: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#10B981',
+  },
+  partnerRole: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
+  messagesContainer: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  messagesContent: {
+    padding: 16,
+    flexGrow: 1,
+    justifyContent: 'flex-end',
+  },
+  messageItem: {
+    marginVertical: 8,
+    maxWidth: '70%',
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  ownMessageItem: {
+    alignSelf: 'flex-end',
+  },
+  otherMessageItem: {
+    alignSelf: 'flex-start',
+  },
+  messageAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    marginRight: 8,
+  },
+  messageBubble: {
+    padding: 12,
+    borderRadius: 16,
+    maxWidth: '100%',
+  },
+  ownMessageBubble: {
+    backgroundColor: '#6366F1',
+    borderBottomRightRadius: 4,
+  },
+  otherMessageBubble: {
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  messageText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    marginBottom: 4,
+  },
+  ownMessageText: {
+    color: '#FFFFFF',
+  },
+  otherMessageText: {
+    color: '#374151',
+  },
+  messageTime: {
+    fontSize: 10,
+    fontFamily: 'Inter-Regular',
+    alignSelf: 'flex-end',
+  },
+  ownMessageTime: {
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  otherMessageTime: {
+    color: '#9CA3AF',
+  },
+  messageInputContainer: {
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  noConversationSelected: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  noConversationTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#6B7280',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  noConversationSubtitle: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
+    textAlign: 'center',
+    maxWidth: 300,
+  },
+  noMessagesContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  noMessagesText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  noMessagesSubtext: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
+    textAlign: 'center',
   },
 });
