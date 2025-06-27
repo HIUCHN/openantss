@@ -10,6 +10,7 @@ type UserLocation = Database['public']['Tables']['user_location']['Row'];
 type Post = Database['public']['Tables']['posts']['Row'];
 type Comment = Database['public']['Tables']['comments']['Row'];
 type ConnectionRequest = Database['public']['Tables']['connection_requests']['Row'];
+type Message = Database['public']['Tables']['messages']['Row'];
 
 interface AuthContextType {
   session: Session | null;
@@ -56,6 +57,13 @@ interface AuthContextType {
   acceptConnectionRequest: (requestId: string) => Promise<{ error: any }>;
   declineConnectionRequest: (requestId: string) => Promise<{ error: any }>;
   checkConnectionStatus: (userId: string) => Promise<{ data: { isConnected: boolean; hasPendingRequest: boolean; requestId?: string } | null; error: any }>;
+  // Message functions
+  sendMessage: (receiverId: string, content: string) => Promise<{ data: Message | null; error: any }>;
+  getConversations: () => Promise<{ data: any[] | null; error: any }>;
+  getConversationMessages: (userId: string) => Promise<{ data: any[] | null; error: any }>;
+  markMessageAsRead: (messageId: string) => Promise<{ error: any }>;
+  // Connection functions
+  getUserConnections: () => Promise<{ data: any[] | null; error: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -1108,6 +1116,188 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Message functions
+  const sendMessage = async (receiverId: string, content: string) => {
+    if (!user) return { data: null, error: new Error('No user logged in') };
+
+    try {
+      console.log('💬 Sending message to:', receiverId);
+      
+      const messageData = {
+        sender_id: user.id,
+        receiver_id: receiverId,
+        content: content.trim(),
+        is_read: false,
+      };
+
+      const { data, error } = await supabase
+        .from('messages')
+        .insert(messageData)
+        .select(`
+          *,
+          sender:profiles!messages_sender_id_fkey(
+            id,
+            username,
+            full_name,
+            avatar_url
+          ),
+          receiver:profiles!messages_receiver_id_fkey(
+            id,
+            username,
+            full_name,
+            avatar_url
+          )
+        `)
+        .single();
+
+      if (error) {
+        console.error('❌ Error sending message:', error);
+        return { data: null, error };
+      }
+
+      console.log('✅ Message sent successfully');
+      return { data, error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error sending message:', error);
+      return { data: null, error };
+    }
+  };
+
+  const getConversations = async () => {
+    if (!user) return { data: null, error: new Error('No user logged in') };
+
+    try {
+      console.log('💬 Fetching conversations...');
+      
+      const { data, error } = await supabase.rpc('get_user_conversations', {
+        user_id: user.id
+      });
+
+      if (error) {
+        console.error('❌ Error fetching conversations:', error);
+        return { data: null, error };
+      }
+
+      console.log('✅ Conversations fetched successfully:', data?.length || 0, 'conversations');
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error fetching conversations:', error);
+      return { data: null, error };
+    }
+  };
+
+  const getConversationMessages = async (userId: string) => {
+    if (!user) return { data: null, error: new Error('No user logged in') };
+
+    try {
+      console.log('💬 Fetching conversation messages with user:', userId);
+      
+      const { data, error } = await supabase.rpc('get_conversation_messages', {
+        user1_id: user.id,
+        user2_id: userId
+      });
+
+      if (error) {
+        console.error('❌ Error fetching conversation messages:', error);
+        return { data: null, error };
+      }
+
+      console.log('✅ Conversation messages fetched successfully:', data?.length || 0, 'messages');
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error fetching conversation messages:', error);
+      return { data: null, error };
+    }
+  };
+
+  const markMessageAsRead = async (messageId: string) => {
+    if (!user) return { error: new Error('No user logged in') };
+
+    try {
+      console.log('👁️ Marking message as read:', messageId);
+      
+      const { error } = await supabase
+        .from('messages')
+        .update({ is_read: true, updated_at: new Date().toISOString() })
+        .eq('id', messageId)
+        .eq('receiver_id', user.id);
+
+      if (error) {
+        console.error('❌ Error marking message as read:', error);
+        return { error };
+      }
+
+      console.log('✅ Message marked as read successfully');
+      return { error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error marking message as read:', error);
+      return { error };
+    }
+  };
+
+  // Connection functions
+  const getUserConnections = async () => {
+    if (!user) return { data: null, error: new Error('No user logged in') };
+
+    try {
+      console.log('🤝 Fetching user connections...');
+      
+      const { data, error } = await supabase
+        .from('connections')
+        .select(`
+          *,
+          user1:profiles!connections_user1_id_fkey(
+            id,
+            username,
+            full_name,
+            avatar_url,
+            role,
+            company,
+            last_location_update
+          ),
+          user2:profiles!connections_user2_id_fkey(
+            id,
+            username,
+            full_name,
+            avatar_url,
+            role,
+            company,
+            last_location_update
+          )
+        `)
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Error fetching connections:', error);
+        return { data: null, error };
+      }
+
+      // Transform the data to get the connection partner's info
+      const connections = data?.map((connection: any) => {
+        const isUser1 = connection.user1_id === user.id;
+        const partner = isUser1 ? connection.user2 : connection.user1;
+        
+        return {
+          id: connection.id,
+          partner_id: partner.id,
+          name: partner.full_name || partner.username,
+          role: partner.role || 'Professional',
+          company: partner.company || 'OpenAnts',
+          image: partner.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          connected_at: connection.created_at,
+          is_online: partner.last_location_update && new Date(partner.last_location_update) > new Date(Date.now() - 5 * 60 * 1000), // Online if location updated within 5 minutes
+        };
+      }) || [];
+
+      console.log('✅ Connections fetched successfully:', connections.length, 'connections');
+      return { data: connections, error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error fetching connections:', error);
+      return { data: null, error };
+    }
+  };
+
   // Helper function to calculate distance between two points
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
     const R = 6371e3; // Earth's radius in meters
@@ -1156,6 +1346,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     acceptConnectionRequest,
     declineConnectionRequest,
     checkConnectionStatus,
+    // Message management
+    sendMessage,
+    getConversations,
+    getConversationMessages,
+    markMessageAsRead,
+    // Connection management
+    getUserConnections,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
