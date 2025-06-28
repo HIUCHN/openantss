@@ -24,10 +24,11 @@ interface MapBoxMapProps {
   } | null;
   onUserPinPress: (user: any) => void;
   style?: any;
+  showUserInfo?: boolean;
 }
 
 // Web MapBox implementation
-const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }: MapBoxMapProps) => {
+const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style, showUserInfo = false }: MapBoxMapProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<any>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -67,7 +68,7 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
         addUserMarkers();
       }
     }
-  }, [mapLoaded, userLocations]);
+  }, [mapLoaded, userLocations, showUserInfo]);
 
   useEffect(() => {
     if (mapLoaded && currentUserLocation) {
@@ -197,62 +198,67 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
       markerElement.style.cursor = 'pointer';
       markerElement.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
 
-      // Create popup with user info
-      const popup = new mapboxgl.Popup({
-        closeButton: false,
-        closeOnClick: false,
-        offset: 25,
-        className: 'user-popup'
-      });
-      
-      // Create popup content
-      const popupContent = document.createElement('div');
-      popupContent.style.padding = '8px';
-      popupContent.style.borderRadius = '8px';
-      popupContent.style.backgroundColor = 'white';
-      popupContent.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
-      popupContent.style.minWidth = '150px';
-      
-      // Add user info to popup
-      const nameElement = document.createElement('div');
-      nameElement.textContent = user.name;
-      nameElement.style.fontWeight = 'bold';
-      nameElement.style.fontSize = '14px';
-      nameElement.style.marginBottom = '4px';
-      
-      const roleElement = document.createElement('div');
-      roleElement.textContent = user.role;
-      roleElement.style.fontSize = '12px';
-      roleElement.style.color = '#6B7280';
-      
-      const companyElement = document.createElement('div');
-      companyElement.textContent = `at ${user.company}`;
-      companyElement.style.fontSize = '12px';
-      companyElement.style.color = '#6B7280';
-      
-      popupContent.appendChild(nameElement);
-      popupContent.appendChild(roleElement);
-      popupContent.appendChild(companyElement);
-      
-      popup.setDOMContent(popupContent);
-
       // Add click handler
       markerElement.addEventListener('click', () => {
         onUserPinPress(user);
       });
-      
+
       // Create marker
       const marker = new mapboxgl.Marker(markerElement)
         .setLngLat([user.longitude, user.latitude])
-        .setPopup(popup)
         .addTo(map.current);
       
-      // Show popup by default
-      popup.addTo(map.current);
-      
-      // Store marker and popup references for later removal
+      // Store marker reference for later removal
       userMarkers.current.push(marker);
-      userPopups.current.push(popup);
+      
+      // Add popup with user info if showUserInfo is true
+      if (showUserInfo) {
+        // Create popup content
+        const popupContent = document.createElement('div');
+        popupContent.className = 'mapboxgl-popup-content-wrapper';
+        popupContent.style.padding = '0';
+        popupContent.style.borderRadius = '8px';
+        popupContent.style.overflow = 'hidden';
+        popupContent.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
+        popupContent.style.minWidth = '150px';
+        
+        // Create info container
+        const infoContainer = document.createElement('div');
+        infoContainer.style.backgroundColor = '#FFFFFF';
+        infoContainer.style.padding = '8px 12px';
+        
+        // Add user name
+        const nameElement = document.createElement('div');
+        nameElement.textContent = user.name;
+        nameElement.style.fontWeight = 'bold';
+        nameElement.style.fontSize = '14px';
+        nameElement.style.color = '#111827';
+        nameElement.style.marginBottom = '2px';
+        infoContainer.appendChild(nameElement);
+        
+        // Add user role and company
+        const roleElement = document.createElement('div');
+        roleElement.textContent = `${user.role} at ${user.company}`;
+        roleElement.style.fontSize = '12px';
+        roleElement.style.color = '#6B7280';
+        infoContainer.appendChild(roleElement);
+        
+        popupContent.appendChild(infoContainer);
+        
+        // Create popup
+        const popup = new mapboxgl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: [0, -20],
+          className: 'user-info-popup'
+        })
+        .setLngLat([user.longitude, user.latitude])
+        .setDOMContent(popupContent)
+        .addTo(map.current);
+        
+        // Store popup reference for later removal
+        userPopups.current.push(popup);
+      }
       
       console.log('📍 Added marker for user:', user.name, 'at', user.latitude, user.longitude);
     });
@@ -283,7 +289,7 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
 };
 
 // Fallback component for mobile (shows static map with overlays)
-const FallbackMap = ({ userLocations, currentUserLocation, onUserPinPress, style }: MapBoxMapProps) => {
+const FallbackMap = ({ userLocations, currentUserLocation, onUserPinPress, style, showUserInfo = false }: MapBoxMapProps) => {
   return (
     <View style={[styles.container, style]}>
       <View style={styles.fallbackMap}>
@@ -311,10 +317,14 @@ const FallbackMap = ({ userLocations, currentUserLocation, onUserPinPress, style
             <View style={styles.pinImage}>
               {/* Placeholder for user image */}
             </View>
-            <View style={styles.userInfoBubble}>
-              <Text style={styles.userName}>{user.name}</Text>
-              <Text style={styles.userRole}>{user.role} at {user.company}</Text>
-            </View>
+            
+            {/* User info label */}
+            {showUserInfo && (
+              <View style={styles.userInfoLabel}>
+                <Text style={styles.userInfoName}>{user.name}</Text>
+                <Text style={styles.userInfoRole}>{user.role} at {user.company}</Text>
+              </View>
+            )}
           </View>
         ))}
       </View>
@@ -380,6 +390,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5,
+    zIndex: 1,
   },
   pinImage: {
     width: 28,
@@ -387,27 +398,30 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: '#FFFFFF',
   },
-  userInfoBubble: {
+  userInfoLabel: {
     position: 'absolute',
     top: -45,
-    backgroundColor: 'white',
-    padding: 8,
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
+    padding: 6,
+    width: 120,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 5,
-    minWidth: 120,
+    elevation: 2,
+    zIndex: 2,
   },
-  userName: {
+  userInfoName: {
     fontSize: 12,
-    fontFamily: 'Inter-SemiBold',
+    fontFamily: 'Inter-Medium',
     color: '#111827',
+    textAlign: 'center',
   },
-  userRole: {
+  userInfoRole: {
     fontSize: 10,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
+    textAlign: 'center',
   },
 });
