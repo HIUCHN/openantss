@@ -183,7 +183,10 @@ export default function HomeScreen() {
     if (processingRequests.has(requestId)) return;
 
     try {
+      // Add the request ID to the processing set
       setProcessingRequests(prev => new Set(prev).add(requestId));
+      
+      console.log('🤝 Accepting connection request:', requestId);
       
       const { error } = await acceptConnectionRequest(requestId);
       
@@ -199,6 +202,7 @@ export default function HomeScreen() {
       console.error('❌ Unexpected error accepting connection request:', error);
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
+      // Remove the request ID from the processing set
       setProcessingRequests(prev => {
         const newSet = new Set(prev);
         newSet.delete(requestId);
