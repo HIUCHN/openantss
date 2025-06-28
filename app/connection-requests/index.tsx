@@ -127,16 +127,17 @@ export default function ConnectionRequestsScreen() {
         console.error('❌ Error accepting connection request:', error);
         Alert.alert('Error', 'Failed to accept connection request. Please try again.');
       } else {
-        // Remove the request from local state
-        const updatedRequests = requests.filter(req => req.id !== requestId);
-        setRequests(updatedRequests);
-        setFilteredRequests(updatedRequests.filter(req => 
-          searchQuery.trim() === '' || 
-          req.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          req.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          req.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          req.message.toLowerCase().includes(searchQuery.toLowerCase())
-        ));
+        // Remove the request from local state immediately
+        setRequests(prev => {
+          const updatedRequests = prev.filter(req => req.id !== requestId);
+          return updatedRequests;
+        });
+        
+        setFilteredRequests(prev => {
+          const updatedRequests = prev.filter(req => req.id !== requestId);
+          return updatedRequests;
+        });
+        
         Alert.alert('Success', 'Connection request accepted! You are now connected.');
       }
     } catch (error) {
@@ -164,16 +165,17 @@ export default function ConnectionRequestsScreen() {
         console.error('❌ Error declining connection request:', error);
         Alert.alert('Error', 'Failed to decline connection request. Please try again.');
       } else {
-        // Remove the request from local state
-        const updatedRequests = requests.filter(req => req.id !== requestId);
-        setRequests(updatedRequests);
-        setFilteredRequests(updatedRequests.filter(req => 
-          searchQuery.trim() === '' || 
-          req.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          req.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          req.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          req.message.toLowerCase().includes(searchQuery.toLowerCase())
-        ));
+        // Remove the request from local state immediately
+        setRequests(prev => {
+          const updatedRequests = prev.filter(req => req.id !== requestId);
+          return updatedRequests;
+        });
+        
+        setFilteredRequests(prev => {
+          const updatedRequests = prev.filter(req => req.id !== requestId);
+          return updatedRequests;
+        });
+        
         Alert.alert('Request Declined', 'Connection request has been declined.');
       }
     } catch (error) {

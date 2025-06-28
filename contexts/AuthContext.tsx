@@ -1020,73 +1020,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('✅ Accepting connection request:', requestId);
       
-      // Get the request details first
-      const { data: request, error: fetchError } = await supabase
-        .from('connection_requests')
-        .select('sender_id, receiver_id')
-        .eq('id', requestId)
-        .eq('receiver_id', user.id)
-        .single();
-
-      if (fetchError || !request) {
-        console.error('❌ Error fetching connection request:', fetchError);
-        return { error: fetchError || new Error('Request not found') };
+      // Use the database function to accept the request
+      const { data, error } = await supabase.rpc('accept_connection_request', {
+        request_id: requestId
+      });
+      
+      if (error) {
+        console.error('❌ Error accepting connection request:', error);
+        return { error };
       }
 
-      // Check if connection already exists before creating a new one
-      const { data: existingConnection, error: connectionCheckError } = await supabase
-        .from('connections')
-        .select('id')
-        .or(`and(user1_id.eq.${request.sender_id},user2_id.eq.${request.receiver_id}),and(user1_id.eq.${request.receiver_id},user2_id.eq.${request.sender_id})`)
-        .maybeSingle();
-
-      if (connectionCheckError) {
-        console.error('❌ Error checking existing connection:', connectionCheckError);
-        return { error: connectionCheckError };
-      }
-
-      if (existingConnection) {
-        console.log('⚠️ Connection already exists, just removing the request');
-        // Connection already exists, just delete the request
-        const { error: deleteError } = await supabase
-          .from('connection_requests')
-          .delete()
-          .eq('id', requestId);
-
-        if (deleteError) {
-          console.error('❌ Error deleting connection request:', deleteError);
-          return { error: deleteError };
-        }
-
-        console.log('✅ Connection request removed (connection already existed)');
-        return { error: null };
-      }
-
-      // Create the connection
-      const { error: connectionError } = await supabase
-        .from('connections')
-        .insert({
-          user1_id: request.sender_id,
-          user2_id: request.receiver_id
-        });
-
-      if (connectionError) {
-        console.error('❌ Error creating connection:', connectionError);
-        return { error: connectionError };
-      }
-
-      // Delete the request
-      const { error: deleteError } = await supabase
-        .from('connection_requests')
-        .delete()
-        .eq('id', requestId);
-
-      if (deleteError) {
-        console.error('❌ Error deleting connection request:', deleteError);
-        return { error: deleteError };
-      }
-
-      console.log('✅ Connection request accepted successfully');
+      console.log('✅ Connection request accepted successfully:', data);
       return { error: null };
     } catch (error) {
       console.error('❌ Unexpected error accepting connection request:', error);
@@ -1100,18 +1044,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('❌ Declining connection request:', requestId);
       
-      const { error } = await supabase
-        .from('connection_requests')
-        .delete()
-        .eq('id', requestId)
-        .eq('receiver_id', user.id);
-
+      // Use the database function to decline the request
+      const { data, error } = await supabase.rpc('decline_connection_request', {
+        request_id: requestId
+      });
+      
       if (error) {
         console.error('❌ Error declining connection request:', error);
         return { error };
       }
 
-      console.log('✅ Connection request declined successfully');
+      console.log('✅ Connection request declined successfully:', data);
       return { error: null };
     } catch (error) {
       console.error('❌ Unexpected error declining connection request:', error);
