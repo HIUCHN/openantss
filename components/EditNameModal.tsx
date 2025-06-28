@@ -42,8 +42,8 @@ export default function EditNameModal({ visible, onClose, currentName, onNameUpd
       
       // Use the database function to update the name and record history
       const { data, error } = await supabase.rpc('update_user_name', {
-        change_reason: reason.trim() || null,
-        new_full_name: name.trim()
+        new_full_name: name.trim(),
+        change_reason: reason.trim() || null
       });
       
       if (error) {
