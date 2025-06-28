@@ -91,7 +91,6 @@ export default function HomeScreen() {
   const [isTogglingPublicMode, setIsTogglingPublicMode] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [processingRequests, setProcessingRequests] = useState<Set<string>>(new Set());
-  const [requestsCount, setRequestsCount] = useState(0);
 
   // Use profile.is_public directly, no local state needed
   const isPublicMode = profile?.is_public ?? true;
@@ -123,7 +122,6 @@ export default function HomeScreen() {
         })) || [];
         
         setConnectionRequests(transformedRequests);
-        setRequestsCount(transformedRequests.length);
       }
     } catch (error) {
       console.error('❌ Unexpected error loading connection requests:', error);
@@ -196,14 +194,8 @@ export default function HomeScreen() {
         console.error('❌ Error accepting connection request:', error);
         Alert.alert('Error', 'Failed to accept connection request. Please try again.');
       } else {
-        // Remove the request from the local state immediately
-        setConnectionRequests(prev => {
-          const updatedRequests = prev.filter(req => req.id !== requestId);
-          // Update the count
-          setRequestsCount(updatedRequests.length);
-          return updatedRequests;
-        });
-        
+        // Remove the request from the local state
+        setConnectionRequests(prev => prev.filter(req => req.id !== requestId));
         Alert.alert('Success', 'Connection request accepted! You are now connected.');
       }
     } catch (error) {
@@ -231,14 +223,8 @@ export default function HomeScreen() {
         console.error('❌ Error declining connection request:', error);
         Alert.alert('Error', 'Failed to decline connection request. Please try again.');
       } else {
-        // Remove the request from the local state immediately
-        setConnectionRequests(prev => {
-          const updatedRequests = prev.filter(req => req.id !== requestId);
-          // Update the count
-          setRequestsCount(updatedRequests.length);
-          return updatedRequests;
-        });
-        
+        // Remove the request from the local state
+        setConnectionRequests(prev => prev.filter(req => req.id !== requestId));
         Alert.alert('Request Declined', 'Connection request has been declined.');
       }
     } catch (error) {
@@ -454,11 +440,7 @@ export default function HomeScreen() {
             onPress={() => handleAcceptRequest(request.id)}
             disabled={isProcessing}
           >
-            {isProcessing ? (
-              <View style={styles.loadingIndicator} />
-            ) : (
-              <Check size={16} color="#FFFFFF" />
-            )}
+            <Check size={16} color="#FFFFFF" />
             <Text style={styles.acceptButtonText}>
               {isProcessing ? 'Processing...' : 'Accept'}
             </Text>
@@ -488,7 +470,7 @@ export default function HomeScreen() {
             <UserPlus size={20} color="#6366F1" />
             <Text style={styles.sectionTitle}>Connection Requests</Text>
             <View style={styles.requestsBadge}>
-              <Text style={styles.requestsBadgeText}>{requestsCount}</Text>
+              <Text style={styles.requestsBadgeText}>{connectionRequests.length}</Text>
             </View>
           </View>
           <TouchableOpacity onPress={handleViewAllRequests}>
@@ -540,7 +522,7 @@ export default function HomeScreen() {
             <TouchableOpacity style={styles.notificationButton}>
               <Bell size={20} color="#6B7280" />
               <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>{requestsCount}</Text>
+                <Text style={styles.notificationBadgeText}>{connectionRequests.length}</Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity onPress={handleProfilePress}>
@@ -621,7 +603,7 @@ export default function HomeScreen() {
             onPress={handleMatchesNavigation}
           />
           <StatCard 
-            number={requestsCount.toString()} 
+            number={connectionRequests.length.toString()} 
             label="Requests" 
             color="#F59E0B" 
             onPress={handleRequestsNavigation}
@@ -1061,15 +1043,6 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
-  },
-  loadingIndicator: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    borderTopColor: '#FFFFFF',
-    transform: [{ rotate: '45deg' }],
   },
   showMoreButton: {
     alignItems: 'center',
