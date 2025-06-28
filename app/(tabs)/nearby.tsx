@@ -106,14 +106,14 @@ export default function NearbyScreen() {
         return;
       }
 
-      // Get current location with HIGH accuracy (more web-friendly)
-      console.log('📍 Getting high-accuracy location...');
+      // Get current location with HIGHEST accuracy
+      console.log('📍 Getting highest-accuracy location...');
       setDebugInfo('Getting precise location...');
       
       const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High, // Changed from BestForNavigation to High for better web compatibility
-        maximumAge: 10000, // Use a recent location (10 seconds)
-        timeout: 30000, // Increased timeout for better reliability (30 seconds)
+        accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy setting
+        maximumAge: 5000, // Use a recent location (5 seconds)
+        timeout: 20000, // Wait longer for better accuracy (20 seconds)
       });
 
       console.log('📍 High-precision location obtained:', {
@@ -166,9 +166,9 @@ export default function NearbyScreen() {
       
       locationSubscription.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High, // Changed from BestForNavigation to High for better web compatibility
-          timeInterval: 15000, // Update every 15 seconds (increased for web compatibility)
-          distanceInterval: 10, // Update every 10 meters of movement (increased for web compatibility)
+          accuracy: Location.Accuracy.BestForNavigation, // Always use highest accuracy
+          timeInterval: 10000, // Update every 10 seconds
+          distanceInterval: 5, // Update every 5 meters of movement
         },
         async (newLocation) => {
           console.log('📍 High-precision location updated:', {
