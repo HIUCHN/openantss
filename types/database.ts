@@ -20,9 +20,6 @@ export interface Database {
           direct_messages: boolean;
           created_at: string;
           updated_at: string;
-          latitude: number | null;
-          longitude: number | null;
-          last_location_update: string | null;
         };
         Insert: {
           id: string;
@@ -42,9 +39,6 @@ export interface Database {
           direct_messages?: boolean;
           created_at?: string;
           updated_at?: string;
-          latitude?: number | null;
-          longitude?: number | null;
-          last_location_update?: string | null;
         };
         Update: {
           id?: string;
@@ -64,9 +58,6 @@ export interface Database {
           direct_messages?: boolean;
           created_at?: string;
           updated_at?: string;
-          latitude?: number | null;
-          longitude?: number | null;
-          last_location_update?: string | null;
         };
       };
       user_location: {
@@ -363,92 +354,12 @@ export interface Database {
           updated_at?: string;
         };
       };
-      name_change_history: {
-        Row: {
-          id: string;
-          user_id: string;
-          previous_name: string;
-          new_name: string;
-          changed_at: string;
-          reason: string | null;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          previous_name: string;
-          new_name: string;
-          changed_at?: string;
-          reason?: string | null;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          previous_name?: string;
-          new_name?: string;
-          changed_at?: string;
-          reason?: string | null;
-        };
-      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
-      update_user_name: {
-        Args: {
-          new_full_name: string;
-          change_reason?: string | null;
-        };
-        Returns: {
-          success: boolean;
-          message: string;
-          previous_name?: string;
-          new_name?: string;
-        };
-      };
-      get_user_conversations: {
-        Args: {
-          user_id: string;
-        };
-        Returns: {
-          conversation_partner_id: string;
-          conversation_partner_name: string;
-          conversation_partner_avatar: string;
-          conversation_partner_role: string;
-          last_message_content: string;
-          last_message_time: string;
-          unread_count: number;
-          is_online: boolean;
-        }[];
-      };
-      get_conversation_messages: {
-        Args: {
-          user1_id: string;
-          user2_id: string;
-        };
-        Returns: {
-          id: string;
-          sender_id: string;
-          receiver_id: string;
-          content: string;
-          is_read: boolean;
-          created_at: string;
-          sender_name: string;
-          sender_avatar: string;
-        }[];
-      };
-      increment_post_likes: {
-        Args: {
-          post_id: string;
-        };
-        Returns: void;
-      };
-      decrement_post_likes: {
-        Args: {
-          post_id: string;
-        };
-        Returns: void;
-      };
+      [_ in never]: never;
     };
     Enums: {
       [_ in never]: never;

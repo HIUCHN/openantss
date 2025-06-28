@@ -11,7 +11,6 @@ type Post = Database['public']['Tables']['posts']['Row'];
 type Comment = Database['public']['Tables']['comments']['Row'];
 type ConnectionRequest = Database['public']['Tables']['connection_requests']['Row'];
 type Message = Database['public']['Tables']['messages']['Row'];
-type NameChangeHistory = Database['public']['Tables']['name_change_history']['Row'];
 
 interface AuthContextType {
   session: Session | null;
@@ -65,9 +64,6 @@ interface AuthContextType {
   markMessageAsRead: (messageId: string) => Promise<{ error: any }>;
   // Connection functions
   getUserConnections: () => Promise<{ data: any[] | null; error: any }>;
-  // Name change functions
-  updateUserName: (newName: string, reason?: string) => Promise<{ data: any | null; error: any }>;
-  getNameChangeHistory: () => Promise<{ data: NameChangeHistory[] | null; error: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -348,66 +344,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('❌ Unexpected profile update error:', error);
       return { error };
-    }
-  };
-
-  const updateUserName = async (newName: string, reason?: string) => {
-    if (!user) return { data: null, error: new Error('No user logged in') };
-
-    try {
-      console.log('👤 Updating user name to:', newName);
-      
-      const { data, error } = await supabase.rpc('update_user_name', {
-        new_full_name: newName.trim(),
-        change_reason: reason?.trim() || null
-      });
-      
-      if (error) {
-        console.error('❌ Error updating user name:', error);
-        return { data: null, error };
-      }
-      
-      if (data && data.success) {
-        console.log('✅ Name updated successfully:', data);
-        
-        // Update local profile state
-        if (profile) {
-          setProfile({ ...profile, full_name: newName.trim() });
-        }
-        
-        return { data, error: null };
-      } else {
-        console.log('⚠️ Name update returned:', data);
-        return { data, error: null };
-      }
-    } catch (error) {
-      console.error('❌ Unexpected error updating user name:', error);
-      return { data: null, error };
-    }
-  };
-
-  const getNameChangeHistory = async () => {
-    if (!user) return { data: null, error: new Error('No user logged in') };
-
-    try {
-      console.log('📜 Fetching name change history...');
-      
-      const { data, error } = await supabase
-        .from('name_change_history')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('changed_at', { ascending: false });
-      
-      if (error) {
-        console.error('❌ Error fetching name change history:', error);
-        return { data: null, error };
-      }
-      
-      console.log('✅ Name change history fetched successfully:', data?.length || 0, 'records');
-      return { data, error: null };
-    } catch (error) {
-      console.error('❌ Unexpected error fetching name change history:', error);
-      return { data: null, error };
     }
   };
 
@@ -1417,9 +1353,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     markMessageAsRead,
     // Connection management
     getUserConnections,
-    // Name change management
-    updateUserName,
-    getNameChangeHistory,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

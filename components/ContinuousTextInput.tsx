@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, TextInput, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
-import { CreditCard as Edit3, Send, X } from 'lucide-react-native';
+import { CreditCard as Edit3, Save, X } from 'lucide-react-native';
 
 interface ContinuousTextInputProps {
   placeholder?: string;
@@ -163,8 +163,8 @@ export default function ContinuousTextInput({
           onPress={handleSave}
           activeOpacity={0.7}
         >
-          <Send size={16} color="#FFFFFF" />
-          <Text style={styles.saveButtonText}>Send</Text>
+          <Save size={16} color="#FFFFFF" />
+          <Text style={styles.saveButtonText}>Save</Text>
         </TouchableOpacity>
       </View>
 
