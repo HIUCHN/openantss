@@ -66,6 +66,8 @@ interface AuthContextType {
   // Connection functions
   getUserConnections: () => Promise<{ data: any[] | null; error: any }>;
   getConnectionsCount: () => Promise<{ count: number; error: any }>;
+  // Avatar functions
+  uploadAvatar: (file: File | Blob, fileExt: string) => Promise<{ url: string | null; error: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -1325,6 +1327,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Avatar functions
+  const uploadAvatar = async (file: File | Blob, fileExt: string) => {
+    if (!user) return { url: null, error: new Error('No user logged in') };
+
+    try {
+      console.log('🖼️ Uploading avatar...');
+      
+      // Create a unique filename
+      const fileName = `avatar-${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `${user.id}/${fileName}`;
+      
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+      
+      if (error) {
+        console.error('❌ Error uploading avatar:', error);
+        return { url: null, error };
+      }
+      
+      // Get the public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+      
+      // Update profile with new avatar URL
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ 
+          avatar_url: publicUrl,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+      
+      if (updateError) {
+        console.error('❌ Error updating profile with avatar URL:', updateError);
+        return { url: null, error: updateError };
+      }
+      
+      // Update local profile state
+      if (profile) {
+        setProfile({ ...profile, avatar_url: publicUrl });
+      }
+      
+      console.log('✅ Avatar uploaded and profile updated successfully');
+      return { url: publicUrl, error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error uploading avatar:', error);
+      return { url: null, error };
+    }
+  };
+
   // Helper function to calculate distance between two points
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
     const R = 6371e3; // Earth's radius in meters
@@ -1381,6 +1439,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Connection management
     getUserConnections,
     getConnectionsCount,
+    // Avatar management
+    uploadAvatar,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -48,7 +48,7 @@ export default function AvatarUpload({
       const timestamp = Date.now();
       const fileExt = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
       const fileName = `avatar-${user.id}-${timestamp}.${fileExt}`;
-      const filePath = `${fileName}`;
+      const filePath = `${user.id}/${fileName}`;
 
       console.log('📁 Upload path:', filePath);
 
