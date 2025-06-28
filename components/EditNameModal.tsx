@@ -17,6 +17,14 @@ export default function EditNameModal({ visible, onClose, currentName, onNameUpd
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
 
+  // Reset form when modal becomes visible
+  React.useEffect(() => {
+    if (visible) {
+      setName(currentName || '');
+      setReason('');
+    }
+  }, [visible, currentName]);
+
   const handleSave = async () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Name cannot be empty');
@@ -30,6 +38,7 @@ export default function EditNameModal({ visible, onClose, currentName, onNameUpd
 
     try {
       setLoading(true);
+      console.log('Updating name from', currentName, 'to', name.trim(), 'with reason:', reason.trim() || 'No reason provided');
       
       // Use the database function to update the name and record history
       const { data, error } = await supabase.rpc('update_user_name', {

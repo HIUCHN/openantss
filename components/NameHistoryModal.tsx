@@ -36,6 +36,8 @@ export default function NameHistoryModal({ visible, onClose }: NameHistoryModalP
       setLoading(true);
       setError(null);
       
+      console.log('Fetching name history for user:', user.id);
+      
       const { data, error } = await supabase
         .from('name_change_history')
         .select('*')
@@ -46,6 +48,7 @@ export default function NameHistoryModal({ visible, onClose }: NameHistoryModalP
         console.error('Error fetching name history:', error);
         setError('Failed to load name history. Please try again.');
       } else {
+        console.log('Name history data:', data);
         setNameHistory(data || []);
       }
     } catch (err) {
