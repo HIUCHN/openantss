@@ -16,7 +16,7 @@ export default function AvatarUpload({
   onAvatarUpdate, 
   size = 80 
 }: AvatarUploadProps) {
-  const { user, profile } = useAuth();
+  const { user, profile, uploadAvatar } = useAuth();
   const [uploading, setUploading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
@@ -35,128 +35,46 @@ export default function AvatarUpload({
     return true;
   };
 
-  const uploadImageToSupabase = async (uri: string) => {
-    if (!user) {
-      throw new Error('You must be logged in to upload an avatar');
-    }
-
-    try {
-      console.log('🖼️ Starting avatar upload process...');
-      console.log('📁 Image URI:', uri);
-
-      // Create a unique filename with timestamp
-      const timestamp = Date.now();
-      const fileExt = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-      const fileName = `avatar-${user.id}-${timestamp}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
-
-      console.log('📁 Upload path:', filePath);
-
-      let uploadData;
-      let contentType = `image/${fileExt}`;
-
-      if (Platform.OS === 'web') {
-        // Web implementation - convert to blob
-        console.log('🌐 Web platform detected, converting to blob...');
-        const response = await fetch(uri);
-        const blob = await response.blob();
-        uploadData = blob;
-        contentType = blob.type || contentType;
-      } else {
-        // Mobile implementation - read file as base64 and convert to blob
-        console.log('📱 Mobile platform detected, processing file...');
-        const response = await fetch(uri);
-        const blob = await response.blob();
-        uploadData = blob;
-      }
-
-      // Upload to Supabase Storage
-      console.log('☁️ Uploading to Supabase storage...');
-      const { data, error } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, uploadData, {
-          cacheControl: '3600',
-          upsert: true, // Allow overwriting
-          contentType: contentType,
-        });
-
-      if (error) {
-        console.error('❌ Upload error:', error);
-        throw error;
-      }
-
-      console.log('✅ Upload successful:', data);
-
-      // Get the public URL with cache busting
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
-
-      // Add cache busting parameter
-      const finalUrl = `${publicUrl}?t=${timestamp}`;
-      console.log('🔗 Final public URL:', finalUrl);
-
-      return finalUrl;
-    } catch (error) {
-      console.error('❌ Error uploading to Supabase:', error);
-      throw error;
-    }
-  };
-
-  const updateProfileAvatar = async (avatarUrl: string) => {
-    if (!user) return;
-
-    try {
-      console.log('👤 Updating profile with new avatar URL...');
-      
-      // Update the profile in the database
-      const { error } = await supabase
-        .from('profiles')
-        .update({ 
-          avatar_url: avatarUrl,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
-
-      if (error) {
-        console.error('❌ Profile update error:', error);
-        throw error;
-      }
-
-      console.log('✅ Profile updated successfully');
-      return true;
-    } catch (error) {
-      console.error('❌ Error updating profile:', error);
-      throw error;
-    }
-  };
-
   const uploadImage = async (uri: string) => {
     try {
       setUploading(true);
-      console.log('🚀 Starting complete upload process...');
+      console.log('🚀 Starting avatar upload process...');
 
       // First, set the local image immediately for instant feedback
       setLocalImageUri(uri);
 
-      // Upload to Supabase
-      const avatarUrl = await uploadImageToSupabase(uri);
+      // Get file extension
+      const fileExt = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
       
-      if (!avatarUrl) {
-        throw new Error('Failed to get avatar URL');
+      // Convert to blob for upload
+      let blob;
+      if (Platform.OS === 'web') {
+        const response = await fetch(uri);
+        blob = await response.blob();
+      } else {
+        const response = await fetch(uri);
+        blob = await response.blob();
       }
 
-      // Update the profile
-      await updateProfileAvatar(avatarUrl);
-
-      // Update the UI
-      onAvatarUpdate(avatarUrl);
-      setShowOptions(false);
+      // Upload using the Auth context function
+      const { url, error } = await uploadAvatar(blob, fileExt);
       
-      Alert.alert('Success', 'Avatar updated successfully!');
-      console.log('✅ Complete upload process finished');
+      if (error) {
+        throw error;
+      }
+
+      if (url) {
+        // Update the UI
+        onAvatarUpdate(url);
+        setShowOptions(false);
+        
+        Alert.alert('Success', 'Avatar updated successfully!');
+        console.log('✅ Complete upload process finished');
+      } else {
+        throw new Error('Failed to get avatar URL');
+      }
     } catch (error) {
-      console.error('❌ Error in complete upload process:', error);
+      console.error('❌ Error in avatar upload process:', error);
       setLocalImageUri(null); // Reset local image on error
       Alert.alert('Error', `Failed to upload avatar: ${error.message}`);
     } finally {
