@@ -440,7 +440,11 @@ export default function HomeScreen() {
             onPress={() => handleAcceptRequest(request.id)}
             disabled={isProcessing}
           >
-            <Check size={16} color="#FFFFFF" />
+            {isProcessing ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Check size={16} color="#FFFFFF" />
+            )}
             <Text style={styles.acceptButtonText}>
               {isProcessing ? 'Processing...' : 'Accept'}
             </Text>
