@@ -19,7 +19,7 @@ type Experience = Database['public']['Tables']['experiences']['Row'];
 type Skill = Database['public']['Tables']['skills']['Row'];
 
 export default function ProfileScreen() {
-  const { user, profile, signOut, updateProfile } = useAuth();
+  const { user, profile, signOut, updateProfile, getUserConnections } = useAuth();
   const [showEducationForm, setShowEducationForm] = useState(false);
   const [showExperienceForm, setShowExperienceForm] = useState(false);
   const [showSkillForm, setShowSkillForm] = useState(false);
@@ -38,6 +38,8 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showEditNameModal, setShowEditNameModal] = useState(false);
   const [showNameHistoryModal, setShowNameHistoryModal] = useState(false);
+  const [connectionsCount, setConnectionsCount] = useState<number>(0);
+  const [loadingConnections, setLoadingConnections] = useState(true);
 
   // Update avatar URL when profile changes
   useEffect(() => {
@@ -50,6 +52,7 @@ export default function ProfileScreen() {
       fetchUserEducation();
       fetchExperiences();
       fetchSkills();
+      fetchConnectionsCount();
     }
   }, [user]);
 
@@ -59,10 +62,33 @@ export default function ProfileScreen() {
       await Promise.all([
         fetchUserEducation(),
         fetchExperiences(),
-        fetchSkills()
+        fetchSkills(),
+        fetchConnectionsCount()
       ]);
     }
     setRefreshing(false);
+  };
+
+  const fetchConnectionsCount = async () => {
+    try {
+      setLoadingConnections(true);
+      console.log('🤝 Fetching connections count for user:', user?.id);
+      
+      const { data, error } = await getUserConnections();
+      
+      if (error) {
+        console.error('❌ Error fetching connections count:', error);
+        setConnectionsCount(0);
+      } else {
+        console.log('✅ Connections count fetched:', data?.length || 0);
+        setConnectionsCount(data?.length || 0);
+      }
+    } catch (error) {
+      console.error('💥 Unexpected error fetching connections count:', error);
+      setConnectionsCount(0);
+    } finally {
+      setLoadingConnections(false);
+    }
   };
 
   const fetchUserEducation = async () => {
@@ -430,7 +456,9 @@ export default function ProfileScreen() {
             <View style={styles.metricsGrid}>
               <View style={styles.metricItem}>
                 <Users size={16} color="#FFFFFF" />
-                <Text style={styles.metricValue}>247</Text>
+                <Text style={styles.metricValue}>
+                  {loadingConnections ? '...' : connectionsCount}
+                </Text>
                 <Text style={styles.metricLabel}>Connections</Text>
               </View>
               <View style={styles.metricItem}>

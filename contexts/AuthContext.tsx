@@ -11,6 +11,7 @@ type Post = Database['public']['Tables']['posts']['Row'];
 type Comment = Database['public']['Tables']['comments']['Row'];
 type ConnectionRequest = Database['public']['Tables']['connection_requests']['Row'];
 type Message = Database['public']['Tables']['messages']['Row'];
+type Connection = Database['public']['Tables']['connections']['Row'];
 
 interface AuthContextType {
   session: Session | null;
@@ -64,6 +65,7 @@ interface AuthContextType {
   markMessageAsRead: (messageId: string) => Promise<{ error: any }>;
   // Connection functions
   getUserConnections: () => Promise<{ data: any[] | null; error: any }>;
+  getConnectionsCount: () => Promise<{ count: number; error: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -1298,6 +1300,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Get connections count
+  const getConnectionsCount = async () => {
+    if (!user) return { count: 0, error: new Error('No user logged in') };
+
+    try {
+      console.log('🔢 Fetching connections count...');
+      
+      const { count, error } = await supabase
+        .from('connections')
+        .select('*', { count: 'exact', head: true })
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
+
+      if (error) {
+        console.error('❌ Error fetching connections count:', error);
+        return { count: 0, error };
+      }
+
+      console.log('✅ Connections count fetched successfully:', count);
+      return { count: count || 0, error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error fetching connections count:', error);
+      return { count: 0, error };
+    }
+  };
+
   // Helper function to calculate distance between two points
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
     const R = 6371e3; // Earth's radius in meters
@@ -1353,6 +1380,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     markMessageAsRead,
     // Connection management
     getUserConnections,
+    getConnectionsCount,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
