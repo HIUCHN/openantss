@@ -7,7 +7,6 @@ import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import DebugPanel from '@/components/DebugPanel';
 import { IS_DEBUG } from '@/constants';
-// Debug mode toggle - set to true to show debug information
 
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
@@ -315,7 +314,7 @@ export default function SignupScreen() {
                 <Text style={styles.termsText}>
                   By creating an account, you agree to our{' '}
                   <Text style={styles.termsLink}>Terms of Service</Text>
-                  {' '}and{' '}
+                  <Text> and </Text>
                   <Text style={styles.termsLink}>Privacy Policy</Text>
                 </Text>
               </View>
