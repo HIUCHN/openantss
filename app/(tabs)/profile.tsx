@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CreditCard as Edit, Plus, Trash2, MapPin, Calendar, Users, Eye, Heart, MessageCircle, Share, MoveHorizontal as MoreHorizontal, GraduationCap, Briefcase, Settings, Bell } from 'lucide-react-native';
+import { CreditCard as Edit, Plus, Trash2, MapPin, Calendar, Users, Eye, Heart, MessageCircle, Share, MoveHorizontal as MoreHorizontal, GraduationCap, Briefcase, Settings, Bell, Clock } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
@@ -11,13 +11,15 @@ import ExperienceForm from '@/components/ExperienceForm';
 import SkillForm from '@/components/SkillForm';
 import AvatarUpload from '@/components/AvatarUpload';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
+import EditNameModal from '@/components/EditNameModal';
+import NameHistoryModal from '@/components/NameHistoryModal';
 
 type UserEducation = Database['public']['Tables']['user_education']['Row'];
 type Experience = Database['public']['Tables']['experiences']['Row'];
 type Skill = Database['public']['Tables']['skills']['Row'];
 
 export default function ProfileScreen() {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, updateProfile } = useAuth();
   const [showEducationForm, setShowEducationForm] = useState(false);
   const [showExperienceForm, setShowExperienceForm] = useState(false);
   const [showSkillForm, setShowSkillForm] = useState(false);
@@ -34,6 +36,8 @@ export default function ProfileScreen() {
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string | null>(profile?.avatar_url || null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showEditNameModal, setShowEditNameModal] = useState(false);
+  const [showNameHistoryModal, setShowNameHistoryModal] = useState(false);
 
   // Update avatar URL when profile changes
   useEffect(() => {
@@ -170,6 +174,13 @@ export default function ProfileScreen() {
 
   const handleAvatarUpdate = (newAvatarUrl: string) => {
     setCurrentAvatarUrl(newAvatarUrl || null);
+  };
+
+  const handleNameUpdated = (newName: string) => {
+    if (profile) {
+      // Update local state immediately for better UX
+      updateProfile({ full_name: newName });
+    }
   };
 
   const handleDeleteEducation = async (educationId: string) => {
@@ -378,7 +389,10 @@ export default function ProfileScreen() {
             </View>
             
             <View style={styles.userInfo}>
-              <TouchableOpacity style={styles.editableField}>
+              <TouchableOpacity 
+                style={styles.editableField}
+                onPress={() => setShowEditNameModal(true)}
+              >
                 <Text style={styles.userName}>{profile.full_name || 'Add your name'}</Text>
                 <Edit size={16} color="#FFFFFF80" />
               </TouchableOpacity>
@@ -399,6 +413,17 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Name History Button */}
+          {profile.full_name && (
+            <TouchableOpacity 
+              style={styles.nameHistoryButton}
+              onPress={() => setShowNameHistoryModal(true)}
+            >
+              <Clock size={14} color="#FFFFFF" />
+              <Text style={styles.nameHistoryText}>View Name History</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Metrics */}
           <View style={styles.metricsContainer}>
@@ -788,6 +813,20 @@ export default function ProfileScreen() {
         visible={showAccountSettings}
         onClose={() => setShowAccountSettings(false)}
       />
+
+      {/* Edit Name Modal */}
+      <EditNameModal
+        visible={showEditNameModal}
+        onClose={() => setShowEditNameModal(false)}
+        currentName={profile.full_name}
+        onNameUpdated={handleNameUpdated}
+      />
+
+      {/* Name History Modal */}
+      <NameHistoryModal
+        visible={showNameHistoryModal}
+        onClose={() => setShowNameHistoryModal(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -845,7 +884,7 @@ const styles = StyleSheet.create({
   profileInfo: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 32,
+    marginBottom: 16,
   },
   avatarContainer: {
     marginRight: 20,
@@ -881,6 +920,22 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   collaborationText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+  },
+  nameHistoryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    alignSelf: 'flex-start',
+    marginBottom: 16,
+    gap: 6,
+  },
+  nameHistoryText: {
     fontSize: 12,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
