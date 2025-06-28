@@ -563,7 +563,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile({ ...profile, is_public: isPublic });
       }
 
-      console.log('✅ Public mode updated successfully');
+      console.log('✅ Public mode toggled successfully to:', isPublic);
       
       // If turning off public mode, clear location data
       if (!isPublic) {

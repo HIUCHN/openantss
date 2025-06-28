@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, RefreshControl, Modal, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CreditCard as Edit, Plus, Trash2, MapPin, Calendar, Users, Eye, Heart, MessageCircle, Share, MoveHorizontal as MoreHorizontal, GraduationCap, Briefcase, Settings, Bell, Clock } from 'lucide-react-native';
+import { CreditCard as Edit, Plus, Trash2, MapPin, Calendar, Users, Eye, Heart, MessageCircle, Share, MoveHorizontal as MoreHorizontal, GraduationCap, Briefcase, Settings, Bell, Clock, X, Search } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
@@ -13,10 +13,22 @@ import AvatarUpload from '@/components/AvatarUpload';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
 import EditNameModal from '@/components/EditNameModal';
 import NameHistoryModal from '@/components/NameHistoryModal';
+import { router } from 'expo-router';
 
 type UserEducation = Database['public']['Tables']['user_education']['Row'];
 type Experience = Database['public']['Tables']['experiences']['Row'];
 type Skill = Database['public']['Tables']['skills']['Row'];
+
+interface Connection {
+  id: string;
+  partner_id: string;
+  name: string;
+  role: string;
+  company: string;
+  image: string;
+  connected_at: string;
+  is_online: boolean;
+}
 
 export default function ProfileScreen() {
   const { user, profile, signOut, updateProfile, getUserConnections } = useAuth();
@@ -40,6 +52,10 @@ export default function ProfileScreen() {
   const [showNameHistoryModal, setShowNameHistoryModal] = useState(false);
   const [connectionsCount, setConnectionsCount] = useState<number>(0);
   const [loadingConnections, setLoadingConnections] = useState(true);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [showConnectionsModal, setShowConnectionsModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredConnections, setFilteredConnections] = useState<Connection[]>([]);
 
   // Update avatar URL when profile changes
   useEffect(() => {
@@ -52,7 +68,7 @@ export default function ProfileScreen() {
       fetchUserEducation();
       fetchExperiences();
       fetchSkills();
-      fetchConnectionsCount();
+      fetchConnections();
     }
   }, [user]);
 
@@ -63,29 +79,33 @@ export default function ProfileScreen() {
         fetchUserEducation(),
         fetchExperiences(),
         fetchSkills(),
-        fetchConnectionsCount()
+        fetchConnections()
       ]);
     }
     setRefreshing(false);
   };
 
-  const fetchConnectionsCount = async () => {
+  const fetchConnections = async () => {
     try {
       setLoadingConnections(true);
-      console.log('🤝 Fetching connections count for user:', user?.id);
+      console.log('🤝 Fetching connections for user:', user?.id);
       
       const { data, error } = await getUserConnections();
       
       if (error) {
-        console.error('❌ Error fetching connections count:', error);
+        console.error('❌ Error fetching connections:', error);
         setConnectionsCount(0);
+        setConnections([]);
       } else {
-        console.log('✅ Connections count fetched:', data?.length || 0);
+        console.log('✅ Connections fetched:', data?.length || 0);
         setConnectionsCount(data?.length || 0);
+        setConnections(data || []);
+        setFilteredConnections(data || []);
       }
     } catch (error) {
-      console.error('💥 Unexpected error fetching connections count:', error);
+      console.error('💥 Unexpected error fetching connections:', error);
       setConnectionsCount(0);
+      setConnections([]);
     } finally {
       setLoadingConnections(false);
     }
@@ -343,6 +363,33 @@ export default function ProfileScreen() {
     setShowAccountSettings(true);
   };
 
+  const handleShowConnections = () => {
+    setShowConnectionsModal(true);
+  };
+
+  const handleConnectionPress = (userId: string) => {
+    setShowConnectionsModal(false);
+    router.push(`/user-profile/${userId}`);
+  };
+
+  const handleSearchConnections = (query: string) => {
+    setSearchQuery(query);
+    
+    if (!query.trim()) {
+      setFilteredConnections(connections);
+      return;
+    }
+    
+    const lowercaseQuery = query.toLowerCase();
+    const filtered = connections.filter(connection => 
+      connection.name.toLowerCase().includes(lowercaseQuery) ||
+      connection.role.toLowerCase().includes(lowercaseQuery) ||
+      connection.company.toLowerCase().includes(lowercaseQuery)
+    );
+    
+    setFilteredConnections(filtered);
+  };
+
   const getSkillLevelColor = (level: string | null) => {
     switch (level) {
       case 'beginner': return '#F59E0B';
@@ -357,6 +404,102 @@ export default function ProfileScreen() {
     if (!level) return '';
     return level.charAt(0).toUpperCase() + level.slice(1);
   };
+
+  const ConnectionsModal = () => (
+    <Modal
+      visible={showConnectionsModal}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowConnectionsModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.connectionsModalContent}>
+          <View style={styles.connectionsModalHeader}>
+            <Text style={styles.connectionsModalTitle}>Your Connections</Text>
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => setShowConnectionsModal(false)}
+            >
+              <X size={20} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.searchContainer}>
+            <View style={styles.searchInputContainer}>
+              <Search size={18} color="#9CA3AF" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search connections..."
+                placeholderTextColor="#9CA3AF"
+                value={searchQuery}
+                onChangeText={handleSearchConnections}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity 
+                  style={styles.clearSearchButton}
+                  onPress={() => handleSearchConnections('')}
+                >
+                  <X size={16} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+          
+          {loadingConnections ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#6366F1" />
+              <Text style={styles.loadingText}>Loading connections...</Text>
+            </View>
+          ) : filteredConnections.length === 0 ? (
+            <View style={styles.emptyConnectionsContainer}>
+              {searchQuery ? (
+                <>
+                  <Text style={styles.emptyConnectionsTitle}>No matches found</Text>
+                  <Text style={styles.emptyConnectionsSubtitle}>Try a different search term</Text>
+                </>
+              ) : (
+                <>
+                  <Users size={48} color="#D1D5DB" />
+                  <Text style={styles.emptyConnectionsTitle}>No connections yet</Text>
+                  <Text style={styles.emptyConnectionsSubtitle}>Connect with professionals to grow your network</Text>
+                </>
+              )}
+            </View>
+          ) : (
+            <FlatList
+              data={filteredConnections}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.connectionItem}
+                  onPress={() => handleConnectionPress(item.partner_id)}
+                >
+                  <Image source={{ uri: item.image }} style={styles.connectionImage} />
+                  <View style={styles.connectionInfo}>
+                    <Text style={styles.connectionName}>{item.name}</Text>
+                    <Text style={styles.connectionRole}>{item.role} at {item.company}</Text>
+                    <View style={styles.connectionMeta}>
+                      {item.is_online && (
+                        <View style={styles.onlineStatus}>
+                          <View style={styles.onlineDot} />
+                          <Text style={styles.onlineText}>Online</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                  <View style={styles.connectionAction}>
+                    <MessageCircle size={20} color="#6366F1" />
+                  </View>
+                </TouchableOpacity>
+              )}
+              contentContainerStyle={styles.connectionsList}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
 
   if (!user || !profile) {
     return (
@@ -454,13 +597,17 @@ export default function ProfileScreen() {
           {/* Metrics */}
           <View style={styles.metricsContainer}>
             <View style={styles.metricsGrid}>
-              <View style={styles.metricItem}>
+              <TouchableOpacity 
+                style={styles.metricItem}
+                onPress={handleShowConnections}
+                activeOpacity={0.7}
+              >
                 <Users size={16} color="#FFFFFF" />
                 <Text style={styles.metricValue}>
                   {loadingConnections ? '...' : connectionsCount}
                 </Text>
                 <Text style={styles.metricLabel}>Connections</Text>
-              </View>
+              </TouchableOpacity>
               <View style={styles.metricItem}>
                 <Users size={16} color="#FFFFFF" />
                 <Text style={styles.metricValue}>1.2K</Text>
@@ -855,6 +1002,9 @@ export default function ProfileScreen() {
         visible={showNameHistoryModal}
         onClose={() => setShowNameHistoryModal(false)}
       />
+
+      {/* Connections Modal */}
+      <ConnectionsModal />
     </SafeAreaView>
   );
 }
@@ -1367,5 +1517,144 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 100,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  connectionsModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    width: '90%',
+    maxWidth: 500,
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  connectionsModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  connectionsModalTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  searchContainer: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#111827',
+    paddingVertical: 4,
+  },
+  clearSearchButton: {
+    padding: 4,
+  },
+  emptyConnectionsContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    gap: 12,
+  },
+  emptyConnectionsTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#6B7280',
+    marginTop: 16,
+  },
+  emptyConnectionsSubtitle: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  connectionsList: {
+    padding: 16,
+  },
+  connectionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  connectionImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 16,
+  },
+  connectionInfo: {
+    flex: 1,
+  },
+  connectionName: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  connectionRole: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  connectionMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  onlineStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+  },
+  onlineText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#10B981',
+  },
+  connectionAction: {
+    padding: 8,
+  },
+  TextInput: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#111827',
   },
 });
