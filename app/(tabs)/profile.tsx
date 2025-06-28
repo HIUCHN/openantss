@@ -11,6 +11,8 @@ import ExperienceForm from '@/components/ExperienceForm';
 import SkillForm from '@/components/SkillForm';
 import AvatarUpload from '@/components/AvatarUpload';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
+import NameChangeForm from '@/components/NameChangeForm';
+import NameChangeHistory from '@/components/NameChangeHistory';
 
 type UserEducation = Database['public']['Tables']['user_education']['Row'];
 type Experience = Database['public']['Tables']['experiences']['Row'];
@@ -21,6 +23,7 @@ export default function ProfileScreen() {
   const [showEducationForm, setShowEducationForm] = useState(false);
   const [showExperienceForm, setShowExperienceForm] = useState(false);
   const [showSkillForm, setShowSkillForm] = useState(false);
+  const [showNameChangeForm, setShowNameChangeForm] = useState(false);
   const [editingExperience, setEditingExperience] = useState<Experience | null>(null);
   const [userEducation, setUserEducation] = useState<UserEducation[]>([]);
   const [experiences, setExperiences] = useState<Experience[]>([]);
@@ -170,6 +173,11 @@ export default function ProfileScreen() {
 
   const handleAvatarUpdate = (newAvatarUrl: string) => {
     setCurrentAvatarUrl(newAvatarUrl || null);
+  };
+
+  const handleNameChangeSuccess = () => {
+    setShowNameChangeForm(false);
+    // No need to refresh profile as it's updated in the AuthContext
   };
 
   const handleDeleteEducation = async (educationId: string) => {
@@ -378,7 +386,10 @@ export default function ProfileScreen() {
             </View>
             
             <View style={styles.userInfo}>
-              <TouchableOpacity style={styles.editableField}>
+              <TouchableOpacity 
+                style={styles.editableField}
+                onPress={() => setShowNameChangeForm(true)}
+              >
                 <Text style={styles.userName}>{profile.full_name || 'Add your name'}</Text>
                 <Edit size={16} color="#FFFFFF80" />
               </TouchableOpacity>
@@ -426,6 +437,18 @@ export default function ProfileScreen() {
             </View>
           </View>
         </LinearGradient>
+
+        {/* Name Change Form */}
+        {showNameChangeForm && (
+          <NameChangeForm
+            onSuccess={handleNameChangeSuccess}
+            onCancel={() => setShowNameChangeForm(false)}
+            currentName={profile.full_name || ''}
+          />
+        )}
+
+        {/* Name Change History */}
+        <NameChangeHistory />
 
         {/* About Me Section */}
         <View style={styles.section}>
