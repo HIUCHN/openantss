@@ -13,6 +13,7 @@ import AvatarUpload from '@/components/AvatarUpload';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
 import EditNameModal from '@/components/EditNameModal';
 import NameHistoryModal from '@/components/NameHistoryModal';
+import ConnectionsListModal from '@/components/ConnectionsListModal';
 
 type UserEducation = Database['public']['Tables']['user_education']['Row'];
 type Experience = Database['public']['Tables']['experiences']['Row'];
@@ -40,6 +41,7 @@ export default function ProfileScreen() {
   const [showNameHistoryModal, setShowNameHistoryModal] = useState(false);
   const [connectionsCount, setConnectionsCount] = useState<number>(0);
   const [loadingConnections, setLoadingConnections] = useState(true);
+  const [showConnectionsModal, setShowConnectionsModal] = useState(false);
 
   // Update avatar URL when profile changes
   useEffect(() => {
@@ -454,13 +456,16 @@ export default function ProfileScreen() {
           {/* Metrics */}
           <View style={styles.metricsContainer}>
             <View style={styles.metricsGrid}>
-              <View style={styles.metricItem}>
+              <TouchableOpacity 
+                style={styles.metricItem}
+                onPress={() => setShowConnectionsModal(true)}
+              >
                 <Users size={16} color="#FFFFFF" />
                 <Text style={styles.metricValue}>
                   {loadingConnections ? '...' : connectionsCount}
                 </Text>
                 <Text style={styles.metricLabel}>Connections</Text>
-              </View>
+              </TouchableOpacity>
               <View style={styles.metricItem}>
                 <Users size={16} color="#FFFFFF" />
                 <Text style={styles.metricValue}>1.2K</Text>
@@ -854,6 +859,12 @@ export default function ProfileScreen() {
       <NameHistoryModal
         visible={showNameHistoryModal}
         onClose={() => setShowNameHistoryModal(false)}
+      />
+
+      {/* Connections List Modal */}
+      <ConnectionsListModal
+        visible={showConnectionsModal}
+        onClose={() => setShowConnectionsModal(false)}
       />
     </SafeAreaView>
   );
