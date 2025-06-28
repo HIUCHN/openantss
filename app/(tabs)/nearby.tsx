@@ -106,17 +106,17 @@ export default function NearbyScreen() {
         return;
       }
 
-      // Get current location with HIGHEST accuracy
-      console.log('📍 Getting highest-accuracy location...');
-      setDebugInfo('Getting precise location...');
+      // Get current location with high accuracy
+      console.log('📍 Getting high-accuracy location...');
+      setDebugInfo('Getting location with highest accuracy...');
       
       const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy setting
-        maximumAge: 5000, // Use a recent location (5 seconds)
-        timeout: 20000, // Wait longer for better accuracy (20 seconds)
+        accuracy: Location.Accuracy.BestForNavigation,
+        maximumAge: 5000, // Use a more recent location (5 seconds)
+        timeout: 15000,
       });
 
-      console.log('📍 High-precision location obtained:', {
+      console.log('📍 Location obtained:', {
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude,
         accuracy: currentLocation.coords.accuracy,
@@ -124,11 +124,11 @@ export default function NearbyScreen() {
 
       setLocation(currentLocation);
       setLocationAccuracy(currentLocation.coords.accuracy || null);
-      setDebugInfo(`Precise location: ${currentLocation.coords.latitude.toFixed(6)}, ${currentLocation.coords.longitude.toFixed(6)}`);
+      setDebugInfo(`Location: ${currentLocation.coords.latitude.toFixed(6)}, ${currentLocation.coords.longitude.toFixed(6)}, Accuracy: ${currentLocation.coords.accuracy?.toFixed(1)}m`);
 
       if (isPublicMode) {
         // Store location in database
-        console.log('📍 Storing high-precision location in database...');
+        console.log('📍 Storing high-accuracy location in database...');
         await storeUserLocation({
           latitude: currentLocation.coords.latitude,
           longitude: currentLocation.coords.longitude,
@@ -162,16 +162,16 @@ export default function NearbyScreen() {
 
     try {
       setIsTrackingLocation(true);
-      console.log('📍 Starting continuous high-accuracy location tracking...');
+      console.log('📍 Starting high-accuracy location tracking...');
       
       locationSubscription.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.BestForNavigation, // Always use highest accuracy
-          timeInterval: 10000, // Update every 10 seconds
-          distanceInterval: 5, // Update every 5 meters of movement
+          accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy
+          timeInterval: 5000, // Update every 5 seconds
+          distanceInterval: 5, // Update every 5 meters
         },
         async (newLocation) => {
-          console.log('📍 High-precision location updated:', {
+          console.log('📍 Location updated:', {
             latitude: newLocation.coords.latitude,
             longitude: newLocation.coords.longitude,
             accuracy: newLocation.coords.accuracy,
@@ -179,7 +179,7 @@ export default function NearbyScreen() {
 
           setLocation(newLocation);
           setLocationAccuracy(newLocation.coords.accuracy || null);
-          setDebugInfo(`Precise location: ${newLocation.coords.latitude.toFixed(6)}, ${newLocation.coords.longitude.toFixed(6)}`);
+          setDebugInfo(`Updated: ${newLocation.coords.latitude.toFixed(6)}, ${newLocation.coords.longitude.toFixed(6)}, Accuracy: ${newLocation.coords.accuracy?.toFixed(1)}m`);
           
           // Only store location if still in public mode
           if (isPublicMode) {
@@ -342,7 +342,7 @@ export default function NearbyScreen() {
     if (!isPublicMode) return;
     
     setRefreshing(true);
-    setDebugInfo('Refreshing...');
+    setDebugInfo('Refreshing with high accuracy...');
     // Refresh both location and nearby users
     await initializeLocation();
     setRefreshing(false);
@@ -641,18 +641,14 @@ export default function NearbyScreen() {
               <Eye size={16} color="#FFFFFF" />
             </View>
             <View>
-              <Text style={styles.publicModeText}>
-                {isPublicMode ? 'Public Mode' : 'Private Mode'}
-              </Text>
+              <Text style={styles.statusTitle}>Public Mode Active</Text>
               <View style={styles.statusSubtitleRow}>
                 <Text style={styles.statusSubtitle}>
                   {isTrackingLocation ? 'Live tracking' : 'Location shared'}
                 </Text>
                 {locationAccuracy && (
-                  <View style={[styles.accuracyBadge, { backgroundColor: getLocationAccuracyColor() + '40' }]}>
-                    <Text style={[styles.accuracyText, { color: getLocationAccuracyColor() }]}>
-                      {getLocationAccuracyText()}
-                    </Text>
+                  <View style={[styles.accuracyBadge, { backgroundColor: getLocationAccuracyColor() + '30' }]}>
+                    <Text style={[styles.accuracyText, { color: getLocationAccuracyColor() }]}>{getLocationAccuracyText()}</Text>
                   </View>
                 )}
               </View>
@@ -692,7 +688,6 @@ export default function NearbyScreen() {
             }}
             onUserPinPress={handleUserPinPress}
             style={styles.map}
-            showUserInfo={true}
           />
         )}
         
@@ -873,7 +868,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  publicModeText: {
+  statusTitle: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
