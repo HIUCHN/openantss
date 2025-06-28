@@ -400,6 +400,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!error) {
         console.log('✅ User location stored successfully in user_location table with is_active = true');
+        
+        // Also update the profile with the latest location
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            latitude: locationData.latitude,
+            longitude: locationData.longitude,
+            last_location_update: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id);
+          
+        if (profileError) {
+          console.error('❌ Error updating profile with location:', profileError);
+        } else {
+          console.log('✅ Profile updated with latest location');
+          
+          // Update local profile state
+          if (profile) {
+            setProfile({
+              ...profile,
+              latitude: locationData.latitude,
+              longitude: locationData.longitude,
+              last_location_update: new Date().toISOString()
+            });
+          }
+        }
       } else {
         console.error('❌ Error storing user location in user_location table:', error);
       }
@@ -595,8 +622,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('❌ Error clearing user location data:', locationError);
       }
 
+      // Clear location data from profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          latitude: null,
+          longitude: null,
+          last_location_update: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+        
+      if (profileError) {
+        console.error('❌ Error clearing location from profile:', profileError);
+      } else {
+        // Update local profile state
+        if (profile) {
+          setProfile({
+            ...profile,
+            latitude: null,
+            longitude: null,
+            last_location_update: null
+          });
+        }
+      }
+
       console.log('✅ User location data cleared successfully');
-      return { error: locationError };
+      return { error: locationError || profileError };
     } catch (error) {
       console.error('❌ Unexpected error clearing location:', error);
       return { error };

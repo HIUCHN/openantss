@@ -194,7 +194,7 @@ export default function HomeScreen() {
         console.error('❌ Error accepting connection request:', error);
         Alert.alert('Error', 'Failed to accept connection request. Please try again.');
       } else {
-        // Remove the request from the local state
+        // Remove the request from the local state immediately
         setConnectionRequests(prev => prev.filter(req => req.id !== requestId));
         Alert.alert('Success', 'Connection request accepted! You are now connected.');
       }
@@ -223,7 +223,7 @@ export default function HomeScreen() {
         console.error('❌ Error declining connection request:', error);
         Alert.alert('Error', 'Failed to decline connection request. Please try again.');
       } else {
-        // Remove the request from the local state
+        // Remove the request from the local state immediately
         setConnectionRequests(prev => prev.filter(req => req.id !== requestId));
         Alert.alert('Request Declined', 'Connection request has been declined.');
       }
@@ -440,7 +440,11 @@ export default function HomeScreen() {
             onPress={() => handleAcceptRequest(request.id)}
             disabled={isProcessing}
           >
-            <Check size={16} color="#FFFFFF" />
+            {isProcessing ? (
+              <View style={styles.loadingIndicator} />
+            ) : (
+              <Check size={16} color="#FFFFFF" />
+            )}
             <Text style={styles.acceptButtonText}>
               {isProcessing ? 'Processing...' : 'Accept'}
             </Text>
@@ -1043,6 +1047,15 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  loadingIndicator: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderTopColor: '#FFFFFF',
+    transform: [{ rotate: '45deg' }],
   },
   showMoreButton: {
     alignItems: 'center',
