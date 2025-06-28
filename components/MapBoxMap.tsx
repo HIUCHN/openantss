@@ -33,6 +33,7 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
   const [mapLoaded, setMapLoaded] = useState(false);
   const currentUserMarker = useRef<any>(null);
   const userMarkers = useRef<any[]>([]);
+  const userPopups = useRef<any[]>([]);
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -95,7 +96,9 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
       // Add geolocate control for user location tracking
       const geolocate = new mapboxgl.GeolocateControl({
         positionOptions: {
-          enableHighAccuracy: true
+          enableHighAccuracy: true,
+          maximumAge: 0, // Don't use cached position
+          timeout: 10000 // 10 second timeout
         },
         trackUserLocation: true,
         showUserHeading: true,
@@ -116,6 +119,10 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
     // Remove all existing user markers
     userMarkers.current.forEach(marker => marker.remove());
     userMarkers.current = [];
+    
+    // Remove all existing popups
+    userPopups.current.forEach(popup => popup.remove());
+    userPopups.current = [];
   };
 
   const updateCurrentUserLocation = () => {
@@ -162,11 +169,12 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
       .setLngLat([currentUserLocation.longitude, currentUserLocation.latitude])
       .addTo(map.current);
 
-    // Center map on current user location
+    // Center map on current user location with smooth animation
     map.current.flyTo({
       center: [currentUserLocation.longitude, currentUserLocation.latitude],
       zoom: 16,
-      duration: 1000
+      duration: 1000,
+      essential: true // This ensures the animation is always performed
     });
   };
 
@@ -179,10 +187,6 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
     console.log('🗺️ Adding markers for', userLocations.length, 'users');
 
     userLocations.forEach((user) => {
-      // Create marker container
-      const markerContainer = document.createElement('div');
-      markerContainer.style.position = 'relative';
-      
       // Create custom marker element
       const markerElement = document.createElement('div');
       markerElement.style.width = '40px';
@@ -195,65 +199,47 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
       markerElement.style.backgroundPosition = 'center';
       markerElement.style.cursor = 'pointer';
       markerElement.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
-      markerElement.style.zIndex = '1';
+
+      // Create popup with user info
+      const popup = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 25,
+        className: 'user-popup'
+      });
       
-      // Create info card element
-      const infoCard = document.createElement('div');
-      infoCard.style.position = 'absolute';
-      infoCard.style.bottom = '45px';
-      infoCard.style.left = '50%';
-      infoCard.style.transform = 'translateX(-50%)';
-      infoCard.style.backgroundColor = 'white';
-      infoCard.style.borderRadius = '8px';
-      infoCard.style.padding = '8px 12px';
-      infoCard.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
-      infoCard.style.whiteSpace = 'nowrap';
-      infoCard.style.zIndex = '2';
-      infoCard.style.minWidth = '120px';
-      infoCard.style.textAlign = 'center';
+      // Create popup content
+      const popupContent = document.createElement('div');
+      popupContent.style.padding = '8px';
+      popupContent.style.borderRadius = '8px';
+      popupContent.style.backgroundColor = 'white';
+      popupContent.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
+      popupContent.style.minWidth = '150px';
       
-      // Create pointer triangle
-      const pointer = document.createElement('div');
-      pointer.style.position = 'absolute';
-      pointer.style.bottom = '-5px';
-      pointer.style.left = '50%';
-      pointer.style.transform = 'translateX(-50%)';
-      pointer.style.width = '10px';
-      pointer.style.height = '10px';
-      pointer.style.backgroundColor = 'white';
-      pointer.style.transform = 'translateX(-50%) rotate(45deg)';
-      pointer.style.zIndex = '1';
-      
-      // Create name element
+      // Add user info to popup
       const nameElement = document.createElement('div');
       nameElement.textContent = user.name;
       nameElement.style.fontWeight = 'bold';
       nameElement.style.fontSize = '14px';
       nameElement.style.color = '#111827';
-      nameElement.style.marginBottom = '2px';
+      nameElement.style.marginBottom = '4px';
       
-      // Create role element
       const roleElement = document.createElement('div');
-      roleElement.textContent = user.role;
+      roleElement.textContent = `${user.role} at ${user.company}`;
       roleElement.style.fontSize = '12px';
       roleElement.style.color = '#6B7280';
       
-      // Create company element
-      const companyElement = document.createElement('div');
-      companyElement.textContent = `at ${user.company}`;
-      companyElement.style.fontSize = '12px';
-      companyElement.style.color = '#6B7280';
-      companyElement.style.fontStyle = 'italic';
+      popupContent.appendChild(nameElement);
+      popupContent.appendChild(roleElement);
       
-      // Append elements to info card
-      infoCard.appendChild(nameElement);
-      infoCard.appendChild(roleElement);
-      infoCard.appendChild(companyElement);
-      infoCard.appendChild(pointer);
+      popup.setDOMContent(popupContent);
       
-      // Append marker and info card to container
-      markerContainer.appendChild(infoCard);
-      markerContainer.appendChild(markerElement);
+      // Add popup to map
+      popup.setLngLat([user.longitude, user.latitude])
+        .addTo(map.current);
+      
+      // Store popup reference
+      userPopups.current.push(popup);
 
       // Add click handler
       markerElement.addEventListener('click', () => {
@@ -261,7 +247,7 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style }
       });
 
       // Create marker
-      const marker = new mapboxgl.Marker(markerContainer)
+      const marker = new mapboxgl.Marker(markerElement)
         .setLngLat([user.longitude, user.latitude])
         .addTo(map.current);
       
@@ -313,32 +299,21 @@ const FallbackMap = ({ userLocations, currentUserLocation, onUserPinPress, style
           <View
             key={user.id}
             style={[
-              styles.userPinContainer,
+              styles.userPin,
               {
                 top: `${30 + index * 15}%`,
                 left: `${40 + index * 10}%`,
+                backgroundColor: user.pinColor,
               }
             ]}
+            onTouchEnd={() => onUserPinPress(user)}
           >
-            {/* User info card */}
-            <View style={styles.userInfoCard}>
-              <Text style={styles.userName}>{user.name}</Text>
-              <Text style={styles.userRole}>{user.role}</Text>
-              <Text style={styles.userCompany}>at {user.company}</Text>
-              <View style={styles.cardPointer} />
+            <View style={styles.pinImage}>
+              {/* Placeholder for user image */}
             </View>
-            
-            {/* User pin */}
-            <View
-              style={[
-                styles.userPin,
-                { backgroundColor: user.pinColor }
-              ]}
-              onTouchEnd={() => onUserPinPress(user)}
-            >
-              <View style={styles.pinImage}>
-                {/* Placeholder for user image */}
-              </View>
+            <View style={styles.userInfoBubble}>
+              <Text style={styles.userName}>{user.name}</Text>
+              <Text style={styles.userRole}>{user.role} at {user.company}</Text>
             </View>
           </View>
         ))}
@@ -391,50 +366,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
   },
-  userPinContainer: {
-    position: 'absolute',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  userInfoCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    padding: 8,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-    alignItems: 'center',
-    minWidth: 120,
-  },
-  userName: {
-    fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-    color: '#111827',
-    marginBottom: 2,
-  },
-  userRole: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  userCompany: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    fontStyle: 'italic',
-  },
-  cardPointer: {
-    position: 'absolute',
-    bottom: -5,
-    width: 10,
-    height: 10,
-    backgroundColor: '#FFFFFF',
-    transform: [{ rotate: '45deg' }],
-  },
   userPin: {
+    position: 'absolute',
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -453,5 +386,28 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     backgroundColor: '#FFFFFF',
+  },
+  userInfoBubble: {
+    position: 'absolute',
+    top: -45,
+    backgroundColor: 'white',
+    padding: 8,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+    minWidth: 120,
+  },
+  userName: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#111827',
+  },
+  userRole: {
+    fontSize: 10,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
   },
 });

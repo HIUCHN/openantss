@@ -43,6 +43,8 @@ export default function NearbyScreen() {
   const [debugInfo, setDebugInfo] = useState<string>('');
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
+  const lastLocationUpdate = useRef<number>(0);
+  const locationUpdateThreshold = 5000; // 5 seconds between location updates
 
   // Check if user has public mode enabled
   const isPublicMode = profile?.is_public ?? false;
@@ -112,7 +114,7 @@ export default function NearbyScreen() {
       
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.BestForNavigation,
-        maximumAge: 10000,
+        maximumAge: 0, // Don't use cached location
         timeout: 15000,
       });
 
@@ -125,6 +127,7 @@ export default function NearbyScreen() {
       setLocation(currentLocation);
       setLocationAccuracy(currentLocation.coords.accuracy || null);
       setDebugInfo(`Location: ${currentLocation.coords.latitude.toFixed(6)}, ${currentLocation.coords.longitude.toFixed(6)}`);
+      lastLocationUpdate.current = Date.now();
 
       if (isPublicMode) {
         // Store location in database
@@ -164,34 +167,46 @@ export default function NearbyScreen() {
       setIsTrackingLocation(true);
       console.log('📍 Starting high-accuracy location tracking...');
       
+      // Stop any existing subscription first
+      if (locationSubscription.current) {
+        await locationSubscription.current.remove();
+        locationSubscription.current = null;
+      }
+      
       locationSubscription.current = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 15000,
-          distanceInterval: 10,
+          timeInterval: 5000, // Update every 5 seconds
+          distanceInterval: 5, // Or when moved 5 meters
         },
         async (newLocation) => {
-          console.log('📍 Location updated:', {
-            latitude: newLocation.coords.latitude,
-            longitude: newLocation.coords.longitude,
-            accuracy: newLocation.coords.accuracy,
-          });
-
-          setLocation(newLocation);
-          setLocationAccuracy(newLocation.coords.accuracy || null);
-          setDebugInfo(`Updated: ${newLocation.coords.latitude.toFixed(6)}, ${newLocation.coords.longitude.toFixed(6)}`);
-          
-          // Only store location if still in public mode
-          if (isPublicMode) {
-            await storeUserLocation({
+          const now = Date.now();
+          // Only process location updates if enough time has passed
+          if (now - lastLocationUpdate.current >= locationUpdateThreshold) {
+            console.log('📍 Location updated:', {
               latitude: newLocation.coords.latitude,
               longitude: newLocation.coords.longitude,
-              accuracy: newLocation.coords.accuracy || undefined,
-              altitude: newLocation.coords.altitude || undefined,
-              heading: newLocation.coords.heading || undefined,
-              speed: newLocation.coords.speed || undefined,
-              timestamp: new Date(newLocation.timestamp),
+              accuracy: newLocation.coords.accuracy,
+              timestamp: new Date(newLocation.timestamp).toISOString(),
             });
+
+            setLocation(newLocation);
+            setLocationAccuracy(newLocation.coords.accuracy || null);
+            setDebugInfo(`Updated: ${newLocation.coords.latitude.toFixed(6)}, ${newLocation.coords.longitude.toFixed(6)}`);
+            lastLocationUpdate.current = now;
+            
+            // Only store location if still in public mode
+            if (isPublicMode) {
+              await storeUserLocation({
+                latitude: newLocation.coords.latitude,
+                longitude: newLocation.coords.longitude,
+                accuracy: newLocation.coords.accuracy || undefined,
+                altitude: newLocation.coords.altitude || undefined,
+                heading: newLocation.coords.heading || undefined,
+                speed: newLocation.coords.speed || undefined,
+                timestamp: new Date(newLocation.timestamp),
+              });
+            }
           }
         }
       );
