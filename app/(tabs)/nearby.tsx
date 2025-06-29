@@ -1193,6 +1193,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
+  modalBackdrop: {
+    flex: 1,
+  },
   userModalContent: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
