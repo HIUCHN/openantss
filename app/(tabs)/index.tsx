@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch, Alert, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, Bell, MessageCircle, ChevronRight, Briefcase, Users, QrCode, UserPlus, X, Check, Settings } from 'lucide-react-native';
@@ -194,7 +194,7 @@ export default function HomeScreen() {
         console.error('❌ Error accepting connection request:', error);
         Alert.alert('Error', 'Failed to accept connection request. Please try again.');
       } else {
-        // Remove the request from the local state immediately
+        // Remove the request from the local state
         setConnectionRequests(prev => prev.filter(req => req.id !== requestId));
         Alert.alert('Success', 'Connection request accepted! You are now connected.');
       }
@@ -223,7 +223,7 @@ export default function HomeScreen() {
         console.error('❌ Error declining connection request:', error);
         Alert.alert('Error', 'Failed to decline connection request. Please try again.');
       } else {
-        // Remove the request from the local state immediately
+        // Remove the request from the local state
         setConnectionRequests(prev => prev.filter(req => req.id !== requestId));
         Alert.alert('Request Declined', 'Connection request has been declined.');
       }
