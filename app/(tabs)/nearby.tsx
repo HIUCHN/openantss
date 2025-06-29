@@ -43,6 +43,8 @@ export default function NearbyScreen() {
   const [debugInfo, setDebugInfo] = useState<string>('');
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
+  const retryCount = useRef<number>(0);
+  const MAX_RETRY_COUNT = 5;
 
   // Check if user has public mode enabled
   const isPublicMode = profile?.is_public ?? false;
@@ -84,7 +86,7 @@ export default function NearbyScreen() {
     try {
       setLoading(true);
       setErrorMessage(null);
-      setDebugInfo('Initializing location...');
+      setDebugInfo('Initializing location with highest accuracy...');
 
       // Check if location services are enabled
       const enabled = await Location.hasServicesEnabledAsync();
@@ -106,41 +108,93 @@ export default function NearbyScreen() {
         return;
       }
 
-      // Get current location with HIGHEST accuracy
+      // Get current location with HIGHEST accuracy - critical for this app
       console.log('📍 Getting highest-accuracy location...');
-      setDebugInfo('Getting precise location...');
+      setDebugInfo('Getting precise location with highest accuracy...');
       
-      const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy setting
-        maximumAge: 5000, // Use a recent location (5 seconds)
-        timeout: 20000, // Wait longer for better accuracy (20 seconds)
-      });
-
-      console.log('📍 High-precision location obtained:', {
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
-        accuracy: currentLocation.coords.accuracy,
-      });
-
-      setLocation(currentLocation);
-      setLocationAccuracy(currentLocation.coords.accuracy || null);
-      setDebugInfo(`Precise location: ${currentLocation.coords.latitude.toFixed(6)}, ${currentLocation.coords.longitude.toFixed(6)}`);
-
-      if (isPublicMode) {
-        // Store location in database
-        console.log('📍 Storing high-precision location in database...');
-        await storeUserLocation({
-          latitude: currentLocation.coords.latitude,
-          longitude: currentLocation.coords.longitude,
-          accuracy: currentLocation.coords.accuracy || undefined,
-          altitude: currentLocation.coords.altitude || undefined,
-          heading: currentLocation.coords.heading || undefined,
-          speed: currentLocation.coords.speed || undefined,
-          timestamp: new Date(currentLocation.timestamp),
+      try {
+        const currentLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy setting
+          maximumAge: 0, // Don't use cached location
+          timeout: 30000, // Wait longer for better accuracy (30 seconds)
         });
 
-        // Fetch nearby users
-        await fetchNearbyUsers();
+        console.log('📍 High-precision location obtained:', {
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude,
+          accuracy: currentLocation.coords.accuracy,
+        });
+
+        setLocation(currentLocation);
+        setLocationAccuracy(currentLocation.coords.accuracy || null);
+        setDebugInfo(`Precise location: ${currentLocation.coords.latitude.toFixed(6)}, ${currentLocation.coords.longitude.toFixed(6)}, Accuracy: ${currentLocation.coords.accuracy?.toFixed(1)}m`);
+        retryCount.current = 0; // Reset retry count on success
+
+        if (isPublicMode) {
+          // Store location in database
+          console.log('📍 Storing high-precision location in database...');
+          await storeUserLocation({
+            latitude: currentLocation.coords.latitude,
+            longitude: currentLocation.coords.longitude,
+            accuracy: currentLocation.coords.accuracy || undefined,
+            altitude: currentLocation.coords.altitude || undefined,
+            heading: currentLocation.coords.heading || undefined,
+            speed: currentLocation.coords.speed || undefined,
+            timestamp: new Date(currentLocation.timestamp),
+          });
+
+          // Fetch nearby users
+          await fetchNearbyUsers();
+        }
+      } catch (locationError) {
+        console.error('Error getting high-precision location:', locationError);
+        setDebugInfo(`Error getting high-precision location: ${locationError.message}`);
+        
+        // If we fail to get high-precision location, try again with slightly lower accuracy
+        if (retryCount.current < MAX_RETRY_COUNT) {
+          retryCount.current++;
+          setDebugInfo(`Retrying with slightly lower accuracy (attempt ${retryCount.current}/${MAX_RETRY_COUNT})...`);
+          
+          try {
+            const fallbackLocation = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced, // Fallback to balanced accuracy
+              maximumAge: 5000,
+              timeout: 15000,
+            });
+            
+            console.log('📍 Fallback location obtained:', {
+              latitude: fallbackLocation.coords.latitude,
+              longitude: fallbackLocation.coords.longitude,
+              accuracy: fallbackLocation.coords.accuracy,
+            });
+            
+            setLocation(fallbackLocation);
+            setLocationAccuracy(fallbackLocation.coords.accuracy || null);
+            setDebugInfo(`Fallback location: ${fallbackLocation.coords.latitude.toFixed(6)}, ${fallbackLocation.coords.longitude.toFixed(6)}, Accuracy: ${fallbackLocation.coords.accuracy?.toFixed(1)}m`);
+            
+            if (isPublicMode) {
+              // Store fallback location
+              await storeUserLocation({
+                latitude: fallbackLocation.coords.latitude,
+                longitude: fallbackLocation.coords.longitude,
+                accuracy: fallbackLocation.coords.accuracy || undefined,
+                altitude: fallbackLocation.coords.altitude || undefined,
+                heading: fallbackLocation.coords.heading || undefined,
+                speed: fallbackLocation.coords.speed || undefined,
+                timestamp: new Date(fallbackLocation.timestamp),
+              });
+              
+              // Fetch nearby users
+              await fetchNearbyUsers();
+            }
+          } catch (fallbackError) {
+            console.error('Error getting fallback location:', fallbackError);
+            setDebugInfo(`Error getting fallback location: ${fallbackError.message}`);
+            setErrorMessage('Failed to get your location. Please check your GPS settings and try again.');
+          }
+        } else {
+          setErrorMessage('Failed to get your location after multiple attempts. Please check your GPS settings and try again.');
+        }
       }
     } catch (error) {
       console.error('Error initializing location:', error);
@@ -164,40 +218,94 @@ export default function NearbyScreen() {
       setIsTrackingLocation(true);
       console.log('📍 Starting continuous high-accuracy location tracking...');
       
+      // First, stop any existing subscription
+      if (locationSubscription.current) {
+        locationSubscription.current.remove();
+        locationSubscription.current = null;
+      }
+      
+      // Start a new subscription with highest accuracy settings
       locationSubscription.current = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.BestForNavigation, // Always use highest accuracy
-          timeInterval: 10000, // Update every 10 seconds
-          distanceInterval: 5, // Update every 5 meters of movement
+          distanceInterval: 1, // Update every 1 meter of movement (more frequent updates)
+          timeInterval: 5000, // Update every 5 seconds at minimum
         },
         async (newLocation) => {
           console.log('📍 High-precision location updated:', {
             latitude: newLocation.coords.latitude,
             longitude: newLocation.coords.longitude,
             accuracy: newLocation.coords.accuracy,
+            timestamp: new Date(newLocation.timestamp).toISOString(),
           });
 
-          setLocation(newLocation);
-          setLocationAccuracy(newLocation.coords.accuracy || null);
-          setDebugInfo(`Precise location: ${newLocation.coords.latitude.toFixed(6)}, ${newLocation.coords.longitude.toFixed(6)}`);
-          
-          // Only store location if still in public mode
-          if (isPublicMode) {
-            await storeUserLocation({
-              latitude: newLocation.coords.latitude,
-              longitude: newLocation.coords.longitude,
-              accuracy: newLocation.coords.accuracy || undefined,
-              altitude: newLocation.coords.altitude || undefined,
-              heading: newLocation.coords.heading || undefined,
-              speed: newLocation.coords.speed || undefined,
-              timestamp: new Date(newLocation.timestamp),
-            });
+          // Only update if accuracy is good enough (under 100m)
+          if (newLocation.coords.accuracy && newLocation.coords.accuracy <= 100) {
+            setLocation(newLocation);
+            setLocationAccuracy(newLocation.coords.accuracy || null);
+            setDebugInfo(`Precise location: ${newLocation.coords.latitude.toFixed(6)}, ${newLocation.coords.longitude.toFixed(6)}, Accuracy: ${newLocation.coords.accuracy?.toFixed(1)}m`);
+            
+            // Only store location if still in public mode
+            if (isPublicMode) {
+              await storeUserLocation({
+                latitude: newLocation.coords.latitude,
+                longitude: newLocation.coords.longitude,
+                accuracy: newLocation.coords.accuracy || undefined,
+                altitude: newLocation.coords.altitude || undefined,
+                heading: newLocation.coords.heading || undefined,
+                speed: newLocation.coords.speed || undefined,
+                timestamp: new Date(newLocation.timestamp),
+              });
+            }
+          } else {
+            console.log('📍 Skipping low accuracy location update:', newLocation.coords.accuracy);
+            setDebugInfo(`Skipped low accuracy update (${newLocation.coords.accuracy?.toFixed(1)}m). Waiting for better accuracy...`);
+            
+            // Try to request a more accurate location
+            try {
+              const highAccuracyLocation = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.BestForNavigation,
+                maximumAge: 0,
+                timeout: 10000,
+              });
+              
+              if (highAccuracyLocation.coords.accuracy && highAccuracyLocation.coords.accuracy <= 100) {
+                console.log('📍 Obtained higher accuracy location:', highAccuracyLocation.coords.accuracy);
+                setLocation(highAccuracyLocation);
+                setLocationAccuracy(highAccuracyLocation.coords.accuracy || null);
+                setDebugInfo(`Improved location: ${highAccuracyLocation.coords.latitude.toFixed(6)}, ${highAccuracyLocation.coords.longitude.toFixed(6)}, Accuracy: ${highAccuracyLocation.coords.accuracy?.toFixed(1)}m`);
+                
+                if (isPublicMode) {
+                  await storeUserLocation({
+                    latitude: highAccuracyLocation.coords.latitude,
+                    longitude: highAccuracyLocation.coords.longitude,
+                    accuracy: highAccuracyLocation.coords.accuracy || undefined,
+                    altitude: highAccuracyLocation.coords.altitude || undefined,
+                    heading: highAccuracyLocation.coords.heading || undefined,
+                    speed: highAccuracyLocation.coords.speed || undefined,
+                    timestamp: new Date(highAccuracyLocation.timestamp),
+                  });
+                }
+              }
+            } catch (error) {
+              console.log('📍 Failed to get higher accuracy location:', error);
+            }
           }
         }
       );
+      
+      console.log('✅ Location tracking started with highest accuracy settings');
     } catch (error) {
       console.error('Error starting location tracking:', error);
       setIsTrackingLocation(false);
+      setDebugInfo(`Error starting tracking: ${error.message}`);
+      
+      // Try to restart tracking after a delay
+      setTimeout(() => {
+        if (isPublicMode && !isTrackingLocation) {
+          startLocationTracking();
+        }
+      }, 5000);
     }
   };
 
@@ -222,7 +330,7 @@ export default function NearbyScreen() {
       if (isPublicMode && location) {
         fetchNearbyUsers();
       }
-    }, 30000);
+    }, 30000); // Refresh every 30 seconds
   };
 
   const stopPeriodicRefresh = () => {
@@ -342,7 +450,7 @@ export default function NearbyScreen() {
     if (!isPublicMode) return;
     
     setRefreshing(true);
-    setDebugInfo('Refreshing...');
+    setDebugInfo('Refreshing with highest accuracy...');
     // Refresh both location and nearby users
     await initializeLocation();
     setRefreshing(false);
