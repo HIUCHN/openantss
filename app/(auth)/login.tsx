@@ -26,6 +26,10 @@ export default function LoginScreen() {
     }
   }, [email, password, errorMessage]);
 
+  const handleBoltLogoPress = () => {
+    Linking.openURL('https://bolt.new/');
+  };
+
   const handleLogin = async () => {
     // Clear any previous error messages
     setErrorMessage(null);
@@ -83,10 +87,6 @@ export default function LoginScreen() {
     }
   };
 
-  const handleBoltLogoPress = () => {
-    Linking.openURL('https://bolt.new/');
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView 
@@ -117,13 +117,13 @@ export default function LoginScreen() {
               <Text style={styles.tagline}>Know People Before You Meet Them</Text>
             </View>
 
-            {/* Bolt Logo - Replaces Debug Toggle Button */}
+            {/* Bolt Logo */}
             <TouchableOpacity 
               style={styles.boltLogoContainer}
               onPress={handleBoltLogoPress}
             >
               <Image 
-                source={{ uri: 'https://stackblitz.com/storage/blobs/eyJfcmFpbHMiOnsibWVzc2FnZSI6IkJBaHBCTGVlUndFPSIsImV4cCI6bnVsbCwicHVyIjoiYmxvYl9pZCJ9fQ==--8a643fb02132fc31a3e1f6434e8fc82713fd5924/white_circle_360x360.png' }}
+                source={require('@/assets/images/white_circle_360x360 copy.png')}
                 style={styles.boltLogo}
                 resizeMode="contain"
               />
