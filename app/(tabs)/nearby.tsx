@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Image, ScrollVi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
-import { MapPin, Users, MessageCircle, UserPlus, X, Navigation, RefreshCw, Settings, Eye, EyeOff, ChevronDown, ChevronUp, Shield, Compass, Zap, AlertTriangle } from 'lucide-react-native';
+import { MapPin, Users, MessageCircle, UserPlus, X, Navigation, RefreshCw, Settings, Eye, EyeOff, ChevronDown, ChevronUp, Shield, Compass, Zap, TriangleAlert as AlertTriangle } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import MapBoxMap from '@/components/MapBoxMap';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
