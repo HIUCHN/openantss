@@ -33,6 +33,7 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style, 
   const map = useRef<any>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const currentUserMarker = useRef<any>(null);
+  const accuracyCircle = useRef<any>(null);
   const userMarkers = useRef<any[]>([]);
   const userPopups = useRef<any[]>([]);
 
@@ -106,12 +107,46 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style, 
       
       map.current.addControl(geolocate, 'top-right');
       
-      // Automatically trigger geolocation
-      geolocate.trigger();
+      // Add compass control
+      const nav = new mapboxgl.NavigationControl({
+        visualizePitch: true
+      });
+      map.current.addControl(nav, 'top-right');
+      
+      // Add scale control
+      const scale = new mapboxgl.ScaleControl({
+        maxWidth: 100,
+        unit: 'metric'
+      });
+      map.current.addControl(scale, 'bottom-left');
+      
+      // Add custom layer for accuracy circle
+      map.current.addSource('accuracy-circle', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [0, 0]
+          },
+          properties: {
+            radius: 0
+          }
+        }
+      });
+      
+      map.current.addLayer({
+        id: 'accuracy-circle-fill',
+        type: 'circle',
+        source: 'accuracy-circle',
+        paint: {
+          'circle-radius': ['get', 'radius'],
+          'circle-color': 'rgba(99, 102, 241, 0.1)',
+          'circle-stroke-width': 1,
+          'circle-stroke-color': 'rgba(99, 102, 241, 0.5)'
+        }
+      });
     });
-
-    // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
   };
 
   const clearUserMarkers = () => {
@@ -137,10 +172,11 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style, 
 
     // Create pulsing current user marker
     const currentUserElement = document.createElement('div');
-    currentUserElement.style.width = '50px';
-    currentUserElement.style.height = '50px';
+    currentUserElement.className = 'current-user-marker';
+    currentUserElement.style.width = '24px';
+    currentUserElement.style.height = '24px';
     currentUserElement.style.borderRadius = '50%';
-    currentUserElement.style.border = '4px solid white';
+    currentUserElement.style.border = '3px solid white';
     currentUserElement.style.backgroundColor = '#6366F1';
     currentUserElement.style.boxShadow = '0 0 0 0 rgba(99, 102, 241, 0.7)';
     currentUserElement.style.animation = 'pulse 2s infinite';
@@ -152,16 +188,45 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style, 
       @keyframes pulse {
         0% {
           box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7);
+          transform: scale(0.95);
         }
         70% {
           box-shadow: 0 0 0 10px rgba(99, 102, 241, 0);
+          transform: scale(1);
         }
         100% {
           box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+          transform: scale(0.95);
         }
+      }
+      
+      @keyframes rotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      
+      .heading-indicator {
+        position: absolute;
+        top: -24px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 0;
+        height: 0;
+        border-left: 8px solid transparent;
+        border-right: 8px solid transparent;
+        border-bottom: 16px solid #6366F1;
+        animation: rotate 2s linear infinite;
+        transform-origin: bottom center;
       }
     `;
     document.head.appendChild(style);
+    
+    // Add heading indicator if available
+    if (currentUserLocation.heading) {
+      const headingIndicator = document.createElement('div');
+      headingIndicator.className = 'heading-indicator';
+      currentUserElement.appendChild(headingIndicator);
+    }
 
     // Create current user marker
     currentUserMarker.current = new mapboxgl.Marker(currentUserElement)
@@ -171,33 +236,62 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style, 
     // Add "You" label above current user marker
     const youPopupContent = document.createElement('div');
     youPopupContent.className = 'current-user-label';
-    youPopupContent.style.padding = '6px 10px';
+    youPopupContent.style.padding = '4px 8px';
     youPopupContent.style.backgroundColor = '#6366F1';
     youPopupContent.style.color = '#FFFFFF';
-    youPopupContent.style.borderRadius = '16px';
+    youPopupContent.style.borderRadius = '12px';
     youPopupContent.style.fontWeight = 'bold';
-    youPopupContent.style.fontSize = '14px';
+    youPopupContent.style.fontSize = '12px';
     youPopupContent.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
     youPopupContent.style.textAlign = 'center';
-    youPopupContent.style.minWidth = '60px';
+    youPopupContent.style.minWidth = '40px';
     youPopupContent.textContent = 'You';
 
     const youPopup = new mapboxgl.Popup({
       closeButton: false,
       closeOnClick: false,
-      offset: [0, -30],
+      offset: [0, -20],
       className: 'current-user-popup'
     })
     .setLngLat([currentUserLocation.longitude, currentUserLocation.latitude])
     .setDOMContent(youPopupContent)
     .addTo(map.current);
 
-    // Center map on current user location
+    // Update accuracy circle if accuracy is available
+    if (currentUserLocation.accuracy) {
+      // Update the accuracy circle source
+      map.current.getSource('accuracy-circle').setData({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [currentUserLocation.longitude, currentUserLocation.latitude]
+        },
+        properties: {
+          radius: metersToPixelsAtMaxZoom(currentUserLocation.accuracy, currentUserLocation.latitude)
+        }
+      });
+    }
+
+    // Center map on current user location with smooth animation
     map.current.flyTo({
       center: [currentUserLocation.longitude, currentUserLocation.latitude],
       zoom: 16,
-      duration: 1000
+      duration: 1000,
+      essential: true // This animation is considered essential for the user experience
     });
+  };
+
+  // Convert meters to pixels at max zoom level
+  const metersToPixelsAtMaxZoom = (meters: number, latitude: number) => {
+    // Earth's circumference at the equator is about 40,075,000 meters
+    const earthCircumference = 40075000;
+    // At zoom level 22, the map is 2^22 = 4,194,304 pixels wide
+    const mapWidth = 4194304;
+    // Calculate the number of meters per pixel at the equator
+    const metersPerPixel = earthCircumference / mapWidth;
+    // Adjust for latitude (maps get distorted as you move away from the equator)
+    const pixelsPerMeter = 1 / (metersPerPixel * Math.cos(latitude * Math.PI / 180));
+    return meters * pixelsPerMeter;
   };
 
   const addUserMarkers = () => {
@@ -324,6 +418,9 @@ const FallbackMap = ({ userLocations, currentUserLocation, onUserPinPress, style
             <View style={styles.currentUserLabel}>
               <Text style={styles.currentUserLabelText}>You</Text>
             </View>
+            {currentUserLocation.accuracy && (
+              <View style={[styles.accuracyCircle, { width: 100, height: 100 }]} />
+            )}
           </View>
         )}
         
@@ -380,11 +477,11 @@ const styles = StyleSheet.create({
   },
   currentUserPin: {
     position: 'absolute',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#6366F1',
-    borderWidth: 4,
+    borderWidth: 3,
     borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -393,21 +490,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 6,
     elevation: 8,
-    transform: [{ translateX: -25 }, { translateY: -25 }],
+    transform: [{ translateX: -12 }, { translateY: -12 }],
+    zIndex: 10,
   },
   currentUserPinInner: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: '#FFFFFF',
   },
   currentUserLabel: {
     position: 'absolute',
-    top: -36,
+    top: -30,
     backgroundColor: '#6366F1',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -416,8 +514,17 @@ const styles = StyleSheet.create({
   },
   currentUserLabelText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Inter-Bold',
+  },
+  accuracyCircle: {
+    position: 'absolute',
+    borderRadius: 50,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.5)',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    transform: [{ translateX: -50 }, { translateY: -50 }],
+    zIndex: 5,
   },
   userPin: {
     position: 'absolute',
