@@ -1,145 +1,109 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, MapPin, MessageCircle, Filter, Dessert as SortDesc } from 'lucide-react-native';
 import SearchBar from '@/components/SearchBar';
 import { router } from 'expo-router';
+import { useAuth } from '@/contexts/AuthContext';
 
-const allSmartMatches = [
-  {
-    id: 1,
-    name: 'Alex Chen',
-    role: 'Senior Product Designer',
-    company: 'Spotify',
-    distance: '15m away',
-    interests: ['UI/UX', 'Mentoring', 'Design Systems'],
-    image: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
-    matchScore: 95,
-    matchColor: '#10B981',
-    bio: 'Passionate about creating user-centered experiences. Love mentoring junior designers.',
-    mutualConnections: 8,
-    tags: ['#ProductDesign', '#Figma', '#UserResearch']
-  },
-  {
-    id: 2,
-    name: 'Sarah Williams',
-    role: 'Frontend Developer',
-    company: 'Airbnb',
-    distance: '8m away',
-    interests: ['React', 'Freelancing', 'Web Development'],
-    image: 'https://images.pexels.com/photos/1130626/pexels-photo-1130626.jpeg?auto=compress&cs=tinysrgb&w=400',
-    matchScore: 88,
-    matchColor: '#F59E0B',
-    bio: 'Full-stack developer passionate about React and modern web technologies.',
-    mutualConnections: 5,
-    tags: ['#React', '#JavaScript', '#Frontend']
-  },
-  {
-    id: 3,
-    name: 'Mike Johnson',
-    role: 'Product Manager',
-    company: 'Tesla',
-    distance: '12m away',
-    interests: ['Product Strategy', 'Innovation', 'Startups'],
-    image: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400',
-    matchScore: 82,
-    matchColor: '#3B82F6',
-    bio: 'Product strategist with experience in automotive tech. Love discussing innovation.',
-    mutualConnections: 3,
-    tags: ['#ProductStrategy', '#Innovation', '#Tesla']
-  },
-  {
-    id: 4,
-    name: 'Lisa Park',
-    role: 'Data Scientist',
-    company: 'Google',
-    distance: '20m away',
-    interests: ['Machine Learning', 'Analytics', 'Python'],
-    image: 'https://images.pexels.com/photos/1239288/pexels-photo-1239288.jpeg?auto=compress&cs=tinysrgb&w=400',
-    matchScore: 78,
-    matchColor: '#8B5CF6',
-    bio: 'Data scientist passionate about ML and AI. Always excited to collaborate on innovative projects.',
-    mutualConnections: 12,
-    tags: ['#MachineLearning', '#Python', '#DataScience']
-  },
-  {
-    id: 5,
-    name: 'David Lee',
-    role: 'iOS Developer',
-    company: 'Apple',
-    distance: '25m away',
-    interests: ['Swift', 'Mobile Development', 'iOS'],
-    image: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=400',
-    matchScore: 75,
-    matchColor: '#EF4444',
-    bio: 'iOS developer with 6+ years of experience building consumer apps.',
-    mutualConnections: 2,
-    tags: ['#iOS', '#Swift', '#Mobile']
-  },
-  {
-    id: 6,
-    name: 'Emma Rodriguez',
-    role: 'UX Researcher',
-    company: 'Meta',
-    distance: '18m away',
-    interests: ['User Research', 'Psychology', 'Design Thinking'],
-    image: 'https://images.pexels.com/photos/1181686/pexels-photo-1181686.jpeg?auto=compress&cs=tinysrgb&w=400',
-    matchScore: 72,
-    matchColor: '#06B6D4',
-    bio: 'UX researcher focused on understanding user behavior and improving digital experiences.',
-    mutualConnections: 6,
-    tags: ['#UXResearch', '#Psychology', '#UserTesting']
-  },
-  {
-    id: 7,
-    name: 'James Wilson',
-    role: 'Backend Engineer',
-    company: 'Stripe',
-    distance: '30m away',
-    interests: ['Node.js', 'Microservices', 'Cloud Architecture'],
-    image: 'https://images.pexels.com/photos/2379005/pexels-photo-2379005.jpeg?auto=compress&cs=tinysrgb&w=400',
-    matchScore: 68,
-    matchColor: '#84CC16',
-    bio: 'Backend engineer specializing in scalable systems and cloud infrastructure.',
-    mutualConnections: 4,
-    tags: ['#Backend', '#NodeJS', '#AWS']
-  },
-  {
-    id: 8,
-    name: 'Maria Garcia',
-    role: 'Marketing Director',
-    company: 'Shopify',
-    distance: '22m away',
-    interests: ['Digital Marketing', 'Growth Hacking', 'Analytics'],
-    image: 'https://images.pexels.com/photos/1181424/pexels-photo-1181424.jpeg?auto=compress&cs=tinysrgb&w=400',
-    matchScore: 65,
-    matchColor: '#F97316',
-    bio: 'Marketing director with expertise in growth strategies and digital campaigns.',
-    mutualConnections: 7,
-    tags: ['#Marketing', '#Growth', '#Analytics']
-  }
-];
+interface SmartMatch {
+  id: string;
+  name: string;
+  role: string;
+  company: string;
+  distance: string;
+  interests: string[];
+  image: string;
+  matchScore: number;
+  matchColor: string;
+  bio?: string;
+  mutualConnections: number;
+  tags: string[];
+}
 
 export default function SmartMatchesScreen() {
+  const { getNearbyUsers } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredMatches, setFilteredMatches] = useState(allSmartMatches);
+  const [smartMatches, setSmartMatches] = useState<SmartMatch[]>([]);
+  const [filteredMatches, setFilteredMatches] = useState<SmartMatch[]>([]);
   const [sortBy, setSortBy] = useState('match'); // 'match', 'distance', 'connections'
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchSmartMatches();
+  }, []);
+
+  const fetchSmartMatches = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const { data, error } = await getNearbyUsers(5000); // 5km radius
+      
+      if (error) {
+        console.error('Error fetching smart matches:', error);
+        setError('Failed to load smart matches. Please try again.');
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        setSmartMatches([]);
+        setFilteredMatches([]);
+        return;
+      }
+
+      // Transform nearby users into smart matches format
+      const matches: SmartMatch[] = data.map((user: any, index: number) => {
+        // Assign different match colors based on distance
+        const matchColors = ['#10B981', '#F59E0B', '#3B82F6', '#8B5CF6', '#EF4444'];
+        const matchColor = matchColors[index % matchColors.length];
+        
+        // Calculate match score based on distance (closer = higher score)
+        const maxDistance = 5000; // 5km
+        const matchScore = Math.max(50, Math.round(100 - (user.distance / maxDistance * 50)));
+        
+        return {
+          id: user.id,
+          name: user.full_name || user.username,
+          role: user.role || 'Professional',
+          company: user.company || 'OpenAnts',
+          distance: `${Math.round(user.distance)}m away`,
+          interests: user.interests || ['Networking', 'Professional Development'],
+          image: user.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          matchScore,
+          matchColor,
+          bio: user.bio || 'A professional looking to connect and collaborate.',
+          mutualConnections: Math.floor(Math.random() * 10) + 1, // Random for now
+          tags: user.skills || ['#Networking', '#Professional']
+        };
+      });
+
+      setSmartMatches(matches);
+      setFilteredMatches(matches);
+    } catch (error) {
+      console.error('Unexpected error fetching smart matches:', error);
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
     
     if (query.trim() === '') {
-      setFilteredMatches(allSmartMatches);
+      setFilteredMatches(smartMatches);
       return;
     }
 
     const lowercaseQuery = query.toLowerCase();
     
-    const results = allSmartMatches.filter(match => 
+    const results = smartMatches.filter(match => 
       match.name.toLowerCase().includes(lowercaseQuery) ||
       match.role.toLowerCase().includes(lowercaseQuery) ||
       match.company.toLowerCase().includes(lowercaseQuery) ||
-      match.bio.toLowerCase().includes(lowercaseQuery) ||
+      match.bio?.toLowerCase().includes(lowercaseQuery) ||
       match.interests.some(interest => interest.toLowerCase().includes(lowercaseQuery)) ||
       match.tags.some(tag => tag.toLowerCase().includes(lowercaseQuery))
     );
@@ -147,7 +111,7 @@ export default function SmartMatchesScreen() {
     setFilteredMatches(results);
   };
 
-  const sortMatches = (matches) => {
+  const sortMatches = (matches: SmartMatch[]) => {
     switch (sortBy) {
       case 'match':
         return [...matches].sort((a, b) => b.matchScore - a.matchScore);
@@ -166,7 +130,7 @@ export default function SmartMatchesScreen() {
 
   const sortedMatches = sortMatches(filteredMatches);
 
-  const MatchCard = ({ match }) => (
+  const MatchCard = ({ match }: { match: SmartMatch }) => (
     <View style={styles.matchCard}>
       <View style={styles.matchHeader}>
         <Image source={{ uri: match.image }} style={styles.matchImage} />
@@ -249,6 +213,30 @@ export default function SmartMatchesScreen() {
     </TouchableOpacity>
   );
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <ArrowLeft size={20} color="#6B7280" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Smart Matches</Text>
+          <TouchableOpacity style={styles.filterButton}>
+            <Filter size={20} color="#6B7280" />
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6366F1" />
+          <Text style={styles.loadingText}>Loading smart matches...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -309,10 +297,31 @@ export default function SmartMatchesScreen() {
 
       {/* Matches List */}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {searchQuery.trim() !== '' && sortedMatches.length === 0 && (
+        {error && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity 
+              style={styles.retryButton}
+              onPress={fetchSmartMatches}
+            >
+              <Text style={styles.retryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        
+        {!error && searchQuery.trim() !== '' && sortedMatches.length === 0 && (
           <View style={styles.noResults}>
             <Text style={styles.noResultsText}>No matches found</Text>
             <Text style={styles.noResultsSubtext}>Try adjusting your search terms</Text>
+          </View>
+        )}
+        
+        {!error && searchQuery.trim() === '' && sortedMatches.length === 0 && (
+          <View style={styles.noResults}>
+            <Text style={styles.noResultsText}>No smart matches found</Text>
+            <Text style={styles.noResultsSubtext}>
+              Try enabling location sharing in the Nearby tab to find professionals around you
+            </Text>
           </View>
         )}
 
@@ -613,8 +622,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#9CA3AF',
+    textAlign: 'center',
+    paddingHorizontal: 32,
   },
   bottomPadding: {
     height: 100,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
+  errorContainer: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 32,
+  },
+  errorText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#EF4444',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
   },
 });

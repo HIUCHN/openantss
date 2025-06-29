@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch, Alert, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, Bell, MessageCircle, ChevronRight, Briefcase, Users, QrCode, UserPlus, X, Check, Settings } from 'lucide-react-native';
@@ -11,94 +11,73 @@ import DebugPanel from '@/components/DebugPanel';
 import { IS_DEBUG } from '@/constants';
 import { useAuth } from '@/contexts/AuthContext';
 
-// Debug mode toggle - set to true to show debug information
-const smartMatches = [
-  {
-    id: 1,
-    name: 'Alex Chen',
-    role: 'Senior Product Designer',
-    company: 'Spotify',
-    distance: '15m away',
-    interests: ['UI/UX', 'Mentoring'],
-    image: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
-    matchScore: 95,
-    matchColor: '#10B981',
-  },
-  {
-    id: 2,
-    name: 'Sarah Williams',
-    role: 'Frontend Developer',
-    company: 'Airbnb',
-    distance: '8m away',
-    interests: ['React', 'Freelancing'],
-    image: 'https://images.pexels.com/photos/1130626/pexels-photo-1130626.jpeg?auto=compress&cs=tinysrgb&w=400',
-    matchScore: 88,
-    matchColor: '#F59E0B',
-  },
-];
-
-const liveAlerts = [
-  {
-    id: 1,
-    type: 'hiring',
-    icon: Briefcase,
-    title: '3 professionals hiring designers nearby',
-    subtitle: 'Tap to see opportunities',
-    color: '#3B82F6',
-    bgColor: 'rgba(59, 130, 246, 0.1)',
-  },
-  {
-    id: 2,
-    type: 'meetup',
-    icon: Users,
-    title: 'Tech meetup members detected',
-    subtitle: '5 people from React meetup group',
-    color: '#10B981',
-    bgColor: 'rgba(16, 185, 129, 0.1)',
-  },
-];
-
-const recentConnections = [
-  {
-    id: 'mike-johnson',
-    name: 'Mike Johnson',
-    role: 'Product Manager',
-    image: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400',
-  },
-  {
-    id: 'lisa-park',
-    name: 'Lisa Park',
-    role: 'Data Scientist',
-    image: 'https://images.pexels.com/photos/1239288/pexels-photo-1239288.jpeg?auto=compress&cs=tinysrgb&w=400',
-  },
-  {
-    id: 'david-lee',
-    name: 'David Lee',
-    role: 'iOS Developer',
-    image: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=400',
-  },
-];
-
 export default function HomeScreen() {
-  const { profile, togglePublicMode, getConnectionRequests, acceptConnectionRequest, declineConnectionRequest } = useAuth();
+  const { profile, togglePublicMode, getConnectionRequests, acceptConnectionRequest, declineConnectionRequest, getNearbyUsers } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [connectionRequests, setConnectionRequests] = useState([]);
-  const [filteredMatches, setFilteredMatches] = useState(smartMatches);
-  const [filteredConnections, setFilteredConnections] = useState(recentConnections);
+  const [smartMatches, setSmartMatches] = useState([]);
+  const [filteredMatches, setFilteredMatches] = useState([]);
+  const [filteredConnections, setFilteredConnections] = useState([]);
   const [showAllRequests, setShowAllRequests] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [isTogglingPublicMode, setIsTogglingPublicMode] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [processingRequests, setProcessingRequests] = useState<Set<string>>(new Set());
+  const [loadingMatches, setLoadingMatches] = useState(true);
 
   // Use profile.is_public directly, no local state needed
   const isPublicMode = profile?.is_public ?? true;
 
-  // Load connection requests on component mount and when profile changes
+  // Recent connections data (this could be fetched from the database in a real app)
+  const recentConnections = [
+    {
+      id: 'mike-johnson',
+      name: 'Mike Johnson',
+      role: 'Product Manager',
+      image: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400',
+    },
+    {
+      id: 'lisa-park',
+      name: 'Lisa Park',
+      role: 'Data Scientist',
+      image: 'https://images.pexels.com/photos/1239288/pexels-photo-1239288.jpeg?auto=compress&cs=tinysrgb&w=400',
+    },
+    {
+      id: 'david-lee',
+      name: 'David Lee',
+      role: 'iOS Developer',
+      image: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=400',
+    },
+  ];
+
+  // Live alerts data
+  const liveAlerts = [
+    {
+      id: 1,
+      type: 'hiring',
+      icon: Briefcase,
+      title: '3 professionals hiring designers nearby',
+      subtitle: 'Tap to see opportunities',
+      color: '#3B82F6',
+      bgColor: 'rgba(59, 130, 246, 0.1)',
+    },
+    {
+      id: 2,
+      type: 'meetup',
+      icon: Users,
+      title: 'Tech meetup members detected',
+      subtitle: '5 people from React meetup group',
+      color: '#10B981',
+      bgColor: 'rgba(16, 185, 129, 0.1)',
+    },
+  ];
+
+  // Load connection requests and smart matches on component mount and when profile changes
   useEffect(() => {
     if (profile) {
       loadConnectionRequests();
+      loadSmartMatches();
     }
   }, [profile]);
 
@@ -128,6 +107,56 @@ export default function HomeScreen() {
     }
   };
 
+  const loadSmartMatches = async () => {
+    try {
+      setLoadingMatches(true);
+      
+      const { data, error } = await getNearbyUsers(5000); // 5km radius
+      
+      if (error) {
+        console.error('❌ Error loading smart matches:', error);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        setSmartMatches([]);
+        setFilteredMatches([]);
+        return;
+      }
+
+      // Transform nearby users into smart matches format
+      const matches = data.map((user: any, index: number) => {
+        // Assign different match colors based on distance
+        const matchColors = ['#10B981', '#F59E0B', '#3B82F6', '#8B5CF6', '#EF4444'];
+        const matchColor = matchColors[index % matchColors.length];
+        
+        // Calculate match score based on distance (closer = higher score)
+        const maxDistance = 5000; // 5km
+        const matchScore = Math.max(50, Math.round(100 - (user.distance / maxDistance * 50)));
+        
+        return {
+          id: user.id,
+          name: user.profiles.full_name || user.profiles.username,
+          role: user.profiles.role || 'Professional',
+          company: user.profiles.company || 'OpenAnts',
+          distance: `${Math.round(user.distance)}m away`,
+          interests: user.profiles.interests || ['Networking', 'Professional Development'],
+          image: user.profiles.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          matchScore,
+          matchColor,
+          statusText: user.distance < 100 ? 'Very Close' : user.distance < 500 ? 'Nearby' : 'In Area',
+        };
+      });
+
+      setSmartMatches(matches);
+      setFilteredMatches(matches);
+    } catch (error) {
+      console.error('❌ Unexpected error loading smart matches:', error);
+    } finally {
+      setLoadingMatches(false);
+    }
+  };
+
   const formatTimestamp = (timestamp: string): string => {
     const now = new Date();
     const requestTime = new Date(timestamp);
@@ -146,7 +175,10 @@ export default function HomeScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadConnectionRequests();
+    await Promise.all([
+      loadConnectionRequests(),
+      loadSmartMatches()
+    ]);
     setRefreshing(false);
   };
 
@@ -345,7 +377,7 @@ export default function HomeScreen() {
         <Text style={styles.matchRole}>{match.role} at {match.company}</Text>
         
         <View style={styles.interestsRow}>
-          {match.interests.map((interest, index) => (
+          {match.interests.slice(0, 2).map((interest, index) => (
             <View key={index} style={[styles.interestTag, 
               index === 0 ? styles.interestTagBlue : styles.interestTagPurple
             ]}>
@@ -601,7 +633,7 @@ export default function HomeScreen() {
             onPress={handleNearbyNavigation}
           />
           <StatCard 
-            number="5" 
+            number={smartMatches.length.toString()} 
             label="Matches" 
             color="#10B981" 
             onPress={handleMatchesNavigation}
@@ -653,9 +685,23 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           
-          {filteredMatches.slice(0, 2).map((match) => (
-            <MatchCard key={match.id} match={match} />
-          ))}
+          {loadingMatches ? (
+            <View style={styles.loadingMatchesContainer}>
+              <ActivityIndicator size="small" color="#6366F1" />
+              <Text style={styles.loadingMatchesText}>Finding matches nearby...</Text>
+            </View>
+          ) : filteredMatches.length > 0 ? (
+            filteredMatches.slice(0, 2).map((match) => (
+              <MatchCard key={match.id} match={match} />
+            ))
+          ) : (
+            <View style={styles.noMatchesContainer}>
+              <Text style={styles.noMatchesText}>No matches found nearby</Text>
+              <Text style={styles.noMatchesSubtext}>
+                Try enabling location sharing in the Nearby tab to find professionals around you
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Connection Requests Section - Now below Smart Matches, only show when not searching */}
@@ -1279,5 +1325,33 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 100,
+  },
+  loadingMatchesContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+    gap: 12,
+  },
+  loadingMatchesText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
+  noMatchesContainer: {
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  noMatchesText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#6B7280',
+    marginBottom: 8,
+  },
+  noMatchesSubtext: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingHorizontal: 16,
   },
 });
