@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import DebugPanel from '@/components/DebugPanel';
 import { IS_DEBUG } from '@/constants';
+import { Image } from 'react-native';
 
 export default function LoginScreen() {
   const params = useLocalSearchParams();
@@ -102,10 +103,14 @@ export default function LoginScreen() {
           >
             <View style={styles.logoContainer}>
               <View style={styles.logo}>
-                <Text style={styles.logoText}>OA</Text>
+                <Image 
+                  source={require('@/assets/images/OpenAnts logo copy copy.png')} 
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
               </View>
               <Text style={styles.appName}>OpenAnts</Text>
-              <Text style={styles.tagline}>Connect. Collaborate. Create.</Text>
+              <Text style={styles.tagline}>Know People Before You Meet Them</Text>
             </View>
 
             {/* Debug Toggle Button - Only show when IS_DEBUG is true */}
@@ -255,6 +260,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    overflow: 'hidden',
+  },
+  logoImage: {
+    width: 80,
+    height: 80,
   },
   logoText: {
     fontSize: 32,
