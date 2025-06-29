@@ -104,7 +104,7 @@ export default function LoginScreen() {
             <View style={styles.logoContainer}>
               <View style={styles.logo}>
                 <Image 
-                  source={require('@/assets/images/OpenAnts logo copy copy.png')} 
+                  source={{ uri: 'https://stackblitz.com/storage/blobs/eyJfcmFpbHMiOnsibWVzc2FnZSI6IkJBaHBCSWVlUndFPSIsImV4cCI6bnVsbCwicHVyIjoiYmxvYl9pZCJ9fQ==--8a643fb02132fc31a3e1f6434e8fc82713fd5924//OpenAnts logo copy copy.png' }}
                   style={styles.logoImage}
                   resizeMode="contain"
                 />
