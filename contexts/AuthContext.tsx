@@ -12,6 +12,7 @@ type Comment = Database['public']['Tables']['comments']['Row'];
 type ConnectionRequest = Database['public']['Tables']['connection_requests']['Row'];
 type Message = Database['public']['Tables']['messages']['Row'];
 type Connection = Database['public']['Tables']['connections']['Row'];
+type SmartMatch = Database['public']['Tables']['smart_matches']['Row'];
 
 interface AuthContextType {
   session: Session | null;
@@ -68,6 +69,9 @@ interface AuthContextType {
   getConnectionsCount: () => Promise<{ count: number; error: any }>;
   // Avatar functions
   uploadAvatar: (file: File | Blob, fileExt: string) => Promise<{ url: string | null; error: any }>;
+  // Smart matches functions
+  getSmartMatches: (limit?: number) => Promise<{ data: SmartMatch[] | null; error: any }>;
+  generateSmartMatches: (radius?: number) => Promise<{ data: any | null; error: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -426,6 +430,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               last_location_update: new Date().toISOString()
             });
           }
+          
+          // Generate smart matches from nearby users
+          await generateSmartMatches();
         }
       } else {
         console.error('❌ Error storing user location in user_location table:', error);
@@ -597,6 +604,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // If turning off public mode, clear location data
       if (!isPublic) {
         await clearUserLocation();
+      } else {
+        // If turning on public mode, generate smart matches
+        await generateSmartMatches();
       }
 
       return { error: null };
@@ -647,11 +657,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      // Clear smart matches
+      const { error: matchesError } = await supabase
+        .from('smart_matches')
+        .delete()
+        .eq('user_id', user.id);
+        
+      if (matchesError) {
+        console.error('❌ Error clearing smart matches:', matchesError);
+      }
+
       console.log('✅ User location data cleared successfully');
-      return { error: locationError || profileError };
+      return { error: locationError || profileError || matchesError };
     } catch (error) {
       console.error('❌ Unexpected error clearing location:', error);
       return { error };
+    }
+  };
+
+  // Smart matches functions
+  const getSmartMatches = async (limit: number = 20) => {
+    if (!user) return { data: null, error: new Error('No user logged in') };
+
+    try {
+      console.log('🔍 Fetching smart matches...');
+      
+      const { data, error } = await supabase.rpc('get_smart_matches', { limit_count: limit });
+      
+      if (error) {
+        console.error('❌ Error fetching smart matches:', error);
+        return { data: null, error };
+      }
+
+      console.log('✅ Smart matches fetched successfully:', data?.length || 0, 'matches');
+      return { data, error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error fetching smart matches:', error);
+      return { data: null, error };
+    }
+  };
+
+  const generateSmartMatches = async (radius: number = 5000) => {
+    if (!user) return { data: null, error: new Error('No user logged in') };
+
+    try {
+      console.log('🔍 Generating smart matches from nearby users...');
+      
+      const { data, error } = await supabase.rpc('store_smart_matches_from_nearby', { radius_meters: radius });
+      
+      if (error) {
+        console.error('❌ Error generating smart matches:', error);
+        return { data: null, error };
+      }
+
+      console.log('✅ Smart matches generated successfully:', data);
+      return { data, error: null };
+    } catch (error) {
+      console.error('❌ Unexpected error generating smart matches:', error);
+      return { data: null, error };
     }
   };
 
@@ -1436,6 +1499,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     getConnectionsCount,
     // Avatar management
     uploadAvatar,
+    // Smart matches management
+    getSmartMatches,
+    generateSmartMatches,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

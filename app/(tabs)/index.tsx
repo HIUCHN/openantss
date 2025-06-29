@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Switch, Alert, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, Bell, MessageCircle, ChevronRight, Briefcase, Users, QrCode, UserPlus, X, Check, Settings } from 'lucide-react-native';
+import { MapPin, Bell, MessageCircle, ChevronRight, Briefcase, Users, QrCode, UserPlus, X, Check, Settings, Eye, EyeOff, ChevronDown, ChevronUp } from 'lucide-react-native';
 import SearchBar from '@/components/SearchBar';
 import OpenAntsLogo from '@/components/OpenAntsLogo';
 import { router } from 'expo-router';
@@ -10,9 +10,10 @@ import AccountSettingsModal from '@/components/AccountSettingsModal';
 import DebugPanel from '@/components/DebugPanel';
 import { IS_DEBUG } from '@/constants';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 export default function HomeScreen() {
-  const { profile, togglePublicMode, getConnectionRequests, acceptConnectionRequest, declineConnectionRequest, getNearbyUsers } = useAuth();
+  const { profile, togglePublicMode, getConnectionRequests, acceptConnectionRequest, declineConnectionRequest } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [connectionRequests, setConnectionRequests] = useState([]);
   const [smartMatches, setSmartMatches] = useState([]);
@@ -81,9 +82,15 @@ export default function HomeScreen() {
     }
   }, [profile]);
 
+  // Set filtered connections when component mounts
+  useEffect(() => {
+    setFilteredConnections(recentConnections);
+  }, []);
+
   const loadConnectionRequests = async () => {
     try {
       const { data, error } = await getConnectionRequests();
+      
       if (error) {
         console.error('❌ Error loading connection requests:', error);
       } else {
@@ -111,45 +118,46 @@ export default function HomeScreen() {
     try {
       setLoadingMatches(true);
       
-      const { data, error } = await getNearbyUsers(5000); // 5km radius
+      console.log('🔍 Fetching smart matches for home screen...');
+      
+      // Fetch smart matches from the database
+      const { data, error } = await supabase.rpc('get_smart_matches', { limit_count: 5 });
       
       if (error) {
-        console.error('❌ Error loading smart matches:', error);
+        console.error('❌ Error fetching smart matches:', error);
         return;
       }
 
       if (!data || data.length === 0) {
+        console.log('📭 No smart matches found');
         setSmartMatches([]);
         setFilteredMatches([]);
         return;
       }
 
-      // Transform nearby users into smart matches format
-      const matches = data.map((user: any, index: number) => {
-        // Assign different match colors based on distance
-        const matchColors = ['#10B981', '#F59E0B', '#3B82F6', '#8B5CF6', '#EF4444'];
+      console.log('✅ Fetched smart matches:', data.length);
+
+      // Transform data into the format expected by the UI
+      const matchColors = ['#10B981', '#F59E0B', '#3B82F6', '#8B5CF6', '#EF4444'];
+      
+      const transformedMatches = data.map((match, index) => {
         const matchColor = matchColors[index % matchColors.length];
         
-        // Calculate match score based on distance (closer = higher score)
-        const maxDistance = 5000; // 5km
-        const matchScore = Math.max(50, Math.round(100 - (user.distance / maxDistance * 50)));
-        
         return {
-          id: user.id,
-          name: user.profiles.full_name || user.profiles.username,
-          role: user.profiles.role || 'Professional',
-          company: user.profiles.company || 'OpenAnts',
-          distance: `${Math.round(user.distance)}m away`,
-          interests: user.profiles.interests || ['Networking', 'Professional Development'],
-          image: user.profiles.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
-          matchScore,
+          id: match.id,
+          name: match.full_name || match.username,
+          role: match.role || 'Professional',
+          company: match.company || 'OpenAnts',
+          distance: `${Math.round(match.distance)}m away`,
+          interests: match.interests || ['Networking', 'Professional Development'],
+          image: match.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          matchScore: match.match_score,
           matchColor,
-          statusText: user.distance < 100 ? 'Very Close' : user.distance < 500 ? 'Nearby' : 'In Area',
         };
       });
 
-      setSmartMatches(matches);
-      setFilteredMatches(matches);
+      setSmartMatches(transformedMatches);
+      setFilteredMatches(transformedMatches);
     } catch (error) {
       console.error('❌ Unexpected error loading smart matches:', error);
     } finally {
@@ -340,6 +348,17 @@ export default function HomeScreen() {
       Alert.alert(title, message, [{ text: 'Got it' }]);
       
       console.log('✅ Public mode toggled successfully to:', value);
+      
+      // If enabling public mode, refresh smart matches
+      if (value) {
+        setTimeout(() => {
+          loadSmartMatches();
+        }, 1000);
+      } else {
+        // Clear smart matches if disabling public mode
+        setSmartMatches([]);
+        setFilteredMatches([]);
+      }
     } catch (error) {
       console.error('❌ Unexpected error toggling public mode:', error);
       Alert.alert(
