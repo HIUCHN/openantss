@@ -19,7 +19,6 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'refreshing';
-  nearbyUsers: any[]; // Add this to store nearby users
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signUp: (
     email: string,
@@ -78,7 +77,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [nearbyUsers, setNearbyUsers] = useState<any[]>([]); // Add state for nearby users
   const [connectionStatus, setConnectionStatus] = useState<
     'connecting' | 'connected' | 'disconnected' | 'refreshing'
   >('connecting');
@@ -428,12 +426,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               last_location_update: new Date().toISOString()
             });
           }
-          
-          // After updating location, fetch nearby users
-          const { data: nearbyData } = await getNearbyUsers(2000); // 2km radius
-          if (nearbyData) {
-            setNearbyUsers(nearbyData);
-          }
         }
       } else {
         console.error('❌ Error storing user location in user_location table:', error);
@@ -568,9 +560,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       });
 
-      // Update the nearbyUsers state
-      setNearbyUsers(nearbyUsers);
-
       return { data: nearbyUsers, error: null };
     } catch (error) {
       console.error('❌ Unexpected error fetching nearby users:', error);
@@ -608,8 +597,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // If turning off public mode, clear location data
       if (!isPublic) {
         await clearUserLocation();
-        // Clear nearby users when turning off public mode
-        setNearbyUsers([]);
       }
 
       return { error: null };
@@ -1413,7 +1400,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     profile,
     loading,
     connectionStatus,
-    nearbyUsers, // Expose nearby users to components
     signIn,
     signUp,
     signOut,

@@ -80,7 +80,7 @@ const recentConnections = [
 ];
 
 export default function HomeScreen() {
-  const { profile, togglePublicMode, getConnectionRequests, acceptConnectionRequest, declineConnectionRequest, nearbyUsers } = useAuth();
+  const { profile, togglePublicMode, getConnectionRequests, acceptConnectionRequest, declineConnectionRequest } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [connectionRequests, setConnectionRequests] = useState([]);
   const [filteredMatches, setFilteredMatches] = useState(smartMatches);
@@ -101,49 +101,6 @@ export default function HomeScreen() {
       loadConnectionRequests();
     }
   }, [profile]);
-
-  // Transform nearby users into smart matches format
-  useEffect(() => {
-    if (nearbyUsers && nearbyUsers.length > 0) {
-      // Create smart matches from nearby users
-      const nearbyMatches = nearbyUsers.map((user: any, index: number) => {
-        // Assign different colors based on index
-        const colors = ['#10B981', '#F59E0B', '#3B82F6', '#8B5CF6', '#EF4444'];
-        const colorIndex = index % colors.length;
-        
-        // Calculate match score (just for display - in a real app this would be based on shared interests, etc.)
-        const matchScore = Math.floor(95 - (index * 5));
-        
-        return {
-          id: user.id,
-          name: user.profiles.full_name || user.profiles.username,
-          role: user.profiles.role || 'Professional',
-          company: user.profiles.company || 'OpenAnts',
-          distance: `${Math.round(user.distance)}m away`,
-          interests: ['Networking', 'Professional'],
-          image: user.profiles.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
-          matchScore: matchScore > 60 ? matchScore : 60 + Math.floor(Math.random() * 10),
-          matchColor: colors[colorIndex],
-          // Add any other properties needed
-        };
-      });
-      
-      // Combine with existing smart matches, prioritizing nearby users
-      // and removing duplicates by ID
-      const combinedMatches = [...nearbyMatches];
-      
-      // Only add default matches if we don't have enough nearby users
-      if (nearbyMatches.length < 3) {
-        smartMatches.forEach(match => {
-          if (!combinedMatches.some(m => m.id === match.id)) {
-            combinedMatches.push(match);
-          }
-        });
-      }
-      
-      setFilteredMatches(combinedMatches);
-    }
-  }, [nearbyUsers]);
 
   const loadConnectionRequests = async () => {
     try {
@@ -197,24 +154,7 @@ export default function HomeScreen() {
     setSearchQuery(query);
     
     if (query.trim() === '') {
-      setFilteredMatches(nearbyUsers.length > 0 ? 
-        nearbyUsers.map((user: any, index: number) => {
-          const colors = ['#10B981', '#F59E0B', '#3B82F6', '#8B5CF6', '#EF4444'];
-          const colorIndex = index % colors.length;
-          const matchScore = Math.floor(95 - (index * 5));
-          
-          return {
-            id: user.id,
-            name: user.profiles.full_name || user.profiles.username,
-            role: user.profiles.role || 'Professional',
-            company: user.profiles.company || 'OpenAnts',
-            distance: `${Math.round(user.distance)}m away`,
-            interests: ['Networking', 'Professional'],
-            image: user.profiles.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
-            matchScore: matchScore > 60 ? matchScore : 60 + Math.floor(Math.random() * 10),
-            matchColor: colors[colorIndex],
-          };
-        }) : smartMatches);
+      setFilteredMatches(smartMatches);
       setFilteredConnections(recentConnections);
       return;
     }
@@ -222,7 +162,7 @@ export default function HomeScreen() {
     const lowercaseQuery = query.toLowerCase();
     
     // Filter matches
-    const matchResults = filteredMatches.filter(match => 
+    const matchResults = smartMatches.filter(match => 
       match.name.toLowerCase().includes(lowercaseQuery) ||
       match.role.toLowerCase().includes(lowercaseQuery) ||
       match.company.toLowerCase().includes(lowercaseQuery) ||
@@ -661,7 +601,7 @@ export default function HomeScreen() {
             onPress={handleNearbyNavigation}
           />
           <StatCard 
-            number={filteredMatches.length.toString()} 
+            number="5" 
             label="Matches" 
             color="#10B981" 
             onPress={handleMatchesNavigation}
@@ -713,20 +653,9 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           
-          {filteredMatches.length === 0 ? (
-            <View style={styles.emptyMatches}>
-              <Text style={styles.emptyMatchesText}>No matches found</Text>
-              <Text style={styles.emptyMatchesSubtext}>
-                {isPublicMode 
-                  ? 'Try exploring the Nearby tab to find professionals in your area'
-                  : 'Enable Public Mode to discover nearby professionals'}
-              </Text>
-            </View>
-          ) : (
-            filteredMatches.slice(0, 2).map((match) => (
-              <MatchCard key={match.id} match={match} />
-            ))
-          )}
+          {filteredMatches.slice(0, 2).map((match) => (
+            <MatchCard key={match.id} match={match} />
+          ))}
         </View>
 
         {/* Connection Requests Section - Now below Smart Matches, only show when not searching */}
@@ -1350,27 +1279,5 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 100,
-  },
-  emptyMatches: {
-    alignItems: 'center',
-    paddingVertical: 32,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderStyle: 'dashed',
-  },
-  emptyMatchesText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#6B7280',
-    marginBottom: 8,
-  },
-  emptyMatchesSubtext: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#9CA3AF',
-    textAlign: 'center',
-    paddingHorizontal: 32,
   },
 });
