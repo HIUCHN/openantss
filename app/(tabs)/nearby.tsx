@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Image, ScrollVi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
-import { MapPin, Users, MessageCircle, UserPlus, X, Navigation, RefreshCw, Settings, Eye, EyeOff, ChevronDown, ChevronUp, Shield, Compass, Zap, TriangleAlert as AlertTriangle } from 'lucide-react-native';
+import { MapPin, Users, MessageCircle, UserPlus, X, Navigation, RefreshCw, Settings, Eye, EyeOff, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import MapBoxMap from '@/components/MapBoxMap';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
@@ -41,20 +41,8 @@ export default function NearbyScreen() {
   const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
   const [showNearbyMetrics, setShowNearbyMetrics] = useState(true);
   const [debugInfo, setDebugInfo] = useState<string>('');
-  const [locationUpdateCount, setLocationUpdateCount] = useState(0);
-  const [locationQuality, setLocationQuality] = useState<'high' | 'medium' | 'low' | 'unknown'>('unknown');
-  const [showLocationDetails, setShowLocationDetails] = useState(false);
-  const [locationSource, setLocationSource] = useState<string>('unknown');
-  const [locationAge, setLocationAge] = useState<number>(0);
-  const [lastLocationUpdate, setLastLocationUpdate] = useState<Date | null>(null);
-  const [isCalibrating, setIsCalibrating] = useState(false);
-  const [calibrationProgress, setCalibrationProgress] = useState(0);
-  const [showCalibrationModal, setShowCalibrationModal] = useState(false);
-  
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
-  const locationHistory = useRef<Location.LocationObject[]>([]);
-  const calibrationTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Check if user has public mode enabled
   const isPublicMode = profile?.is_public ?? false;
@@ -87,34 +75,16 @@ export default function NearbyScreen() {
     }
   }, [isPublicMode, location]);
 
-  // Update location age every second
-  useEffect(() => {
-    if (!lastLocationUpdate) return;
-    
-    const interval = setInterval(() => {
-      if (lastLocationUpdate) {
-        const ageInSeconds = Math.floor((new Date().getTime() - lastLocationUpdate.getTime()) / 1000);
-        setLocationAge(ageInSeconds);
-      }
-    }, 1000);
-    
-    return () => clearInterval(interval);
-  }, [lastLocationUpdate]);
-
   const cleanup = () => {
     stopLocationTracking();
     stopPeriodicRefresh();
-    if (calibrationTimeout.current) {
-      clearTimeout(calibrationTimeout.current);
-      calibrationTimeout.current = null;
-    }
   };
 
   const initializeLocation = async () => {
     try {
       setLoading(true);
       setErrorMessage(null);
-      setDebugInfo('Initializing location system...');
+      setDebugInfo('Initializing location...');
 
       // Check if location services are enabled
       const enabled = await Location.hasServicesEnabledAsync();
@@ -138,112 +108,40 @@ export default function NearbyScreen() {
 
       // Get current location with HIGHEST accuracy
       console.log('📍 Getting highest-accuracy location...');
-      setDebugInfo('Acquiring precise location...');
+      setDebugInfo('Getting precise location...');
       
-      // First, get a quick location fix to show something on the map
-      const quickLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy setting
+        maximumAge: 5000, // Use a recent location (5 seconds)
+        timeout: 20000, // Wait longer for better accuracy (20 seconds)
       });
-      
-      setLocation(quickLocation);
-      setLocationAccuracy(quickLocation.coords.accuracy || null);
-      setLastLocationUpdate(new Date(quickLocation.timestamp));
-      setDebugInfo(`Initial location: ${quickLocation.coords.latitude.toFixed(6)}, ${quickLocation.coords.longitude.toFixed(6)}`);
-      
-      // Then start the high-accuracy location acquisition
-      setIsCalibrating(true);
-      setShowCalibrationModal(true);
-      setCalibrationProgress(0);
-      
-      // Simulate calibration progress
-      calibrationTimeout.current = setTimeout(() => {
-        setCalibrationProgress(30);
-        
-        calibrationTimeout.current = setTimeout(() => {
-          setCalibrationProgress(60);
-          
-          calibrationTimeout.current = setTimeout(() => {
-            setCalibrationProgress(90);
-            
-            // Get high-accuracy location
-            Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.BestForNavigation,
-              maximumAge: 0,
-              timeout: 20000,
-            }).then(highAccuracyLocation => {
-              console.log('📍 High-precision location obtained:', {
-                latitude: highAccuracyLocation.coords.latitude,
-                longitude: highAccuracyLocation.coords.longitude,
-                accuracy: highAccuracyLocation.coords.accuracy,
-              });
-              
-              setLocation(highAccuracyLocation);
-              setLocationAccuracy(highAccuracyLocation.coords.accuracy || null);
-              setLastLocationUpdate(new Date(highAccuracyLocation.timestamp));
-              setLocationSource(Platform.OS === 'ios' ? 'GPS + Cellular + Wi-Fi' : 'GPS + Network');
-              
-              // Determine location quality based on accuracy
-              if (highAccuracyLocation.coords.accuracy) {
-                if (highAccuracyLocation.coords.accuracy < 10) {
-                  setLocationQuality('high');
-                } else if (highAccuracyLocation.coords.accuracy < 50) {
-                  setLocationQuality('medium');
-                } else {
-                  setLocationQuality('low');
-                }
-              }
-              
-              setDebugInfo(`High-precision location: ${highAccuracyLocation.coords.latitude.toFixed(6)}, ${highAccuracyLocation.coords.longitude.toFixed(6)}`);
-              
-              // Store location in database
-              if (isPublicMode) {
-                storeUserLocation({
-                  latitude: highAccuracyLocation.coords.latitude,
-                  longitude: highAccuracyLocation.coords.longitude,
-                  accuracy: highAccuracyLocation.coords.accuracy || undefined,
-                  altitude: highAccuracyLocation.coords.altitude || undefined,
-                  heading: highAccuracyLocation.coords.heading || undefined,
-                  speed: highAccuracyLocation.coords.speed || undefined,
-                  timestamp: new Date(highAccuracyLocation.timestamp),
-                });
-              }
-              
-              // Fetch nearby users
-              fetchNearbyUsers();
-              
-              setCalibrationProgress(100);
-              
-              // Hide calibration modal after a short delay
-              setTimeout(() => {
-                setIsCalibrating(false);
-                setShowCalibrationModal(false);
-              }, 500);
-            }).catch(error => {
-              console.error('Error getting high-accuracy location:', error);
-              setDebugInfo(`Error getting high-accuracy location: ${error.message}`);
-              setIsCalibrating(false);
-              setShowCalibrationModal(false);
-              
-              // Still use the quick location if high-accuracy fails
-              if (isPublicMode && quickLocation) {
-                storeUserLocation({
-                  latitude: quickLocation.coords.latitude,
-                  longitude: quickLocation.coords.longitude,
-                  accuracy: quickLocation.coords.accuracy || undefined,
-                  altitude: quickLocation.coords.altitude || undefined,
-                  heading: quickLocation.coords.heading || undefined,
-                  speed: quickLocation.coords.speed || undefined,
-                  timestamp: new Date(quickLocation.timestamp),
-                });
-                
-                // Fetch nearby users with the quick location
-                fetchNearbyUsers();
-              }
-            });
-          }, 1000);
-        }, 1000);
-      }, 1000);
 
+      console.log('📍 High-precision location obtained:', {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+        accuracy: currentLocation.coords.accuracy,
+      });
+
+      setLocation(currentLocation);
+      setLocationAccuracy(currentLocation.coords.accuracy || null);
+      setDebugInfo(`Precise location: ${currentLocation.coords.latitude.toFixed(6)}, ${currentLocation.coords.longitude.toFixed(6)}`);
+
+      if (isPublicMode) {
+        // Store location in database
+        console.log('📍 Storing high-precision location in database...');
+        await storeUserLocation({
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude,
+          accuracy: currentLocation.coords.accuracy || undefined,
+          altitude: currentLocation.coords.altitude || undefined,
+          heading: currentLocation.coords.heading || undefined,
+          speed: currentLocation.coords.speed || undefined,
+          timestamp: new Date(currentLocation.timestamp),
+        });
+
+        // Fetch nearby users
+        await fetchNearbyUsers();
+      }
     } catch (error) {
       console.error('Error initializing location:', error);
       setDebugInfo(`Error: ${error.message}`);
@@ -266,63 +164,33 @@ export default function NearbyScreen() {
       setIsTrackingLocation(true);
       console.log('📍 Starting continuous high-accuracy location tracking...');
       
-      // Clear location history
-      locationHistory.current = [];
-      
       locationSubscription.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.BestForNavigation,
-          distanceInterval: 5, // Update every 5 meters of movement
+          accuracy: Location.Accuracy.BestForNavigation, // Always use highest accuracy
           timeInterval: 10000, // Update every 10 seconds
+          distanceInterval: 5, // Update every 5 meters of movement
         },
         async (newLocation) => {
-          console.log('📍 Location updated:', {
+          console.log('📍 High-precision location updated:', {
             latitude: newLocation.coords.latitude,
             longitude: newLocation.coords.longitude,
             accuracy: newLocation.coords.accuracy,
-            timestamp: new Date(newLocation.timestamp).toISOString(),
           });
 
-          // Add to location history for smoothing
-          locationHistory.current.push(newLocation);
-          if (locationHistory.current.length > 5) {
-            locationHistory.current.shift(); // Keep only the last 5 locations
-          }
-          
-          // Apply location smoothing if we have enough history
-          let smoothedLocation = newLocation;
-          if (locationHistory.current.length >= 3) {
-            smoothedLocation = smoothLocation(locationHistory.current);
-          }
-
-          setLocation(smoothedLocation);
-          setLocationAccuracy(smoothedLocation.coords.accuracy || null);
-          setLastLocationUpdate(new Date(smoothedLocation.timestamp));
-          setLocationUpdateCount(prev => prev + 1);
-          
-          // Update location quality based on accuracy
-          if (smoothedLocation.coords.accuracy) {
-            if (smoothedLocation.coords.accuracy < 10) {
-              setLocationQuality('high');
-            } else if (smoothedLocation.coords.accuracy < 50) {
-              setLocationQuality('medium');
-            } else {
-              setLocationQuality('low');
-            }
-          }
-          
-          setDebugInfo(`Location update #${locationUpdateCount + 1}: ${smoothedLocation.coords.latitude.toFixed(6)}, ${smoothedLocation.coords.longitude.toFixed(6)}`);
+          setLocation(newLocation);
+          setLocationAccuracy(newLocation.coords.accuracy || null);
+          setDebugInfo(`Precise location: ${newLocation.coords.latitude.toFixed(6)}, ${newLocation.coords.longitude.toFixed(6)}`);
           
           // Only store location if still in public mode
           if (isPublicMode) {
             await storeUserLocation({
-              latitude: smoothedLocation.coords.latitude,
-              longitude: smoothedLocation.coords.longitude,
-              accuracy: smoothedLocation.coords.accuracy || undefined,
-              altitude: smoothedLocation.coords.altitude || undefined,
-              heading: smoothedLocation.coords.heading || undefined,
-              speed: smoothedLocation.coords.speed || undefined,
-              timestamp: new Date(smoothedLocation.timestamp),
+              latitude: newLocation.coords.latitude,
+              longitude: newLocation.coords.longitude,
+              accuracy: newLocation.coords.accuracy || undefined,
+              altitude: newLocation.coords.altitude || undefined,
+              heading: newLocation.coords.heading || undefined,
+              speed: newLocation.coords.speed || undefined,
+              timestamp: new Date(newLocation.timestamp),
             });
           }
         }
@@ -330,48 +198,7 @@ export default function NearbyScreen() {
     } catch (error) {
       console.error('Error starting location tracking:', error);
       setIsTrackingLocation(false);
-      setDebugInfo(`Error tracking location: ${error.message}`);
     }
-  };
-
-  // Location smoothing algorithm using weighted average
-  const smoothLocation = (locations: Location.LocationObject[]): Location.LocationObject => {
-    // More recent locations have higher weight
-    const weights = locations.map((_, index) => index + 1);
-    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-    
-    // Calculate weighted average for latitude and longitude
-    let sumLat = 0;
-    let sumLng = 0;
-    let sumAlt = 0;
-    let sumAcc = 0;
-    let sumHeading = 0;
-    let sumSpeed = 0;
-    
-    locations.forEach((loc, index) => {
-      const weight = weights[index] / totalWeight;
-      sumLat += loc.coords.latitude * weight;
-      sumLng += loc.coords.longitude * weight;
-      if (loc.coords.altitude) sumAlt += loc.coords.altitude * weight;
-      if (loc.coords.accuracy) sumAcc += loc.coords.accuracy * weight;
-      if (loc.coords.heading) sumHeading += loc.coords.heading * weight;
-      if (loc.coords.speed) sumSpeed += loc.coords.speed * weight;
-    });
-    
-    // Use the most recent location as the base and update coordinates
-    const mostRecent = locations[locations.length - 1];
-    return {
-      ...mostRecent,
-      coords: {
-        ...mostRecent.coords,
-        latitude: sumLat,
-        longitude: sumLng,
-        altitude: sumAlt || mostRecent.coords.altitude,
-        accuracy: sumAcc || mostRecent.coords.accuracy,
-        heading: sumHeading || mostRecent.coords.heading,
-        speed: sumSpeed || mostRecent.coords.speed,
-      }
-    };
   };
 
   const stopLocationTracking = () => {
@@ -395,7 +222,7 @@ export default function NearbyScreen() {
       if (isPublicMode && location) {
         fetchNearbyUsers();
       }
-    }, 30000); // Refresh every 30 seconds
+    }, 30000);
   };
 
   const stopPeriodicRefresh = () => {
@@ -589,51 +416,6 @@ export default function NearbyScreen() {
     return '#6B7280';
   };
 
-  const getLocationQualityIcon = () => {
-    switch (locationQuality) {
-      case 'high':
-        return <Zap size={16} color="#10B981" />;
-      case 'medium':
-        return <Compass size={16} color="#F59E0B" />;
-      case 'low':
-        return <AlertTriangle size={16} color="#EF4444" />;
-      default:
-        return <MapPin size={16} color="#6B7280" />;
-    }
-  };
-
-  const getLocationQualityText = () => {
-    switch (locationQuality) {
-      case 'high':
-        return 'High Precision';
-      case 'medium':
-        return 'Good Precision';
-      case 'low':
-        return 'Low Precision';
-      default:
-        return 'Unknown Precision';
-    }
-  };
-
-  const getLocationQualityColor = () => {
-    switch (locationQuality) {
-      case 'high':
-        return '#10B981';
-      case 'medium':
-        return '#F59E0B';
-      case 'low':
-        return '#EF4444';
-      default:
-        return '#6B7280';
-    }
-  };
-
-  const formatLocationAge = (seconds: number): string => {
-    if (seconds < 60) return `${seconds}s ago`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    return `${Math.floor(seconds / 3600)}h ago`;
-  };
-
   const UserModal = () => {
     if (!selectedUser) return null;
 
@@ -712,166 +494,6 @@ export default function NearbyScreen() {
                   <Text style={styles.messageButtonText}>Message</Text>
                 </TouchableOpacity>
               </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
-
-  const CalibrationModal = () => {
-    return (
-      <Modal
-        visible={showCalibrationModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => {}}
-      >
-        <View style={styles.calibrationModalOverlay}>
-          <View style={styles.calibrationModalContent}>
-            <Text style={styles.calibrationTitle}>Calibrating GPS</Text>
-            <Text style={styles.calibrationSubtitle}>Please wait while we calibrate your location for maximum accuracy</Text>
-            
-            <View style={styles.calibrationProgressContainer}>
-              <View style={[styles.calibrationProgressBar, { width: `${calibrationProgress}%` }]} />
-            </View>
-            
-            <Text style={styles.calibrationPercentage}>{calibrationProgress}%</Text>
-            
-            <View style={styles.calibrationTips}>
-              <Text style={styles.calibrationTipTitle}>For best results:</Text>
-              <Text style={styles.calibrationTip}>• Stand in an open area</Text>
-              <Text style={styles.calibrationTip}>• Hold your device upright</Text>
-              <Text style={styles.calibrationTip}>• Stay still during calibration</Text>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
-
-  const LocationDetailsModal = () => {
-    return (
-      <Modal
-        visible={showLocationDetails}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowLocationDetails(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.locationDetailsModalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Location Details</Text>
-              <TouchableOpacity 
-                style={styles.closeButton}
-                onPress={() => setShowLocationDetails(false)}
-              >
-                <X size={24} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {location ? (
-                <>
-                  <View style={styles.locationDetailSection}>
-                    <Text style={styles.locationDetailTitle}>Coordinates</Text>
-                    <View style={styles.locationDetailRow}>
-                      <Text style={styles.locationDetailLabel}>Latitude:</Text>
-                      <Text style={styles.locationDetailValue}>{location.coords.latitude.toFixed(6)}°</Text>
-                    </View>
-                    <View style={styles.locationDetailRow}>
-                      <Text style={styles.locationDetailLabel}>Longitude:</Text>
-                      <Text style={styles.locationDetailValue}>{location.coords.longitude.toFixed(6)}°</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.locationDetailSection}>
-                    <Text style={styles.locationDetailTitle}>Accuracy</Text>
-                    <View style={styles.locationDetailRow}>
-                      <Text style={styles.locationDetailLabel}>Horizontal:</Text>
-                      <Text style={styles.locationDetailValue}>
-                        {location.coords.accuracy ? `±${location.coords.accuracy.toFixed(1)}m` : 'Unknown'}
-                      </Text>
-                    </View>
-                    <View style={styles.locationDetailRow}>
-                      <Text style={styles.locationDetailLabel}>Quality:</Text>
-                      <View style={styles.locationQualityBadge}>
-                        {getLocationQualityIcon()}
-                        <Text style={[styles.locationQualityText, { color: getLocationQualityColor() }]}>
-                          {getLocationQualityText()}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {location.coords.altitude !== null && (
-                    <View style={styles.locationDetailSection}>
-                      <Text style={styles.locationDetailTitle}>Altitude</Text>
-                      <View style={styles.locationDetailRow}>
-                        <Text style={styles.locationDetailLabel}>Height:</Text>
-                        <Text style={styles.locationDetailValue}>
-                          {location.coords.altitude.toFixed(1)}m
-                          {location.coords.altitudeAccuracy && ` (±${location.coords.altitudeAccuracy.toFixed(1)}m)`}
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-
-                  {(location.coords.heading !== null || location.coords.speed !== null) && (
-                    <View style={styles.locationDetailSection}>
-                      <Text style={styles.locationDetailTitle}>Movement</Text>
-                      {location.coords.heading !== null && (
-                        <View style={styles.locationDetailRow}>
-                          <Text style={styles.locationDetailLabel}>Heading:</Text>
-                          <Text style={styles.locationDetailValue}>{location.coords.heading.toFixed(1)}°</Text>
-                        </View>
-                      )}
-                      {location.coords.speed !== null && (
-                        <View style={styles.locationDetailRow}>
-                          <Text style={styles.locationDetailLabel}>Speed:</Text>
-                          <Text style={styles.locationDetailValue}>
-                            {(location.coords.speed * 3.6).toFixed(1)} km/h
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  <View style={styles.locationDetailSection}>
-                    <Text style={styles.locationDetailTitle}>System</Text>
-                    <View style={styles.locationDetailRow}>
-                      <Text style={styles.locationDetailLabel}>Source:</Text>
-                      <Text style={styles.locationDetailValue}>{locationSource}</Text>
-                    </View>
-                    <View style={styles.locationDetailRow}>
-                      <Text style={styles.locationDetailLabel}>Last Update:</Text>
-                      <Text style={styles.locationDetailValue}>
-                        {lastLocationUpdate ? formatLocationAge(locationAge) : 'Unknown'}
-                      </Text>
-                    </View>
-                    <View style={styles.locationDetailRow}>
-                      <Text style={styles.locationDetailLabel}>Updates:</Text>
-                      <Text style={styles.locationDetailValue}>{locationUpdateCount}</Text>
-                    </View>
-                  </View>
-
-                  <TouchableOpacity 
-                    style={styles.recalibrateButton}
-                    onPress={() => {
-                      setShowLocationDetails(false);
-                      initializeLocation();
-                    }}
-                  >
-                    <RefreshCw size={16} color="#FFFFFF" />
-                    <Text style={styles.recalibrateButtonText}>Recalibrate GPS</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <View style={styles.noLocationData}>
-                  <MapPin size={48} color="#D1D5DB" />
-                  <Text style={styles.noLocationText}>No location data available</Text>
-                </View>
-              )}
             </ScrollView>
           </View>
         </View>
@@ -1027,14 +649,11 @@ export default function NearbyScreen() {
                   {isTrackingLocation ? 'Live tracking' : 'Location shared'}
                 </Text>
                 {locationAccuracy && (
-                  <TouchableOpacity 
-                    style={[styles.accuracyBadge, { backgroundColor: getLocationAccuracyColor() + '40' }]}
-                    onPress={() => setShowLocationDetails(true)}
-                  >
+                  <View style={[styles.accuracyBadge, { backgroundColor: getLocationAccuracyColor() + '40' }]}>
                     <Text style={[styles.accuracyText, { color: getLocationAccuracyColor() }]}>
                       {getLocationAccuracyText()}
                     </Text>
-                  </TouchableOpacity>
+                  </View>
                 )}
               </View>
             </View>
@@ -1079,47 +698,13 @@ export default function NearbyScreen() {
         
         {/* Map Overlay Info */}
         <View style={styles.mapOverlay}>
-          <TouchableOpacity 
-            style={styles.mapInfo}
-            onPress={() => setShowLocationDetails(true)}
-          >
+          <View style={styles.mapInfo}>
             <Navigation size={12} color="#FFFFFF" />
             <Text style={styles.mapInfoText}>
               {locationAccuracy ? `±${Math.round(locationAccuracy)}m` : 'Locating...'}
             </Text>
-            {lastLocationUpdate && (
-              <Text style={styles.mapInfoTextSmall}>
-                {formatLocationAge(locationAge)}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Location Quality Indicator */}
-        <TouchableOpacity 
-          style={styles.locationQualityIndicator}
-          onPress={() => setShowLocationDetails(true)}
-        >
-          <View style={[
-            styles.qualityIndicatorInner, 
-            { backgroundColor: getLocationQualityColor() }
-          ]}>
-            {getLocationQualityIcon()}
           </View>
-        </TouchableOpacity>
-
-        {/* Recalibrate Button */}
-        <TouchableOpacity 
-          style={styles.recalibrateMapButton}
-          onPress={initializeLocation}
-          disabled={loading || isCalibrating}
-        >
-          {loading || isCalibrating ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Compass size={16} color="#FFFFFF" />
-          )}
-        </TouchableOpacity>
+        </View>
       </View>
 
       {/* Clickable Nearby Metrics */}
@@ -1179,8 +764,6 @@ export default function NearbyScreen() {
       )}
 
       <UserModal />
-      <CalibrationModal />
-      <LocationDetailsModal />
       
       <AccountSettingsModal 
         visible={showAccountSettings}
@@ -1370,48 +953,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
-  },
-  mapInfoTextSmall: {
-    fontSize: 9,
-    fontFamily: 'Inter-Regular',
-    color: '#FFFFFF80',
-    marginLeft: 4,
-  },
-  // Location Quality Indicator
-  locationQualityIndicator: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  qualityIndicatorInner: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Recalibrate Button
-  recalibrateMapButton: {
-    position: 'absolute',
-    bottom: 16,
-    right: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#6366F1',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
   },
   // Clickable Nearby Metrics Toggle
   nearbyMetricsToggle: {
@@ -1808,144 +1349,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#6366F1',
-  },
-  // Calibration Modal
-  calibrationModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  calibrationModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    width: '80%',
-    maxWidth: 320,
-    alignItems: 'center',
-  },
-  calibrationTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  calibrationSubtitle: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  calibrationProgressContainer: {
-    width: '100%',
-    height: 8,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  calibrationProgressBar: {
-    height: '100%',
-    backgroundColor: '#6366F1',
-    borderRadius: 4,
-  },
-  calibrationPercentage: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#6366F1',
-    marginBottom: 24,
-  },
-  calibrationTips: {
-    width: '100%',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    padding: 16,
-  },
-  calibrationTipTitle: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  calibrationTip: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  // Location Details Modal
-  locationDetailsModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
-  },
-  locationDetailSection: {
-    marginBottom: 20,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-  },
-  locationDetailTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#111827',
-    marginBottom: 12,
-  },
-  locationDetailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  locationDetailLabel: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-  },
-  locationDetailValue: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#111827',
-  },
-  locationQualityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-  },
-  locationQualityText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-  },
-  noLocationData: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-  },
-  noLocationText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#6B7280',
-    marginTop: 16,
-  },
-  recalibrateButton: {
-    backgroundColor: '#6366F1',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 16,
-    gap: 8,
-  },
-  recalibrateButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
   },
 });
