@@ -211,57 +211,66 @@ const WebMapBox = ({ userLocations, currentUserLocation, onUserPinPress, style, 
       // Store marker reference for later removal
       userMarkers.current.push(marker);
       
-      // Add popup with user info if showUserInfo is true
-      if (showUserInfo) {
-        // Create popup content
-        const popupContent = document.createElement('div');
-        popupContent.className = 'mapboxgl-popup-content-wrapper';
-        popupContent.style.padding = '0';
-        popupContent.style.borderRadius = '8px';
-        popupContent.style.overflow = 'hidden';
-        popupContent.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
-        popupContent.style.minWidth = '150px';
-        
-        // Create info container
-        const infoContainer = document.createElement('div');
-        infoContainer.style.backgroundColor = '#FFFFFF';
-        infoContainer.style.padding = '8px 12px';
-        
-        // Add user name
-        const nameElement = document.createElement('div');
-        nameElement.textContent = user.name;
-        nameElement.style.fontWeight = 'bold';
-        nameElement.style.fontSize = '14px';
-        nameElement.style.color = '#111827';
-        nameElement.style.marginBottom = '2px';
-        infoContainer.appendChild(nameElement);
-        
-        // Add user role and company
-        const roleElement = document.createElement('div');
-        roleElement.textContent = `${user.role} at ${user.company}`;
-        roleElement.style.fontSize = '12px';
-        roleElement.style.color = '#6B7280';
-        infoContainer.appendChild(roleElement);
-        
-        popupContent.appendChild(infoContainer);
-        
-        // Create popup
-        const popup = new mapboxgl.Popup({
-          closeButton: false,
-          closeOnClick: false,
-          offset: [0, -20],
-          className: 'user-info-popup'
-        })
-        .setLngLat([user.longitude, user.latitude])
-        .setDOMContent(popupContent)
-        .addTo(map.current);
-        
-        // Store popup reference for later removal
-        userPopups.current.push(popup);
-      }
+      // Add user info label above marker
+      const labelElement = document.createElement('div');
+      labelElement.className = 'mapboxgl-user-label';
+      labelElement.style.backgroundColor = 'white';
+      labelElement.style.padding = '4px 8px';
+      labelElement.style.borderRadius = '4px';
+      labelElement.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+      labelElement.style.fontSize = '12px';
+      labelElement.style.fontWeight = 'bold';
+      labelElement.style.textAlign = 'center';
+      labelElement.style.minWidth = '100px';
+      labelElement.style.pointerEvents = 'none';
+      labelElement.style.transform = 'translate(-50%, -120%)';
+      labelElement.style.position = 'relative';
+      labelElement.style.zIndex = '1';
+      
+      // Add user name
+      const nameElement = document.createElement('div');
+      nameElement.textContent = user.name;
+      nameElement.style.fontWeight = 'bold';
+      nameElement.style.color = '#111827';
+      labelElement.appendChild(nameElement);
+      
+      // Add user role and company
+      const roleElement = document.createElement('div');
+      roleElement.textContent = `${user.role} at ${user.company}`;
+      roleElement.style.fontSize = '10px';
+      roleElement.style.color = '#6B7280';
+      labelElement.appendChild(roleElement);
+      
+      // Create a popup for the label
+      const popup = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        anchor: 'bottom',
+        offset: [0, -20],
+        className: 'mapboxgl-user-label-popup'
+      })
+      .setLngLat([user.longitude, user.latitude])
+      .setDOMContent(labelElement)
+      .addTo(map.current);
+      
+      // Store popup reference for later removal
+      userPopups.current.push(popup);
       
       console.log('📍 Added marker for user:', user.name, 'at', user.latitude, user.longitude);
     });
+
+    // Add custom CSS for the popups
+    const popupStyle = document.createElement('style');
+    popupStyle.textContent = `
+      .mapboxgl-user-label-popup .mapboxgl-popup-content {
+        padding: 4px 8px;
+        border-radius: 4px;
+      }
+      .mapboxgl-user-label-popup .mapboxgl-popup-tip {
+        display: none;
+      }
+    `;
+    document.head.appendChild(popupStyle);
 
     // Fit map to show all markers if no current user location
     if (userLocations.length > 0 && !currentUserLocation) {
