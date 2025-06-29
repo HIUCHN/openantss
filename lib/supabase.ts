@@ -21,8 +21,11 @@ if (!supabaseAnonKey) {
 const SessionStorage = {
   getItem: async (key: string) => {
     if (Platform.OS === 'web') {
-      // Fallback to localStorage on web
-      return localStorage.getItem(key);
+      // Check if we're in a browser environment before accessing localStorage
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return localStorage.getItem(key);
+      }
+      return null;
     }
     try {
       return await SecureStore.getItemAsync(key);
@@ -33,8 +36,10 @@ const SessionStorage = {
   },
   setItem: async (key: string, value: string) => {
     if (Platform.OS === 'web') {
-      // Fallback to localStorage on web
-      localStorage.setItem(key, value);
+      // Check if we're in a browser environment before accessing localStorage
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem(key, value);
+      }
       return;
     }
     try {
@@ -45,8 +50,10 @@ const SessionStorage = {
   },
   removeItem: async (key: string) => {
     if (Platform.OS === 'web') {
-      // Fallback to localStorage on web
-      localStorage.removeItem(key);
+      // Check if we're in a browser environment before accessing localStorage
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.removeItem(key);
+      }
       return;
     }
     try {
