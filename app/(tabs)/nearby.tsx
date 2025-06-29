@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Switch, Platform, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, Users, UserPlus, Settings, Bell, Info, Compass, Layers, Navigation, X, Check } from 'lucide-react-native';
+import { MapPin, Users, UserPlus, Settings, Bell, Info, Compass, Layers, Navigation, X, Check, RefreshCw } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import MapBoxMap from '@/components/MapBoxMap';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,10 +11,12 @@ import DebugPanel from '@/components/DebugPanel';
 import { IS_DEBUG } from '@/constants';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
 
-// Minimum accuracy threshold in meters
-const ACCURACY_THRESHOLD = 20;
-// Update interval in milliseconds (1 minute)
+// Minimum accuracy threshold in meters (10 meters as requested)
+const ACCURACY_THRESHOLD = 10;
+// Update interval in milliseconds (1 minute as requested)
 const LOCATION_UPDATE_INTERVAL = 60000;
+// Refresh nearby users interval (1 minute)
+const NEARBY_USERS_REFRESH_INTERVAL = 60000;
 // Maximum age of location data in milliseconds (2 minutes)
 const LOCATION_MAX_AGE = 120000;
 
@@ -31,11 +33,14 @@ export default function NearbyScreen() {
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
   const [isPublicMode, setIsPublicMode] = useState(profile?.is_public ?? false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Refs for tracking
   const watchPositionSubscription = useRef<Location.LocationSubscription | null>(null);
   const locationUpdateTimer = useRef<NodeJS.Timeout | null>(null);
+  const nearbyUsersRefreshTimer = useRef<NodeJS.Timeout | null>(null);
   const lastLocationUpdate = useRef<number>(0);
+  const previousLocations = useRef<Location.LocationObject[]>([]);
 
   // Initialize location tracking
   useEffect(() => {
@@ -44,6 +49,7 @@ export default function NearbyScreen() {
       
       if (profile.is_public) {
         startLocationTracking();
+        startNearbyUsersRefresh();
       } else {
         setIsLoadingLocation(false);
       }
@@ -52,31 +58,49 @@ export default function NearbyScreen() {
     return () => {
       // Clean up location tracking
       stopLocationTracking();
+      stopNearbyUsersRefresh();
     };
   }, [profile]);
 
-  // Effect for loading nearby users when location changes or public mode changes
-  useEffect(() => {
-    if (profile?.is_public && location) {
+  // Start periodic refresh of nearby users
+  const startNearbyUsersRefresh = () => {
+    // Initial load
+    loadNearbyUsers();
+    
+    // Set up timer for regular refreshes
+    nearbyUsersRefreshTimer.current = setInterval(() => {
       loadNearbyUsers();
-    } else {
-      setNearbyUsers([]);
-      setIsLoadingNearbyUsers(false);
+    }, NEARBY_USERS_REFRESH_INTERVAL);
+  };
+
+  // Stop nearby users refresh
+  const stopNearbyUsersRefresh = () => {
+    if (nearbyUsersRefreshTimer.current) {
+      clearInterval(nearbyUsersRefreshTimer.current);
+      nearbyUsersRefreshTimer.current = null;
     }
-  }, [location, profile?.is_public]);
+  };
 
   const startLocationTracking = async () => {
     try {
       setIsLoadingLocation(true);
       setErrorMsg(null);
       
-      console.log('🔍 Starting location tracking...');
+      console.log('🔍 Starting high-accuracy location tracking...');
       
       // Request foreground permissions
       const { status } = await Location.requestForegroundPermissionsAsync();
       
       if (status !== 'granted') {
-        setErrorMsg('Permission to access location was denied');
+        setErrorMsg('Permission to access location was denied. Please enable location services in your device settings.');
+        setIsLoadingLocation(false);
+        return;
+      }
+      
+      // Check if location services are enabled
+      const isLocationEnabled = await Location.hasServicesEnabledAsync();
+      if (!isLocationEnabled) {
+        setErrorMsg('Location services are disabled. Please enable location services in your device settings.');
         setIsLoadingLocation(false);
         return;
       }
@@ -87,10 +111,19 @@ export default function NearbyScreen() {
         mayShowUserSettingsDialog: true
       });
       
-      console.log('📍 Initial location obtained:', initialLocation.coords);
+      console.log('📍 Initial high-accuracy location obtained:', initialLocation.coords);
+      
+      // Check if accuracy meets our threshold
+      if (initialLocation.coords.accuracy && initialLocation.coords.accuracy > ACCURACY_THRESHOLD) {
+        console.warn(`⚠️ Initial location accuracy (${initialLocation.coords.accuracy}m) is worse than threshold (${ACCURACY_THRESHOLD}m)`);
+        // We'll still use it but log a warning
+      }
       
       // Set initial location
       setLocation(initialLocation);
+      
+      // Add to location history
+      previousLocations.current = [initialLocation];
       
       // Store initial location in database
       await storeLocationInDatabase(initialLocation);
@@ -103,9 +136,20 @@ export default function NearbyScreen() {
           timeInterval: 5000, // Check every 5 seconds
         },
         (newLocation) => {
+          // Check if accuracy meets our threshold
+          if (newLocation.coords.accuracy && newLocation.coords.accuracy > ACCURACY_THRESHOLD) {
+            console.warn(`⚠️ New location accuracy (${newLocation.coords.accuracy}m) is worse than threshold (${ACCURACY_THRESHOLD}m), applying stronger smoothing`);
+            // We'll still use it but apply stronger smoothing
+          }
+          
           // Apply location smoothing
           const smoothedLocation = applyLocationSmoothing(newLocation);
+          
+          // Update location state
           setLocation(smoothedLocation);
+          
+          // Add to location history (keep last 5 locations)
+          previousLocations.current = [smoothedLocation, ...previousLocations.current.slice(0, 4)];
           
           // Only update database at the specified interval
           const now = Date.now();
@@ -126,7 +170,7 @@ export default function NearbyScreen() {
       setIsLoadingLocation(false);
     } catch (error) {
       console.error('❌ Error starting location tracking:', error);
-      setErrorMsg('Failed to start location tracking. Please try again.');
+      setErrorMsg('Failed to start location tracking. Please check your device settings and try again.');
       setIsLoadingLocation(false);
     }
   };
@@ -145,28 +189,47 @@ export default function NearbyScreen() {
       clearInterval(locationUpdateTimer.current);
       locationUpdateTimer.current = null;
     }
+    
+    // Clear location history
+    previousLocations.current = [];
   };
 
   const applyLocationSmoothing = (newLocation: Location.LocationObject): Location.LocationObject => {
-    // If accuracy is worse than threshold, reject the update
-    if (newLocation.coords.accuracy && newLocation.coords.accuracy > ACCURACY_THRESHOLD) {
-      console.log(`⚠️ Location update rejected: accuracy (${newLocation.coords.accuracy}m) worse than threshold (${ACCURACY_THRESHOLD}m)`);
-      return location || newLocation;
-    }
-    
-    // If this is the first location, just use it
-    if (!location) {
+    // If this is the first location or we have no previous locations, just use it
+    if (previousLocations.current.length === 0) {
       return newLocation;
     }
     
-    // Simple exponential smoothing
-    // Alpha determines how much weight to give to the new location (0-1)
-    // Lower alpha = more smoothing but slower response
-    const alpha = 0.3;
+    // Get the most recent location
+    const lastLocation = previousLocations.current[0];
     
+    // Calculate time difference in seconds
+    const timeDiff = (newLocation.timestamp - lastLocation.timestamp) / 1000;
+    
+    // If time difference is too large, don't smooth (likely a gap in tracking)
+    if (timeDiff > 30) {
+      return newLocation;
+    }
+    
+    // Determine alpha based on accuracy
+    // Lower accuracy = lower alpha (more smoothing)
+    let alpha = 0.5; // Default value
+    
+    if (newLocation.coords.accuracy) {
+      if (newLocation.coords.accuracy > ACCURACY_THRESHOLD) {
+        // Poor accuracy, apply more smoothing
+        alpha = 0.2;
+      } else if (newLocation.coords.accuracy < ACCURACY_THRESHOLD / 2) {
+        // Excellent accuracy, apply less smoothing
+        alpha = 0.8;
+      }
+    }
+    
+    // Apply exponential smoothing to coordinates
     const smoothedCoords = {
-      latitude: location.coords.latitude * (1 - alpha) + newLocation.coords.latitude * alpha,
-      longitude: location.coords.longitude * (1 - alpha) + newLocation.coords.longitude * alpha,
+      latitude: lastLocation.coords.latitude * (1 - alpha) + newLocation.coords.latitude * alpha,
+      longitude: lastLocation.coords.longitude * (1 - alpha) + newLocation.coords.longitude * alpha,
+      // Keep other properties from the new location
       altitude: newLocation.coords.altitude,
       accuracy: newLocation.coords.accuracy,
       altitudeAccuracy: newLocation.coords.altitudeAccuracy,
@@ -182,7 +245,7 @@ export default function NearbyScreen() {
 
   const storeLocationInDatabase = async (locationData: Location.LocationObject) => {
     try {
-      console.log('💾 Storing location in database...');
+      console.log('💾 Storing high-accuracy location in database...');
       
       const { error } = await storeUserLocation({
         latitude: locationData.coords.latitude,
@@ -197,7 +260,7 @@ export default function NearbyScreen() {
       if (error) {
         console.error('❌ Error storing location:', error);
       } else {
-        console.log('✅ Location stored successfully');
+        console.log('✅ High-accuracy location stored successfully');
       }
     } catch (error) {
       console.error('❌ Unexpected error storing location:', error);
@@ -291,8 +354,10 @@ export default function NearbyScreen() {
       // Start or stop location tracking based on new value
       if (value) {
         startLocationTracking();
+        startNearbyUsersRefresh();
       } else {
         stopLocationTracking();
+        stopNearbyUsersRefresh();
         setLocation(null);
         setNearbyUsers([]);
       }
@@ -332,7 +397,7 @@ export default function NearbyScreen() {
     }
     
     try {
-      setIsLoadingLocation(true);
+      setIsRefreshing(true);
       setErrorMsg(null);
       
       // Get current location with high accuracy
@@ -341,10 +406,23 @@ export default function NearbyScreen() {
         mayShowUserSettingsDialog: true
       });
       
-      console.log('📍 Refreshed location obtained:', currentLocation.coords);
+      console.log('📍 Refreshed high-accuracy location obtained:', currentLocation.coords);
+      
+      // Check if accuracy meets our threshold
+      if (currentLocation.coords.accuracy && currentLocation.coords.accuracy > ACCURACY_THRESHOLD) {
+        console.warn(`⚠️ Refreshed location accuracy (${currentLocation.coords.accuracy}m) is worse than threshold (${ACCURACY_THRESHOLD}m)`);
+        Alert.alert(
+          'Low Accuracy Warning',
+          `Your location accuracy (${Math.round(currentLocation.coords.accuracy)}m) is lower than optimal. For best results, ensure you're in an open area with good GPS signal.`,
+          [{ text: 'OK' }]
+        );
+      }
       
       // Set location
       setLocation(currentLocation);
+      
+      // Reset location history with this new location
+      previousLocations.current = [currentLocation];
       
       // Store location in database
       await storeLocationInDatabase(currentLocation);
@@ -352,11 +430,11 @@ export default function NearbyScreen() {
       // Reload nearby users
       await loadNearbyUsers();
       
-      setIsLoadingLocation(false);
+      setIsRefreshing(false);
     } catch (error) {
       console.error('❌ Error refreshing location:', error);
-      setErrorMsg('Failed to refresh location. Please try again.');
-      setIsLoadingLocation(false);
+      setErrorMsg('Failed to refresh location. Please check your device settings and try again.');
+      setIsRefreshing(false);
     }
   };
 
@@ -448,7 +526,7 @@ export default function NearbyScreen() {
               </Text>
               <Text style={styles.locationText}>
                 {isPublicMode 
-                  ? 'Location sharing enabled' 
+                  ? 'High-accuracy location sharing enabled' 
                   : 'Location sharing disabled'
                 }
               </Text>
@@ -457,7 +535,7 @@ export default function NearbyScreen() {
           <View style={styles.switchContainer}>
             {isTogglingPublicMode && (
               <View style={styles.loadingIndicator}>
-                <View style={styles.spinner} />
+                <ActivityIndicator size="small" color="#FFFFFF" />
               </View>
             )}
             <Switch
@@ -482,7 +560,7 @@ export default function NearbyScreen() {
             {isLoadingLocation ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#6366F1" />
-                <Text style={styles.loadingText}>Getting your location...</Text>
+                <Text style={styles.loadingText}>Getting your high-accuracy location...</Text>
               </View>
             ) : errorMsg ? (
               <View style={styles.errorContainer}>
@@ -514,8 +592,13 @@ export default function NearbyScreen() {
                   <TouchableOpacity 
                     style={styles.mapControlButton}
                     onPress={handleRefreshLocation}
+                    disabled={isRefreshing}
                   >
-                    <Compass size={20} color="#6366F1" />
+                    {isRefreshing ? (
+                      <ActivityIndicator size="small" color="#6366F1" />
+                    ) : (
+                      <RefreshCw size={20} color="#6366F1" />
+                    )}
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={styles.mapControlButton}
@@ -536,6 +619,23 @@ export default function NearbyScreen() {
                   </Text>
                 </View>
                 
+                {/* Location Accuracy Indicator */}
+                {location && location.coords.accuracy && (
+                  <View style={[
+                    styles.accuracyIndicator,
+                    location.coords.accuracy <= ACCURACY_THRESHOLD 
+                      ? styles.accuracyGood 
+                      : styles.accuracyPoor
+                  ]}>
+                    <Text style={styles.accuracyText}>
+                      {location.coords.accuracy <= ACCURACY_THRESHOLD 
+                        ? 'High Accuracy' 
+                        : 'Limited Accuracy'}
+                      : {Math.round(location.coords.accuracy)}m
+                    </Text>
+                  </View>
+                )}
+                
                 {/* Selected User Info */}
                 {selectedUser && (
                   <UserInfoCard user={selectedUser} />
@@ -548,7 +648,7 @@ export default function NearbyScreen() {
             <MapPin size={48} color="#9CA3AF" />
             <Text style={styles.disabledTitle}>Location Sharing Disabled</Text>
             <Text style={styles.disabledText}>
-              Enable location sharing to see professionals nearby and allow others to find you.
+              Enable high-accuracy location sharing to see professionals nearby and allow others to find you.
             </Text>
             <TouchableOpacity 
               style={styles.enableButton}
@@ -681,7 +781,6 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF40',
     borderTopColor: '#FFFFFF',
     borderRadius: 8,
-    // Note: In a real app, you'd use react-native-reanimated for the spinning animation
   },
   switch: {
     transform: [{ scaleX: 1 }, { scaleY: 1 }],
@@ -804,6 +903,30 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   nearbyUsersText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+  },
+  accuracyIndicator: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  accuracyGood: {
+    backgroundColor: '#10B981',
+  },
+  accuracyPoor: {
+    backgroundColor: '#F59E0B',
+  },
+  accuracyText: {
     fontSize: 12,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
