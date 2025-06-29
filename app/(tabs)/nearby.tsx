@@ -1,674 +1,774 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Switch, Platform, ActivityIndicator, Image } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Image, ScrollView, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, Users, UserPlus, Settings, Bell, Info, Compass, Layers, Navigation, X, Check, RefreshCw } from 'lucide-react-native';
 import * as Location from 'expo-location';
-import MapBoxMap from '@/components/MapBoxMap';
+import { MapPin, Users, MessageCircle, UserPlus, X, Navigation, RefreshCw, Settings, Eye, EyeOff, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { router } from 'expo-router';
-import DebugPanel from '@/components/DebugPanel';
-import { IS_DEBUG } from '@/constants';
+import MapBoxMap from '@/components/MapBoxMap';
 import AccountSettingsModal from '@/components/AccountSettingsModal';
 
-// Minimum accuracy threshold in meters (10 meters as requested)
-const ACCURACY_THRESHOLD = 10;
-// Update interval in milliseconds (1 minute as requested)
-const LOCATION_UPDATE_INTERVAL = 60000;
-// Refresh nearby users interval (1 minute)
-const NEARBY_USERS_REFRESH_INTERVAL = 60000;
-// Maximum age of location data in milliseconds (2 minutes)
-const LOCATION_MAX_AGE = 120000;
+interface NearbyUser {
+  id: string;
+  name: string;
+  role: string;
+  company: string;
+  latitude: number;
+  longitude: number;
+  distance: number;
+  lastSeen: string;
+  image: string;
+  pinColor: string;
+  statusText: string;
+  bio?: string;
+  skills?: string[];
+  isOnline: boolean;
+}
 
 export default function NearbyScreen() {
-  const { profile, togglePublicMode, storeUserLocation, getNearbyUsers } = useAuth();
+  const { profile, storeUserLocation, getNearbyUsers, togglePublicMode, clearUserLocation } = useAuth();
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isTogglingPublicMode, setIsTogglingPublicMode] = useState(false);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
-  const [isLoadingNearbyUsers, setIsLoadingNearbyUsers] = useState(true);
-  const [nearbyUsers, setNearbyUsers] = useState<any[]>([]);
-  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [nearbyUsers, setNearbyUsers] = useState<NearbyUser[]>([]);
+  const [selectedUser, setSelectedUser] = useState<NearbyUser | null>(null);
+  const [showUserModal, setShowUserModal] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
-  const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
-  const [isPublicMode, setIsPublicMode] = useState(profile?.is_public ?? false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  
-  // Refs for tracking
-  const watchPositionSubscription = useRef<Location.LocationSubscription | null>(null);
-  const locationUpdateTimer = useRef<NodeJS.Timeout | null>(null);
-  const nearbyUsersRefreshTimer = useRef<NodeJS.Timeout | null>(null);
-  const lastLocationUpdate = useRef<number>(0);
-  const previousLocations = useRef<Location.LocationObject[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [locationPermission, setLocationPermission] = useState<Location.PermissionStatus | null>(null);
+  const [isTrackingLocation, setIsTrackingLocation] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isTogglingMode, setIsTogglingMode] = useState(false);
+  const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
+  const [showNearbyMetrics, setShowNearbyMetrics] = useState(true);
+  const [debugInfo, setDebugInfo] = useState<string>('');
+  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+  const refreshInterval = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize location tracking
+  // Check if user has public mode enabled
+  const isPublicMode = profile?.is_public ?? false;
+
   useEffect(() => {
-    if (profile) {
-      setIsPublicMode(profile.is_public ?? false);
-      
-      if (profile.is_public) {
-        startLocationTracking();
-        startNearbyUsersRefresh();
-      } else {
-        setIsLoadingLocation(false);
-      }
+    // Only initialize location if public mode is enabled
+    if (isPublicMode) {
+      initializeLocation();
+    } else {
+      // Clean up when not in public mode
+      cleanup();
+      setLocation(null);
+      setNearbyUsers([]);
+      setErrorMessage(null);
+      setDebugInfo('');
     }
-    
-    return () => {
-      // Clean up location tracking
-      stopLocationTracking();
-      stopNearbyUsersRefresh();
-    };
-  }, [profile]);
 
-  // Start periodic refresh of nearby users
-  const startNearbyUsersRefresh = () => {
-    // Initial load
-    loadNearbyUsers();
-    
-    // Set up timer for regular refreshes
-    nearbyUsersRefreshTimer.current = setInterval(() => {
-      loadNearbyUsers();
-    }, NEARBY_USERS_REFRESH_INTERVAL);
+    return () => {
+      cleanup();
+    };
+  }, [isPublicMode]);
+
+  useEffect(() => {
+    if (isPublicMode && location) {
+      startLocationTracking();
+      startPeriodicRefresh();
+    } else {
+      stopLocationTracking();
+      stopPeriodicRefresh();
+    }
+  }, [isPublicMode, location]);
+
+  const cleanup = () => {
+    stopLocationTracking();
+    stopPeriodicRefresh();
   };
 
-  // Stop nearby users refresh
-  const stopNearbyUsersRefresh = () => {
-    if (nearbyUsersRefreshTimer.current) {
-      clearInterval(nearbyUsersRefreshTimer.current);
-      nearbyUsersRefreshTimer.current = null;
+  const initializeLocation = async () => {
+    try {
+      setLoading(true);
+      setErrorMessage(null);
+      setDebugInfo('Initializing location...');
+
+      // Check if location services are enabled
+      const enabled = await Location.hasServicesEnabledAsync();
+      if (!enabled) {
+        setErrorMessage('Location services are disabled. Please enable them in your device settings.');
+        setDebugInfo('Location services disabled');
+        setLoading(false);
+        return;
+      }
+
+      // Request location permissions with more specific permissions
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermission(status);
+
+      if (status !== 'granted') {
+        setErrorMessage('Location permission is required to see nearby professionals. Please grant permission in settings.');
+        setDebugInfo('Location permission denied');
+        setLoading(false);
+        return;
+      }
+
+      // Get current location with HIGHEST accuracy
+      console.log('📍 Getting highest-accuracy location...');
+      setDebugInfo('Getting precise location...');
+      
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy setting
+        maximumAge: 5000, // Use a recent location (5 seconds)
+        timeout: 20000, // Wait longer for better accuracy (20 seconds)
+      });
+
+      console.log('📍 High-precision location obtained:', {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+        accuracy: currentLocation.coords.accuracy,
+      });
+
+      setLocation(currentLocation);
+      setLocationAccuracy(currentLocation.coords.accuracy || null);
+      setDebugInfo(`Precise location: ${currentLocation.coords.latitude.toFixed(6)}, ${currentLocation.coords.longitude.toFixed(6)}`);
+
+      if (isPublicMode) {
+        // Store location in database
+        console.log('📍 Storing high-precision location in database...');
+        await storeUserLocation({
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude,
+          accuracy: currentLocation.coords.accuracy || undefined,
+          altitude: currentLocation.coords.altitude || undefined,
+          heading: currentLocation.coords.heading || undefined,
+          speed: currentLocation.coords.speed || undefined,
+          timestamp: new Date(currentLocation.timestamp),
+        });
+
+        // Fetch nearby users
+        await fetchNearbyUsers();
+      }
+    } catch (error) {
+      console.error('Error initializing location:', error);
+      setDebugInfo(`Error: ${error.message}`);
+      if (error.code === 'E_LOCATION_TIMEOUT') {
+        setErrorMessage('Location request timed out. Please try again.');
+      } else if (error.code === 'E_LOCATION_UNAVAILABLE') {
+        setErrorMessage('Location is temporarily unavailable. Please try again.');
+      } else {
+        setErrorMessage('Failed to get your location. Please check your GPS settings and try again.');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
   const startLocationTracking = async () => {
+    if (isTrackingLocation || !isPublicMode) return;
+
     try {
-      setIsLoadingLocation(true);
-      setErrorMsg(null);
+      setIsTrackingLocation(true);
+      console.log('📍 Starting continuous high-accuracy location tracking...');
       
-      console.log('🔍 Starting high-accuracy location tracking...');
-      
-      // Request foreground permissions
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      
-      if (status !== 'granted') {
-        setErrorMsg('Permission to access location was denied. Please enable location services in your device settings.');
-        setIsLoadingLocation(false);
-        return;
-      }
-      
-      // Check if location services are enabled
-      const isLocationEnabled = await Location.hasServicesEnabledAsync();
-      if (!isLocationEnabled) {
-        setErrorMsg('Location services are disabled. Please enable location services in your device settings.');
-        setIsLoadingLocation(false);
-        return;
-      }
-      
-      // Get current location with high accuracy
-      const initialLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation,
-        mayShowUserSettingsDialog: true
-      });
-      
-      console.log('📍 Initial high-accuracy location obtained:', initialLocation.coords);
-      
-      // Check if accuracy meets our threshold
-      if (initialLocation.coords.accuracy && initialLocation.coords.accuracy > ACCURACY_THRESHOLD) {
-        console.warn(`⚠️ Initial location accuracy (${initialLocation.coords.accuracy}m) is worse than threshold (${ACCURACY_THRESHOLD}m)`);
-        // We'll still use it but log a warning
-      }
-      
-      // Set initial location
-      setLocation(initialLocation);
-      
-      // Add to location history
-      previousLocations.current = [initialLocation];
-      
-      // Store initial location in database
-      await storeLocationInDatabase(initialLocation);
-      
-      // Start watching position with high accuracy
-      watchPositionSubscription.current = await Location.watchPositionAsync(
+      locationSubscription.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.BestForNavigation,
-          distanceInterval: 5, // Update if moved at least 5 meters
-          timeInterval: 5000, // Check every 5 seconds
+          accuracy: Location.Accuracy.BestForNavigation, // Always use highest accuracy
+          timeInterval: 10000, // Update every 10 seconds
+          distanceInterval: 5, // Update every 5 meters of movement
         },
-        (newLocation) => {
-          // Check if accuracy meets our threshold
-          if (newLocation.coords.accuracy && newLocation.coords.accuracy > ACCURACY_THRESHOLD) {
-            console.warn(`⚠️ New location accuracy (${newLocation.coords.accuracy}m) is worse than threshold (${ACCURACY_THRESHOLD}m), applying stronger smoothing`);
-            // We'll still use it but apply stronger smoothing
-          }
+        async (newLocation) => {
+          console.log('📍 High-precision location updated:', {
+            latitude: newLocation.coords.latitude,
+            longitude: newLocation.coords.longitude,
+            accuracy: newLocation.coords.accuracy,
+          });
+
+          setLocation(newLocation);
+          setLocationAccuracy(newLocation.coords.accuracy || null);
+          setDebugInfo(`Precise location: ${newLocation.coords.latitude.toFixed(6)}, ${newLocation.coords.longitude.toFixed(6)}`);
           
-          // Apply location smoothing
-          const smoothedLocation = applyLocationSmoothing(newLocation);
-          
-          // Update location state
-          setLocation(smoothedLocation);
-          
-          // Add to location history (keep last 5 locations)
-          previousLocations.current = [smoothedLocation, ...previousLocations.current.slice(0, 4)];
-          
-          // Only update database at the specified interval
-          const now = Date.now();
-          if (now - lastLocationUpdate.current >= LOCATION_UPDATE_INTERVAL) {
-            storeLocationInDatabase(smoothedLocation);
-            lastLocationUpdate.current = now;
+          // Only store location if still in public mode
+          if (isPublicMode) {
+            await storeUserLocation({
+              latitude: newLocation.coords.latitude,
+              longitude: newLocation.coords.longitude,
+              accuracy: newLocation.coords.accuracy || undefined,
+              altitude: newLocation.coords.altitude || undefined,
+              heading: newLocation.coords.heading || undefined,
+              speed: newLocation.coords.speed || undefined,
+              timestamp: new Date(newLocation.timestamp),
+            });
           }
         }
       );
-      
-      // Set up timer for regular database updates
-      locationUpdateTimer.current = setInterval(() => {
-        if (location) {
-          storeLocationInDatabase(location);
-        }
-      }, LOCATION_UPDATE_INTERVAL);
-      
-      setIsLoadingLocation(false);
     } catch (error) {
-      console.error('❌ Error starting location tracking:', error);
-      setErrorMsg('Failed to start location tracking. Please check your device settings and try again.');
-      setIsLoadingLocation(false);
+      console.error('Error starting location tracking:', error);
+      setIsTrackingLocation(false);
     }
   };
 
   const stopLocationTracking = () => {
-    console.log('🛑 Stopping location tracking...');
-    
-    // Stop watching position
-    if (watchPositionSubscription.current) {
-      watchPositionSubscription.current.remove();
-      watchPositionSubscription.current = null;
-    }
-    
-    // Clear update timer
-    if (locationUpdateTimer.current) {
-      clearInterval(locationUpdateTimer.current);
-      locationUpdateTimer.current = null;
-    }
-    
-    // Clear location history
-    previousLocations.current = [];
-  };
-
-  const applyLocationSmoothing = (newLocation: Location.LocationObject): Location.LocationObject => {
-    // If this is the first location or we have no previous locations, just use it
-    if (previousLocations.current.length === 0) {
-      return newLocation;
-    }
-    
-    // Get the most recent location
-    const lastLocation = previousLocations.current[0];
-    
-    // Calculate time difference in seconds
-    const timeDiff = (newLocation.timestamp - lastLocation.timestamp) / 1000;
-    
-    // If time difference is too large, don't smooth (likely a gap in tracking)
-    if (timeDiff > 30) {
-      return newLocation;
-    }
-    
-    // Determine alpha based on accuracy
-    // Lower accuracy = lower alpha (more smoothing)
-    let alpha = 0.5; // Default value
-    
-    if (newLocation.coords.accuracy) {
-      if (newLocation.coords.accuracy > ACCURACY_THRESHOLD) {
-        // Poor accuracy, apply more smoothing
-        alpha = 0.2;
-      } else if (newLocation.coords.accuracy < ACCURACY_THRESHOLD / 2) {
-        // Excellent accuracy, apply less smoothing
-        alpha = 0.8;
+    if (locationSubscription.current) {
+      try {
+        locationSubscription.current.remove();
+        locationSubscription.current = null;
+        console.log('✅ Location tracking stopped successfully');
+      } catch (error) {
+        console.error('❌ Error stopping location tracking:', error);
+        locationSubscription.current = null;
       }
     }
-    
-    // Apply exponential smoothing to coordinates
-    const smoothedCoords = {
-      latitude: lastLocation.coords.latitude * (1 - alpha) + newLocation.coords.latitude * alpha,
-      longitude: lastLocation.coords.longitude * (1 - alpha) + newLocation.coords.longitude * alpha,
-      // Keep other properties from the new location
-      altitude: newLocation.coords.altitude,
-      accuracy: newLocation.coords.accuracy,
-      altitudeAccuracy: newLocation.coords.altitudeAccuracy,
-      heading: newLocation.coords.heading,
-      speed: newLocation.coords.speed
-    };
-    
-    return {
-      ...newLocation,
-      coords: smoothedCoords
-    };
+    setIsTrackingLocation(false);
   };
 
-  const storeLocationInDatabase = async (locationData: Location.LocationObject) => {
-    try {
-      console.log('💾 Storing high-accuracy location in database...');
-      
-      const { error } = await storeUserLocation({
-        latitude: locationData.coords.latitude,
-        longitude: locationData.coords.longitude,
-        accuracy: locationData.coords.accuracy,
-        altitude: locationData.coords.altitude,
-        heading: locationData.coords.heading,
-        speed: locationData.coords.speed,
-        timestamp: new Date(locationData.timestamp)
-      });
-      
-      if (error) {
-        console.error('❌ Error storing location:', error);
-      } else {
-        console.log('✅ High-accuracy location stored successfully');
+  const startPeriodicRefresh = () => {
+    if (refreshInterval.current) return;
+
+    refreshInterval.current = setInterval(() => {
+      if (isPublicMode && location) {
+        fetchNearbyUsers();
       }
-    } catch (error) {
-      console.error('❌ Unexpected error storing location:', error);
+    }, 30000);
+  };
+
+  const stopPeriodicRefresh = () => {
+    if (refreshInterval.current) {
+      clearInterval(refreshInterval.current);
+      refreshInterval.current = null;
     }
   };
 
-  const loadNearbyUsers = async () => {
+  const fetchNearbyUsers = async () => {
+    if (!isPublicMode || !location) return;
+
     try {
-      setIsLoadingNearbyUsers(true);
-      console.log('🔍 Loading nearby users...');
-      
-      const { data, error } = await getNearbyUsers(5000); // 5km radius
+      console.log('🔍 Fetching nearby users...');
+      const { data, error } = await getNearbyUsers(2000); // 2km radius
       
       if (error) {
-        console.error('❌ Error loading nearby users:', error);
-        setErrorMsg('Failed to load nearby users. Please try again.');
-      } else {
-        console.log('✅ Loaded', data?.length || 0, 'nearby users');
-        
-        // Transform data for map display
-        const transformedUsers = data?.map((user: any, index: number) => {
-          // Assign different colors based on index
-          const colors = ['#10B981', '#F59E0B', '#3B82F6', '#8B5CF6', '#EF4444'];
-          const color = colors[index % colors.length];
-          
+        console.error('Error fetching nearby users:', error);
+        setDebugInfo(`Error fetching users: ${error.message}`);
+        return;
+      }
+
+      console.log('📊 Raw nearby users data:', data);
+
+      if (data) {
+        const formattedUsers: NearbyUser[] = data.map((userLocation: any, index: number) => {
+          const user = userLocation.profiles || userLocation;
+          const distance = userLocation.distance || calculateDistance(
+            location.coords.latitude,
+            location.coords.longitude,
+            userLocation.latitude,
+            userLocation.longitude
+          );
+
+          // Assign different pin colors based on role or randomly
+          const pinColors = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#3B82F6'];
+          const pinColor = pinColors[index % pinColors.length];
+
           return {
             id: user.id,
-            name: user.profiles.full_name || user.profiles.username,
-            role: user.profiles.role || 'Professional',
-            company: user.profiles.company || 'OpenAnts',
-            latitude: user.latitude,
-            longitude: user.longitude,
-            pinColor: color,
-            statusText: user.distance < 100 ? 'Very Close' : user.distance < 500 ? 'Nearby' : 'In Area',
-            image: user.profiles.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400'
+            name: user.full_name || user.username,
+            role: user.role || 'Professional',
+            company: user.company || 'OpenAnts',
+            latitude: userLocation.latitude,
+            longitude: userLocation.longitude,
+            distance: Math.round(distance),
+            lastSeen: formatLastSeen(userLocation.timestamp || userLocation.last_location_update),
+            image: user.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+            pinColor,
+            statusText: distance < 100 ? 'Very Close' : distance < 500 ? 'Nearby' : 'In Area',
+            bio: user.bio,
+            skills: user.skills,
+            isOnline: isRecentLocation(userLocation.timestamp || userLocation.last_location_update),
           };
-        }) || [];
+        });
+
+        setNearbyUsers(formattedUsers);
+        setDebugInfo(`Found ${formattedUsers.length} nearby users`);
         
-        setNearbyUsers(transformedUsers);
+        // Log user details for debugging
+        console.log('👥 Formatted nearby users:', formattedUsers.map(u => ({
+          name: u.name,
+          distance: u.distance,
+          location: { lat: u.latitude, lng: u.longitude }
+        })));
+      } else {
+        setNearbyUsers([]);
+        setDebugInfo('No nearby users found');
       }
     } catch (error) {
-      console.error('❌ Unexpected error loading nearby users:', error);
-      setErrorMsg('An unexpected error occurred. Please try again.');
-    } finally {
-      setIsLoadingNearbyUsers(false);
+      console.error('Error fetching nearby users:', error);
+      setDebugInfo(`Fetch error: ${error.message}`);
     }
   };
 
-  const handlePublicModeToggle = async (value: boolean) => {
-    // Prevent multiple simultaneous toggles
-    if (isTogglingPublicMode) {
-      console.log('🚫 Toggle already in progress, ignoring...');
-      return;
-    }
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lng2 - lng1) * Math.PI / 180;
 
-    // Prevent toggling if the value is the same as current state
-    if (value === isPublicMode) {
-      console.log('🚫 Value is same as current state, ignoring...');
-      return;
-    }
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 
-    setIsTogglingPublicMode(true);
+    return R * c;
+  };
+
+  const formatLastSeen = (timestamp: string): string => {
+    if (!timestamp) return 'Unknown';
     
+    const now = new Date();
+    const lastSeen = new Date(timestamp);
+    const diffMs = now.getTime() - lastSeen.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 5) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${diffDays}d ago`;
+  };
+
+  const isRecentLocation = (timestamp: string): boolean => {
+    if (!timestamp) return false;
+    
+    const now = new Date();
+    const lastSeen = new Date(timestamp);
+    const diffMs = now.getTime() - lastSeen.getTime();
+    return diffMs < 300000; // 5 minutes
+  };
+
+  const handleRefresh = async () => {
+    if (!isPublicMode) return;
+    
+    setRefreshing(true);
+    setDebugInfo('Refreshing...');
+    // Refresh both location and nearby users
+    await initializeLocation();
+    setRefreshing(false);
+  };
+
+  const handleUserPinPress = (user: NearbyUser) => {
+    setSelectedUser(user);
+    setShowUserModal(true);
+  };
+
+  const handleTogglePublicMode = async () => {
+    if (isTogglingMode) return;
+
     try {
-      console.log('🔄 Toggling public mode from', isPublicMode, 'to', value);
+      setIsTogglingMode(true);
+      const newValue = !isPublicMode;
       
-      const { error } = await togglePublicMode(value);
+      console.log('🔄 Toggling public mode from', isPublicMode, 'to', newValue);
+      
+      const { error } = await togglePublicMode(newValue);
       
       if (error) {
         console.error('❌ Error toggling public mode:', error);
-        Alert.alert(
-          'Error', 
-          'Failed to update location sharing settings. Please try again.',
-          [{ text: 'OK' }]
-        );
+        Alert.alert('Error', 'Failed to update location sharing settings. Please try again.');
         return;
       }
-      
-      // Update local state
-      setIsPublicMode(value);
-      
-      // Show feedback to user
-      const message = value 
-        ? 'Your location is now being shared with nearby professionals. You can find and be found by others in your area.'
-        : 'Your location is no longer being shared. You won\'t appear to nearby professionals and your location data has been cleared.';
-      
-      const title = value ? 'Location Sharing Enabled' : 'Location Sharing Disabled';
-      
-      Alert.alert(title, message, [{ text: 'Got it' }]);
-      
-      // Start or stop location tracking based on new value
-      if (value) {
-        startLocationTracking();
-        startNearbyUsersRefresh();
-      } else {
-        stopLocationTracking();
-        stopNearbyUsersRefresh();
+
+      if (!newValue) {
+        console.log('🗑️ Clearing location data for private mode');
+        await clearUserLocation();
+        
+        cleanup();
         setLocation(null);
         setNearbyUsers([]);
+        setErrorMessage(null);
+        setDebugInfo('');
       }
+
+      const message = newValue 
+        ? 'Location sharing enabled. You can now see and be seen by nearby professionals.'
+        : 'Location sharing disabled. Your location is no longer visible to others.';
       
-      console.log('✅ Public mode toggled successfully to:', value);
+      Alert.alert(
+        newValue ? 'Public Mode Enabled' : 'Private Mode Enabled', 
+        message,
+        [{ text: 'Got it' }]
+      );
+
+      console.log('✅ Public mode toggled successfully to:', newValue);
     } catch (error) {
       console.error('❌ Unexpected error toggling public mode:', error);
-      Alert.alert(
-        'Error', 
-        'An unexpected error occurred. Please try again.',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
-      // Add a small delay to prevent rapid toggles
-      setTimeout(() => {
-        setIsTogglingPublicMode(false);
-      }, 500);
+      setIsTogglingMode(false);
     }
   };
 
-  const handleUserPinPress = (user: any) => {
-    setSelectedUser(user);
+  const getLocationAccuracyText = () => {
+    if (!locationAccuracy) return '';
+    if (locationAccuracy < 10) return 'Very High Accuracy';
+    if (locationAccuracy < 50) return 'High Accuracy';
+    if (locationAccuracy < 100) return 'Good Accuracy';
+    return 'Low Accuracy';
   };
 
-  const handleCloseUserInfo = () => {
-    setSelectedUser(null);
+  const getLocationAccuracyColor = () => {
+    if (!locationAccuracy) return '#6B7280';
+    if (locationAccuracy < 10) return '#10B981';
+    if (locationAccuracy < 50) return '#F59E0B';
+    if (locationAccuracy < 100) return '#EF4444';
+    return '#6B7280';
   };
 
-  const handleRefreshLocation = async () => {
-    if (!profile?.is_public) {
-      Alert.alert(
-        'Location Sharing Disabled',
-        'Please enable location sharing to see nearby users.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-    
-    try {
-      setIsRefreshing(true);
-      setErrorMsg(null);
-      
-      // Get current location with high accuracy
-      const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation,
-        mayShowUserSettingsDialog: true
-      });
-      
-      console.log('📍 Refreshed high-accuracy location obtained:', currentLocation.coords);
-      
-      // Check if accuracy meets our threshold
-      if (currentLocation.coords.accuracy && currentLocation.coords.accuracy > ACCURACY_THRESHOLD) {
-        console.warn(`⚠️ Refreshed location accuracy (${currentLocation.coords.accuracy}m) is worse than threshold (${ACCURACY_THRESHOLD}m)`);
-        Alert.alert(
-          'Low Accuracy Warning',
-          `Your location accuracy (${Math.round(currentLocation.coords.accuracy)}m) is lower than optimal. For best results, ensure you're in an open area with good GPS signal.`,
-          [{ text: 'OK' }]
-        );
-      }
-      
-      // Set location
-      setLocation(currentLocation);
-      
-      // Reset location history with this new location
-      previousLocations.current = [currentLocation];
-      
-      // Store location in database
-      await storeLocationInDatabase(currentLocation);
-      
-      // Reload nearby users
-      await loadNearbyUsers();
-      
-      setIsRefreshing(false);
-    } catch (error) {
-      console.error('❌ Error refreshing location:', error);
-      setErrorMsg('Failed to refresh location. Please check your device settings and try again.');
-      setIsRefreshing(false);
-    }
-  };
+  const UserModal = () => {
+    if (!selectedUser) return null;
 
-  const handleToggleMapType = () => {
-    setMapType(mapType === 'standard' ? 'satellite' : 'standard');
-  };
+    return (
+      <Modal
+        visible={showUserModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowUserModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.userModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Professional Profile</Text>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={() => setShowUserModal(false)}
+              >
+                <X size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
 
-  const handleProfilePress = () => {
-    setShowAccountSettings(true);
-  };
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              <View style={styles.userHeader}>
+                <Image source={{ uri: selectedUser.image }} style={styles.userImage} />
+                <View style={styles.userInfo}>
+                  <Text style={styles.userName}>{selectedUser.name}</Text>
+                  <Text style={styles.userRole}>{selectedUser.role}</Text>
+                  <Text style={styles.userCompany}>{selectedUser.company}</Text>
+                  <View style={styles.statusContainer}>
+                    <View style={[
+                      styles.statusDot, 
+                      { backgroundColor: selectedUser.isOnline ? '#10B981' : '#6B7280' }
+                    ]} />
+                    <Text style={styles.statusText}>
+                      {selectedUser.isOnline ? 'Active now' : selectedUser.lastSeen}
+                    </Text>
+                  </View>
+                </View>
+              </View>
 
-  const UserInfoCard = ({ user }: { user: any }) => (
-    <View style={styles.userInfoCard}>
-      <TouchableOpacity style={styles.closeButton} onPress={handleCloseUserInfo}>
-        <X size={20} color="#6B7280" />
-      </TouchableOpacity>
-      
-      <View style={styles.userInfoHeader}>
-        <Image source={{ uri: user.image }} style={styles.userImage} />
-        <View style={styles.userInfoContent}>
-          <Text style={styles.userName}>{user.name}</Text>
-          <Text style={styles.userRole}>{user.role} at {user.company}</Text>
-          <View style={styles.userLocation}>
-            <MapPin size={12} color="#6B7280" />
-            <Text style={styles.userDistance}>{user.statusText}</Text>
+              <View style={styles.distanceCard}>
+                <MapPin size={16} color="#6366F1" />
+                <Text style={styles.distanceText}>
+                  {selectedUser.distance}m away • {selectedUser.statusText}
+                </Text>
+              </View>
+
+              {selectedUser.bio && (
+                <View style={styles.bioSection}>
+                  <Text style={styles.sectionTitle}>About</Text>
+                  <Text style={styles.bioText}>{selectedUser.bio}</Text>
+                </View>
+              )}
+
+              {selectedUser.skills && selectedUser.skills.length > 0 && (
+                <View style={styles.skillsSection}>
+                  <Text style={styles.sectionTitle}>Skills</Text>
+                  <View style={styles.skillsContainer}>
+                    {selectedUser.skills.slice(0, 6).map((skill, index) => (
+                      <View key={index} style={styles.skillTag}>
+                        <Text style={styles.skillText}>{skill}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.actionButtons}>
+                <TouchableOpacity style={styles.connectButton}>
+                  <UserPlus size={18} color="#FFFFFF" />
+                  <Text style={styles.connectButtonText}>Connect</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.messageButton}>
+                  <MessageCircle size={18} color="#6366F1" />
+                  <Text style={styles.messageButtonText}>Message</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
-      </View>
-      
-      <View style={styles.userActions}>
-        <TouchableOpacity style={styles.connectButton}>
-          <UserPlus size={16} color="#FFFFFF" />
-          <Text style={styles.connectButtonText}>Connect</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.messageButton}>
-          <Text style={styles.messageButtonText}>Message</Text>
+      </Modal>
+    );
+  };
+
+  const PermissionScreen = () => (
+    <View style={styles.permissionContainer}>
+      <View style={styles.permissionContent}>
+        <View style={styles.permissionIcon}>
+          <MapPin size={48} color="#6366F1" />
+        </View>
+        <Text style={styles.permissionTitle}>Location Access Required</Text>
+        <Text style={styles.permissionDescription}>
+          To see nearby professionals and enable networking opportunities, we need access to your location.
+        </Text>
+        <TouchableOpacity style={styles.permissionButton} onPress={initializeLocation}>
+          <Text style={styles.permissionButtonText}>Enable Location</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 
+  const PrivateModeScreen = () => (
+    <View style={styles.privateModeContainer}>
+      <View style={styles.privateModeContent}>
+        <View style={styles.privateModeIcon}>
+          <EyeOff size={48} color="#6B7280" />
+        </View>
+        <Text style={styles.privateModeTitle}>Private Mode Enabled</Text>
+        <Text style={styles.privateModeDescription}>
+          Your location is not being shared. Enable Public Mode to see nearby professionals and be discoverable by others.
+        </Text>
+        <TouchableOpacity 
+          style={[styles.enablePublicButton, isTogglingMode && styles.buttonDisabled]} 
+          onPress={handleTogglePublicMode}
+          disabled={isTogglingMode}
+        >
+          {isTogglingMode ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Eye size={18} color="#FFFFFF" />
+              <Text style={styles.enablePublicButtonText}>Enable Public Mode</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const ErrorScreen = () => (
+    <View style={styles.errorContainer}>
+      <View style={styles.errorContent}>
+        <Text style={styles.errorTitle}>Unable to Load Nearby Users</Text>
+        <Text style={styles.errorDescription}>{errorMessage}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={initializeLocation}>
+          <RefreshCw size={18} color="#FFFFFF" />
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6366F1" />
+          <Text style={styles.loadingText}>Getting your precise location...</Text>
+          <Text style={styles.loadingSubtext}>This may take a few seconds for best accuracy</Text>
+          {debugInfo && (
+            <Text style={styles.debugText}>{debugInfo}</Text>
+          )}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (errorMessage && locationPermission !== 'granted' && isPublicMode) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <PermissionScreen />
+      </SafeAreaView>
+    );
+  }
+
+  if (!isPublicMode) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <PrivateModeScreen />
+      </SafeAreaView>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ErrorScreen />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.headerTitle}>Nearby</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>Nearby Professionals</Text>
+          <View style={styles.userCount}>
+            <Users size={16} color="#6366F1" />
+            <Text style={styles.userCountText}>{nearbyUsers.length} nearby</Text>
           </View>
-          <View style={styles.headerRight}>
-            {/* Debug Toggle Button - Only show when IS_DEBUG is true */}
-            {IS_DEBUG && (
-              <TouchableOpacity 
-                style={styles.debugButton}
-                onPress={() => setShowDebugPanel(!showDebugPanel)}
-              >
-                <Settings size={20} color="#6B7280" />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity style={styles.notificationButton}>
-              <Bell size={20} color="#6B7280" />
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>3</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleProfilePress}>
-              <Image 
-                source={{ uri: profile?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400' }} 
-                style={styles.profileImage} 
-              />
-            </TouchableOpacity>
-          </View>
+        </View>
+        <View style={styles.headerRight}>
+          <TouchableOpacity 
+            style={styles.refreshButton} 
+            onPress={handleRefresh}
+            disabled={refreshing || !isPublicMode}
+          >
+            <RefreshCw 
+              size={20} 
+              color="#6366F1" 
+              style={refreshing ? styles.spinning : undefined}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.settingsButton}
+            onPress={() => setShowAccountSettings(true)}
+          >
+            <Settings size={20} color="#6B7280" />
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Location Banner */}
+      {/* Status Banner */}
       <LinearGradient
-        colors={isPublicMode ? ['#10B981', '#059669'] : ['#EF4444', '#DC2626']}
-        style={styles.locationBanner}
+        colors={['#10B981', '#059669']}
+        style={styles.statusBanner}
       >
-        <View style={styles.locationContent}>
-          <View style={styles.locationLeft}>
-            <View style={[styles.locationIcon, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}>
-              <MapPin size={16} color="#FFFFFF" />
+        <View style={styles.statusContent}>
+          <View style={styles.statusLeft}>
+            <View style={styles.statusIcon}>
+              <Eye size={16} color="#FFFFFF" />
             </View>
             <View>
               <Text style={styles.publicModeText}>
                 {isPublicMode ? 'Public Mode' : 'Private Mode'}
               </Text>
-              <Text style={styles.locationText}>
-                {isPublicMode 
-                  ? 'High-accuracy location sharing enabled' 
-                  : 'Location sharing disabled'
-                }
-              </Text>
-            </View>
-          </View>
-          <View style={styles.switchContainer}>
-            {isTogglingPublicMode && (
-              <View style={styles.loadingIndicator}>
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              </View>
-            )}
-            <Switch
-              value={isPublicMode}
-              onValueChange={handlePublicModeToggle}
-              trackColor={{ false: 'rgba(255, 255, 255, 0.3)', true: 'rgba(255, 255, 255, 0.3)' }}
-              thumbColor="#FFFFFF"
-              disabled={isTogglingPublicMode}
-              style={[
-                styles.switch,
-                isTogglingPublicMode && styles.switchDisabled
-              ]}
-            />
-          </View>
-        </View>
-      </LinearGradient>
-
-      {/* Map Container */}
-      <View style={styles.mapContainer}>
-        {isPublicMode ? (
-          <>
-            {isLoadingLocation ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#6366F1" />
-                <Text style={styles.loadingText}>Getting your high-accuracy location...</Text>
-              </View>
-            ) : errorMsg ? (
-              <View style={styles.errorContainer}>
-                <Info size={32} color="#EF4444" />
-                <Text style={styles.errorText}>{errorMsg}</Text>
-                <TouchableOpacity 
-                  style={styles.retryButton}
-                  onPress={handleRefreshLocation}
-                >
-                  <Text style={styles.retryButtonText}>Try Again</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <>
-                <MapBoxMap
-                  userLocations={nearbyUsers}
-                  currentUserLocation={location ? {
-                    latitude: location.coords.latitude,
-                    longitude: location.coords.longitude,
-                    accuracy: location.coords.accuracy,
-                    timestamp: location.timestamp
-                  } : null}
-                  onUserPinPress={handleUserPinPress}
-                  showUserInfo={!!selectedUser}
-                />
-                
-                {/* Map Controls */}
-                <View style={styles.mapControls}>
-                  <TouchableOpacity 
-                    style={styles.mapControlButton}
-                    onPress={handleRefreshLocation}
-                    disabled={isRefreshing}
-                  >
-                    {isRefreshing ? (
-                      <ActivityIndicator size="small" color="#6366F1" />
-                    ) : (
-                      <RefreshCw size={20} color="#6366F1" />
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.mapControlButton}
-                    onPress={handleToggleMapType}
-                  >
-                    <Layers size={20} color="#6366F1" />
-                  </TouchableOpacity>
-                </View>
-                
-                {/* Nearby Users Count */}
-                <View style={styles.nearbyUsersCount}>
-                  <Users size={16} color="#FFFFFF" />
-                  <Text style={styles.nearbyUsersText}>
-                    {isLoadingNearbyUsers 
-                      ? 'Searching...' 
-                      : `${nearbyUsers.length} nearby`
-                    }
-                  </Text>
-                </View>
-                
-                {/* Location Accuracy Indicator */}
-                {location && location.coords.accuracy && (
-                  <View style={[
-                    styles.accuracyIndicator,
-                    location.coords.accuracy <= ACCURACY_THRESHOLD 
-                      ? styles.accuracyGood 
-                      : styles.accuracyPoor
-                  ]}>
-                    <Text style={styles.accuracyText}>
-                      {location.coords.accuracy <= ACCURACY_THRESHOLD 
-                        ? 'High Accuracy' 
-                        : 'Limited Accuracy'}
-                      : {Math.round(location.coords.accuracy)}m
+              <View style={styles.statusSubtitleRow}>
+                <Text style={styles.statusSubtitle}>
+                  {isTrackingLocation ? 'Live tracking' : 'Location shared'}
+                </Text>
+                {locationAccuracy && (
+                  <View style={[styles.accuracyBadge, { backgroundColor: getLocationAccuracyColor() + '40' }]}>
+                    <Text style={[styles.accuracyText, { color: getLocationAccuracyColor() }]}>
+                      {getLocationAccuracyText()}
                     </Text>
                   </View>
                 )}
-                
-                {/* Selected User Info */}
-                {selectedUser && (
-                  <UserInfoCard user={selectedUser} />
-                )}
-              </>
-            )}
-          </>
-        ) : (
-          <View style={styles.disabledContainer}>
-            <MapPin size={48} color="#9CA3AF" />
-            <Text style={styles.disabledTitle}>Location Sharing Disabled</Text>
-            <Text style={styles.disabledText}>
-              Enable high-accuracy location sharing to see professionals nearby and allow others to find you.
-            </Text>
-            <TouchableOpacity 
-              style={styles.enableButton}
-              onPress={() => handlePublicModeToggle(true)}
-            >
-              <Check size={16} color="#FFFFFF" />
-              <Text style={styles.enableButtonText}>Enable Location Sharing</Text>
-            </TouchableOpacity>
+              </View>
+            </View>
           </View>
+          <TouchableOpacity 
+            style={[styles.toggleButton, isTogglingMode && styles.buttonDisabled]}
+            onPress={handleTogglePublicMode}
+            disabled={isTogglingMode}
+          >
+            {isTogglingMode ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.toggleButtonText}>Turn Off</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+
+      {/* Debug Info */}
+      {debugInfo && (
+        <View style={styles.debugContainer}>
+          <Text style={styles.debugText}>{debugInfo}</Text>
+        </View>
+      )}
+
+      {/* Extra Large Map Container */}
+      <View style={styles.extraLargeMapContainer}>
+        {location && (
+          <MapBoxMap
+            userLocations={nearbyUsers}
+            currentUserLocation={{
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+              accuracy: location.coords.accuracy || undefined,
+              timestamp: location.timestamp,
+            }}
+            onUserPinPress={handleUserPinPress}
+            style={styles.map}
+            showUserInfo={true}
+          />
         )}
+        
+        {/* Map Overlay Info */}
+        <View style={styles.mapOverlay}>
+          <View style={styles.mapInfo}>
+            <Navigation size={12} color="#FFFFFF" />
+            <Text style={styles.mapInfoText}>
+              {locationAccuracy ? `±${Math.round(locationAccuracy)}m` : 'Locating...'}
+            </Text>
+          </View>
+        </View>
       </View>
 
-      {/* Account Settings Modal */}
+      {/* Clickable Nearby Metrics */}
+      <TouchableOpacity 
+        style={styles.nearbyMetricsToggle}
+        onPress={() => setShowNearbyMetrics(!showNearbyMetrics)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.metricsHeader}>
+          <View style={styles.metricsHeaderLeft}>
+            <Users size={18} color="#6366F1" />
+            <Text style={styles.metricsTitle}>Nearby Professionals ({nearbyUsers.length})</Text>
+          </View>
+          <View style={styles.metricsHeaderRight}>
+            {showNearbyMetrics ? (
+              <ChevronUp size={20} color="#6B7280" />
+            ) : (
+              <ChevronDown size={20} color="#6B7280" />
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {/* Collapsible User List */}
+      {showNearbyMetrics && (
+        <View style={styles.nearbyUsersList}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.userList}
+            contentContainerStyle={styles.userListContent}
+          >
+            {nearbyUsers.map((user) => (
+              <TouchableOpacity 
+                key={user.id} 
+                style={styles.compactUserCard}
+                onPress={() => handleUserPinPress(user)}
+              >
+                <Image source={{ uri: user.image }} style={styles.compactUserImage} />
+                <Text style={styles.compactUserName} numberOfLines={1}>{user.name}</Text>
+                <Text style={styles.compactUserDistance}>{user.distance}m</Text>
+                <View style={[
+                  styles.compactUserStatus,
+                  { backgroundColor: user.isOnline ? '#10B981' : '#6B7280' }
+                ]} />
+              </TouchableOpacity>
+            ))}
+            
+            {nearbyUsers.length === 0 && (
+              <View style={styles.emptyState}>
+                <Users size={24} color="#D1D5DB" />
+                <Text style={styles.emptyStateText}>No one nearby</Text>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      )}
+
+      <UserModal />
+      
       <AccountSettingsModal 
         visible={showAccountSettings}
         onClose={() => setShowAccountSettings(false)}
       />
-
-      {/* Debug Panel - Only show when IS_DEBUG is true */}
-      <DebugPanel isVisible={IS_DEBUG && showDebugPanel} />
     </SafeAreaView>
   );
 }
@@ -678,17 +778,45 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#111827',
+  },
+  loadingSubtext: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  debugContainer: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F59E0B',
+  },
+  debugText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#92400E',
+    textAlign: 'center',
+  },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
     paddingHorizontal: 16,
     paddingVertical: 12,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
   },
   headerLeft: {
     flex: 1,
@@ -697,58 +825,50 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontFamily: 'Inter-Bold',
     color: '#111827',
+    marginBottom: 2,
+  },
+  userCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  userCountText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#6366F1',
   },
   headerRight: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
-  debugButton: {
+  refreshButton: {
     padding: 8,
   },
-  notificationButton: {
-    position: 'relative',
+  spinning: {
+    // Note: In a real app, you'd use react-native-reanimated for the spinning animation
+  },
+  settingsButton: {
     padding: 8,
   },
-  notificationBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 16,
-    height: 16,
-    backgroundColor: '#EF4444',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notificationBadgeText: {
-    fontSize: 10,
-    fontFamily: 'Inter-Bold',
-    color: '#FFFFFF',
-  },
-  profileImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-  },
-  locationBanner: {
+  statusBanner: {
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 12,
   },
-  locationContent: {
+  statusContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  locationLeft: {
+  statusLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
-  locationIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  statusIcon: {
+    width: 32,
+    height: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -758,248 +878,455 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
   },
-  locationText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#FFFFFF80',
-  },
-  switchContainer: {
+  statusSubtitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  loadingIndicator: {
-    width: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+  statusSubtitle: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#FFFFFF80',
   },
-  spinner: {
-    width: 16,
-    height: 16,
-    borderWidth: 2,
-    borderColor: '#FFFFFF40',
-    borderTopColor: '#FFFFFF',
+  accuracyBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 8,
   },
-  switch: {
-    transform: [{ scaleX: 1 }, { scaleY: 1 }],
+  accuracyText: {
+    fontSize: 10,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
   },
-  switchDisabled: {
+  toggleButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toggleButtonText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+  },
+  buttonDisabled: {
     opacity: 0.6,
   },
-  mapContainer: {
-    flex: 1,
+  // Extra Large Map Container - Takes up 3/4 of the screen
+  extraLargeMapContainer: {
+    flex: 3, // Takes 3/4 of the available space
+    margin: 16,
+    marginBottom: 8,
+    borderRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 16,
     position: 'relative',
+    backgroundColor: '#FFFFFF',
+    minHeight: 400, // Ensure minimum height
   },
-  loadingContainer: {
+  map: {
+    flex: 1,
+  },
+  mapOverlay: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+  },
+  mapInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  mapInfoText: {
+    fontSize: 11,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+  },
+  // Clickable Nearby Metrics Toggle
+  nearbyMetricsToggle: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  metricsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  metricsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  metricsTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
+  },
+  metricsHeaderRight: {
+    padding: 4,
+  },
+  // Collapsible User List - Takes up remaining 1/4 space
+  nearbyUsersList: {
+    flex: 1, // Takes the remaining 1/4 of the space
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingBottom: 8,
+    maxHeight: 120,
+  },
+  userList: {
+    paddingLeft: 16,
+  },
+  userListContent: {
+    paddingRight: 16,
+  },
+  compactUserCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 10,
+    marginRight: 12,
+    width: 90,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    position: 'relative',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  compactUserImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginBottom: 6,
+  },
+  compactUserName: {
+    fontSize: 11,
+    fontFamily: 'Inter-Medium',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  compactUserDistance: {
+    fontSize: 10,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  compactUserStatus: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    width: 140,
+  },
+  emptyStateText: {
+    fontSize: 13,
+    fontFamily: 'Inter-Medium',
+    color: '#6B7280',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  permissionContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    paddingHorizontal: 32,
   },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
+  permissionContent: {
+    alignItems: 'center',
+    maxWidth: 300,
+  },
+  permissionIcon: {
+    width: 80,
+    height: 80,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  permissionTitle: {
+    fontSize: 20,
+    fontFamily: 'Inter-Bold',
+    color: '#111827',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  permissionDescription: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
     color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  permissionButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  permissionButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
+  },
+  privateModeContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  privateModeContent: {
+    alignItems: 'center',
+    maxWidth: 300,
+  },
+  privateModeIcon: {
+    width: 80,
+    height: 80,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  privateModeTitle: {
+    fontSize: 20,
+    fontFamily: 'Inter-Bold',
+    color: '#111827',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  privateModeDescription: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  enablePublicButton: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minWidth: 160,
+  },
+  enablePublicButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#FFFFFF',
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    padding: 24,
+    paddingHorizontal: 32,
   },
-  errorText: {
-    marginTop: 16,
-    marginBottom: 24,
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#EF4444',
+  errorContent: {
+    alignItems: 'center',
+    maxWidth: 300,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
+    color: '#111827',
+    marginBottom: 12,
     textAlign: 'center',
+  },
+  errorDescription: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
   },
   retryButton: {
     backgroundColor: '#6366F1',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
     borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   retryButtonText: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
   },
-  disabledContainer: {
+  modalOverlay: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    padding: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
   },
-  disabledTitle: {
-    marginTop: 16,
+  userModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  modalTitle: {
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
     color: '#111827',
-    marginBottom: 8,
-  },
-  disabledText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 24,
-    maxWidth: 300,
-  },
-  enableButton: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  enableButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  mapControls: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    gap: 8,
-  },
-  mapControlButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  nearbyUsersCount: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    backgroundColor: '#6366F1',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  nearbyUsersText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  accuracyIndicator: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  accuracyGood: {
-    backgroundColor: '#10B981',
-  },
-  accuracyPoor: {
-    backgroundColor: '#F59E0B',
-  },
-  accuracyText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
-  },
-  userInfoCard: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
   },
   closeButton: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
     padding: 4,
-    zIndex: 1,
   },
-  userInfoHeader: {
+  modalBody: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  userHeader: {
     flexDirection: 'row',
     marginBottom: 16,
   },
   userImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     marginRight: 16,
   },
-  userInfoContent: {
+  userInfo: {
     flex: 1,
-    justifyContent: 'center',
   },
   userName: {
     fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
+    fontFamily: 'Inter-Bold',
     color: '#111827',
     marginBottom: 2,
   },
   userRole: {
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter-Medium',
     color: '#6B7280',
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  userLocation: {
+  userCompany: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#9CA3AF',
+    marginBottom: 8,
+  },
+  statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
   },
-  userDistance: {
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
     fontSize: 12,
     fontFamily: 'Inter-Regular',
     color: '#6B7280',
   },
-  userActions: {
+  distanceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 6,
+  },
+  distanceText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#6366F1',
+  },
+  bioSection: {
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  bioText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#374151',
+    lineHeight: 20,
+  },
+  skillsSection: {
+    marginBottom: 24,
+  },
+  skillsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  skillTag: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  skillText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+  },
+  actionButtons: {
     flexDirection: 'row',
     gap: 12,
   },
   connectButton: {
     flex: 1,
     backgroundColor: '#6366F1',
-    borderRadius: 8,
-    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
     gap: 8,
   },
   connectButtonText: {
@@ -1009,17 +1336,18 @@ const styles = StyleSheet.create({
   },
   messageButton: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    paddingVertical: 10,
+    borderColor: '#6366F1',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
   },
   messageButtonText: {
     fontSize: 14,
     fontFamily: 'Inter-Medium',
-    color: '#6B7280',
+    color: '#6366F1',
   },
 });
