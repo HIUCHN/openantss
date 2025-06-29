@@ -1,37 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, MapPin, MessageCircle, Filter, Dessert as SortDesc, Users, RefreshCw } from 'lucide-react-native';
+import { ArrowLeft, MapPin, MessageCircle, Filter, Dessert as SortDesc } from 'lucide-react-native';
 import SearchBar from '@/components/SearchBar';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
 
 interface SmartMatch {
   id: string;
-  match_id: string;
-  match_score: number;
-  distance: number;
   name: string;
   role: string;
   company: string;
-  distance_text: string;
+  distance: string;
   interests: string[];
   image: string;
+  matchScore: number;
   matchColor: string;
-  bio: string;
+  bio?: string;
   mutualConnections: number;
   tags: string[];
 }
 
 export default function SmartMatchesScreen() {
-  const { profile } = useAuth();
+  const { getNearbyUsers } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [smartMatches, setSmartMatches] = useState<SmartMatch[]>([]);
   const [filteredMatches, setFilteredMatches] = useState<SmartMatch[]>([]);
   const [sortBy, setSortBy] = useState('match'); // 'match', 'distance', 'connections'
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,82 +39,54 @@ export default function SmartMatchesScreen() {
       setLoading(true);
       setError(null);
       
-      console.log('🔍 Fetching smart matches...');
-      
-      // First, generate smart matches from nearby users
-      const { data: generateResult, error: generateError } = await supabase.rpc(
-        'store_smart_matches_from_nearby',
-        { radius_meters: 5000 }
-      );
-      
-      if (generateError) {
-        console.error('❌ Error generating smart matches:', generateError);
-        if (generateError.message.includes('location not available')) {
-          setError('Location sharing must be enabled in the Nearby tab to find smart matches.');
-        } else {
-          setError('Failed to generate smart matches. Please try again.');
-        }
-        return;
-      }
-      
-      console.log('✅ Smart matches generated:', generateResult);
-      
-      // Then, fetch the generated matches with profile details
-      const { data, error } = await supabase.rpc('get_smart_matches', { limit_count: 50 });
+      const { data, error } = await getNearbyUsers(5000); // 5km radius
       
       if (error) {
-        console.error('❌ Error fetching smart matches:', error);
+        console.error('Error fetching smart matches:', error);
         setError('Failed to load smart matches. Please try again.');
         return;
       }
 
       if (!data || data.length === 0) {
-        console.log('📭 No smart matches found');
         setSmartMatches([]);
         setFilteredMatches([]);
         return;
       }
 
-      console.log('✅ Fetched smart matches:', data.length);
-
-      // Transform data into the format expected by the UI
-      const matchColors = ['#10B981', '#F59E0B', '#3B82F6', '#8B5CF6', '#EF4444'];
-      
-      const transformedMatches: SmartMatch[] = data.map((match, index) => {
+      // Transform nearby users into smart matches format
+      const matches: SmartMatch[] = data.map((user: any, index: number) => {
+        // Assign different match colors based on distance
+        const matchColors = ['#10B981', '#F59E0B', '#3B82F6', '#8B5CF6', '#EF4444'];
         const matchColor = matchColors[index % matchColors.length];
         
+        // Calculate match score based on distance (closer = higher score)
+        const maxDistance = 5000; // 5km
+        const matchScore = Math.max(50, Math.round(100 - (user.distance / maxDistance * 50)));
+        
         return {
-          id: match.id,
-          match_id: match.match_id,
-          match_score: match.match_score,
-          distance: match.distance,
-          name: match.full_name || match.username,
-          role: match.role || 'Professional',
-          company: match.company || 'OpenAnts',
-          distance_text: `${Math.round(match.distance)}m away`,
-          interests: match.interests || ['Networking', 'Professional Development'],
-          image: match.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          id: user.id,
+          name: user.full_name || user.username,
+          role: user.role || 'Professional',
+          company: user.company || 'OpenAnts',
+          distance: `${Math.round(user.distance)}m away`,
+          interests: user.interests || ['Networking', 'Professional Development'],
+          image: user.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400',
+          matchScore,
           matchColor,
-          bio: match.bio || 'A professional looking to connect and collaborate.',
+          bio: user.bio || 'A professional looking to connect and collaborate.',
           mutualConnections: Math.floor(Math.random() * 10) + 1, // Random for now
-          tags: match.skills || ['#Networking', '#Professional']
+          tags: user.skills || ['#Networking', '#Professional']
         };
       });
 
-      setSmartMatches(transformedMatches);
-      setFilteredMatches(transformedMatches);
+      setSmartMatches(matches);
+      setFilteredMatches(matches);
     } catch (error) {
-      console.error('❌ Unexpected error fetching smart matches:', error);
+      console.error('Unexpected error fetching smart matches:', error);
       setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await fetchSmartMatches();
-    setRefreshing(false);
   };
 
   const handleSearch = (query: string) => {
@@ -146,9 +114,13 @@ export default function SmartMatchesScreen() {
   const sortMatches = (matches: SmartMatch[]) => {
     switch (sortBy) {
       case 'match':
-        return [...matches].sort((a, b) => b.match_score - a.match_score);
+        return [...matches].sort((a, b) => b.matchScore - a.matchScore);
       case 'distance':
-        return [...matches].sort((a, b) => a.distance - b.distance);
+        return [...matches].sort((a, b) => {
+          const aDistance = parseInt(a.distance.replace(/\D/g, ''));
+          const bDistance = parseInt(b.distance.replace(/\D/g, ''));
+          return aDistance - bDistance;
+        });
       case 'connections':
         return [...matches].sort((a, b) => b.mutualConnections - a.mutualConnections);
       default:
@@ -167,7 +139,7 @@ export default function SmartMatchesScreen() {
             <Text style={styles.matchName}>{match.name}</Text>
             <View style={[styles.matchScore, { backgroundColor: `${match.matchColor}20` }]}>
               <Text style={[styles.matchScoreText, { color: match.matchColor }]}>
-                {match.match_score}% Match
+                {match.matchScore}% Match
               </Text>
             </View>
           </View>
@@ -175,7 +147,7 @@ export default function SmartMatchesScreen() {
           <View style={styles.matchMeta}>
             <View style={styles.metaItem}>
               <MapPin size={12} color="#6B7280" />
-              <Text style={styles.metaText}>{match.distance_text}</Text>
+              <Text style={styles.metaText}>{match.distance}</Text>
             </View>
             <View style={styles.metaItem}>
               <Text style={styles.mutualText}>{match.mutualConnections} mutual</Text>
@@ -276,11 +248,8 @@ export default function SmartMatchesScreen() {
           <ArrowLeft size={20} color="#6B7280" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Smart Matches</Text>
-        <TouchableOpacity 
-          style={styles.filterButton}
-          onPress={handleRefresh}
-        >
-          <RefreshCw size={20} color="#6B7280" />
+        <TouchableOpacity style={styles.filterButton}>
+          <Filter size={20} color="#6B7280" />
         </TouchableOpacity>
       </View>
 
@@ -327,18 +296,7 @@ export default function SmartMatchesScreen() {
       </View>
 
       {/* Matches List */}
-      <ScrollView 
-        style={styles.content} 
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={['#6366F1']}
-            tintColor="#6366F1"
-          />
-        }
-      >
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {error && (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
@@ -360,20 +318,10 @@ export default function SmartMatchesScreen() {
         
         {!error && searchQuery.trim() === '' && sortedMatches.length === 0 && (
           <View style={styles.noResults}>
-            <View style={styles.noResultsIcon}>
-              <Users size={48} color="#D1D5DB" />
-            </View>
             <Text style={styles.noResultsText}>No smart matches found</Text>
             <Text style={styles.noResultsSubtext}>
               Try enabling location sharing in the Nearby tab to find professionals around you
             </Text>
-            <TouchableOpacity 
-              style={styles.nearbyButton}
-              onPress={() => router.push('/(tabs)/nearby')}
-            >
-              <MapPin size={16} color="#FFFFFF" />
-              <Text style={styles.nearbyButtonText}>Go to Nearby</Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -663,44 +611,19 @@ const styles = StyleSheet.create({
   noResults: {
     alignItems: 'center',
     paddingVertical: 48,
-    paddingHorizontal: 24,
-  },
-  noResultsIcon: {
-    backgroundColor: '#F3F4F6',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
   },
   noResultsText: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: 'Inter-Medium',
     color: '#6B7280',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   noResultsSubtext: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#9CA3AF',
     textAlign: 'center',
-    marginBottom: 24,
-  },
-  nearbyButton: {
-    backgroundColor: '#6366F1',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 8,
-  },
-  nearbyButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
+    paddingHorizontal: 32,
   },
   bottomPadding: {
     height: 100,
