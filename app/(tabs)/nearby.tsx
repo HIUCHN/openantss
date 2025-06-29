@@ -25,24 +25,9 @@ interface NearbyUser {
   isOnline: boolean;
 }
 
-// Location smoothing configuration
-const LOCATION_HISTORY_SIZE = 5; // Number of recent locations to keep for smoothing
-const HIGH_ACCURACY_THRESHOLD = 20; // Meters - threshold for high accuracy
-const MEDIUM_ACCURACY_THRESHOLD = 50; // Meters - threshold for medium accuracy
-const MAX_RETRY_ATTEMPTS = 5; // Maximum number of retry attempts for high accuracy
-const LOCATION_UPDATE_INTERVAL = 5000; // 5 seconds between location updates
-const LOCATION_DISTANCE_FILTER = 1; // 1 meter - minimum distance to trigger update
-const DB_UPDATE_THROTTLE = 2000; // 2 seconds - minimum time between database updates
-
 export default function NearbyScreen() {
   const { profile, storeUserLocation, getNearbyUsers, togglePublicMode, clearUserLocation } = useAuth();
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
-  const [smoothedLocation, setSmoothedLocation] = useState<{
-    latitude: number;
-    longitude: number;
-    accuracy?: number;
-    timestamp: number;
-  } | null>(null);
   const [nearbyUsers, setNearbyUsers] = useState<NearbyUser[]>([]);
   const [selectedUser, setSelectedUser] = useState<NearbyUser | null>(null);
   const [showUserModal, setShowUserModal] = useState(false);
@@ -56,21 +41,20 @@ export default function NearbyScreen() {
   const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
   const [showNearbyMetrics, setShowNearbyMetrics] = useState(true);
   const [debugInfo, setDebugInfo] = useState<string>('');
-  const [retryCount, setRetryCount] = useState(0);
-  
-  // Refs for tracking
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
-  const lastDbUpdateTime = useRef<number>(0);
+  const retryCount = useRef<number>(0);
+  const MAX_RETRY_COUNT = 5;
   const locationHistory = useRef<Location.LocationObject[]>([]);
-  const isMounted = useRef(true);
+  const MAX_HISTORY_LENGTH = 5;
+  const lastLocationUpdate = useRef<number>(0);
+  const MIN_UPDATE_INTERVAL = 2000; // Minimum time between location updates (2 seconds)
+  const accuracyThreshold = useRef<number>(50); // Start with 50m threshold, will adjust dynamically
 
   // Check if user has public mode enabled
   const isPublicMode = profile?.is_public ?? false;
 
   useEffect(() => {
-    isMounted.current = true;
-    
     // Only initialize location if public mode is enabled
     if (isPublicMode) {
       initializeLocation();
@@ -78,45 +62,42 @@ export default function NearbyScreen() {
       // Clean up when not in public mode
       cleanup();
       setLocation(null);
-      setSmoothedLocation(null);
       setNearbyUsers([]);
       setErrorMessage(null);
       setDebugInfo('');
     }
 
     return () => {
-      isMounted.current = false;
       cleanup();
     };
   }, [isPublicMode]);
 
   useEffect(() => {
-    if (isPublicMode && smoothedLocation) {
+    if (isPublicMode && location) {
       startLocationTracking();
       startPeriodicRefresh();
     } else {
       stopLocationTracking();
       stopPeriodicRefresh();
     }
-  }, [isPublicMode, smoothedLocation]);
+  }, [isPublicMode, location]);
 
   const cleanup = () => {
     stopLocationTracking();
     stopPeriodicRefresh();
-    locationHistory.current = [];
   };
 
   const initializeLocation = async () => {
     try {
       setLoading(true);
       setErrorMessage(null);
-      setDebugInfo('Initializing high-precision location tracking...');
-      setRetryCount(0);
+      setDebugInfo('Initializing location with highest accuracy...');
+      retryCount.current = 0;
 
       // Check if location services are enabled
       const enabled = await Location.hasServicesEnabledAsync();
       if (!enabled) {
-        setErrorMessage('Location services are disabled. Please enable them in your device settings to use this feature.');
+        setErrorMessage('Location services are disabled. Please enable them in your device settings.');
         setDebugInfo('Location services disabled');
         setLoading(false);
         return;
@@ -133,14 +114,14 @@ export default function NearbyScreen() {
         return;
       }
 
-      // Get current location with HIGHEST accuracy
-      console.log('🔍 Getting highest-accuracy location...');
-      setDebugInfo('Acquiring precise location with maximum accuracy...');
+      // Get current location with HIGHEST accuracy - critical for this app
+      console.log('📍 Getting highest-accuracy location...');
+      setDebugInfo('Getting precise location with highest accuracy...');
       
       try {
         const currentLocation = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.BestForNavigation, // Highest accuracy setting
-          maximumAge: 0, // Force fresh location
+          maximumAge: 0, // Don't use cached location
           timeout: 30000, // Wait longer for better accuracy (30 seconds)
         });
 
@@ -148,103 +129,93 @@ export default function NearbyScreen() {
           latitude: currentLocation.coords.latitude,
           longitude: currentLocation.coords.longitude,
           accuracy: currentLocation.coords.accuracy,
+          timestamp: new Date(currentLocation.timestamp).toISOString(),
         });
 
-        // Add to location history for smoothing
-        addToLocationHistory(currentLocation);
-        
-        // Calculate smoothed location
-        const smoothed = calculateSmoothedLocation();
-        
-        if (smoothed) {
-          setLocation(currentLocation);
-          setSmoothedLocation(smoothed);
-          setLocationAccuracy(currentLocation.coords.accuracy || null);
-          
-          setDebugInfo(`Precise location acquired: ${smoothed.latitude.toFixed(6)}, ${smoothed.longitude.toFixed(6)} (±${Math.round(currentLocation.coords.accuracy || 0)}m)`);
+        // Apply smoothing by comparing with history
+        const smoothedLocation = applyLocationSmoothing(currentLocation);
 
-          if (isPublicMode) {
-            // Store location in database
-            console.log('📍 Storing high-precision location in database...');
-            await storeUserLocationWithThrottle({
-              latitude: smoothed.latitude,
-              longitude: smoothed.longitude,
-              accuracy: currentLocation.coords.accuracy || undefined,
-              altitude: currentLocation.coords.altitude || undefined,
-              heading: currentLocation.coords.heading || undefined,
-              speed: currentLocation.coords.speed || undefined,
-              timestamp: new Date(currentLocation.timestamp),
-            });
+        setLocation(smoothedLocation);
+        setLocationAccuracy(smoothedLocation.coords.accuracy || null);
+        setDebugInfo(`Precise location: ${smoothedLocation.coords.latitude.toFixed(6)}, ${smoothedLocation.coords.longitude.toFixed(6)}, Accuracy: ${smoothedLocation.coords.accuracy?.toFixed(1)}m`);
+        retryCount.current = 0; // Reset retry count on success
 
-            // Fetch nearby users
-            await fetchNearbyUsers();
-          }
-        } else {
-          throw new Error('Failed to calculate smoothed location');
+        if (isPublicMode) {
+          // Store location in database
+          console.log('📍 Storing high-precision location in database...');
+          await storeUserLocation({
+            latitude: smoothedLocation.coords.latitude,
+            longitude: smoothedLocation.coords.longitude,
+            accuracy: smoothedLocation.coords.accuracy || undefined,
+            altitude: smoothedLocation.coords.altitude || undefined,
+            heading: smoothedLocation.coords.heading || undefined,
+            speed: smoothedLocation.coords.speed || undefined,
+            timestamp: new Date(smoothedLocation.timestamp),
+          });
+
+          // Fetch nearby users
+          await fetchNearbyUsers();
         }
       } catch (locationError) {
         console.error('Error getting high-precision location:', locationError);
         setDebugInfo(`Error getting high-precision location: ${locationError.message}`);
         
-        // Retry with slightly lower accuracy if we haven't exceeded retry count
-        if (retryCount < MAX_RETRY_ATTEMPTS) {
-          setRetryCount(prev => prev + 1);
-          setDebugInfo(`Retrying with balanced accuracy (attempt ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})...`);
+        // If we fail to get high-precision location, try again with slightly lower accuracy
+        if (retryCount.current < MAX_RETRY_COUNT) {
+          retryCount.current++;
+          setDebugInfo(`Retrying with slightly lower accuracy (attempt ${retryCount.current}/${MAX_RETRY_COUNT})...`);
           
-          const fallbackLocation = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-            maximumAge: 10000,
-            timeout: 15000,
-          });
-          
-          console.log('📍 Fallback location obtained:', {
-            latitude: fallbackLocation.coords.latitude,
-            longitude: fallbackLocation.coords.longitude,
-            accuracy: fallbackLocation.coords.accuracy,
-          });
-          
-          // Add to location history for smoothing
-          addToLocationHistory(fallbackLocation);
-          
-          // Calculate smoothed location
-          const smoothed = calculateSmoothedLocation();
-          
-          if (smoothed) {
-            setLocation(fallbackLocation);
-            setSmoothedLocation(smoothed);
-            setLocationAccuracy(fallbackLocation.coords.accuracy || null);
+          try {
+            const fallbackLocation = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced, // Fallback to balanced accuracy
+              maximumAge: 5000,
+              timeout: 15000,
+            });
             
-            setDebugInfo(`Fallback location acquired: ${smoothed.latitude.toFixed(6)}, ${smoothed.longitude.toFixed(6)} (±${Math.round(fallbackLocation.coords.accuracy || 0)}m)`);
-
+            console.log('📍 Fallback location obtained:', {
+              latitude: fallbackLocation.coords.latitude,
+              longitude: fallbackLocation.coords.longitude,
+              accuracy: fallbackLocation.coords.accuracy,
+            });
+            
+            // Apply smoothing even to fallback location
+            const smoothedFallback = applyLocationSmoothing(fallbackLocation);
+            
+            setLocation(smoothedFallback);
+            setLocationAccuracy(smoothedFallback.coords.accuracy || null);
+            setDebugInfo(`Fallback location: ${smoothedFallback.coords.latitude.toFixed(6)}, ${smoothedFallback.coords.longitude.toFixed(6)}, Accuracy: ${smoothedFallback.coords.accuracy?.toFixed(1)}m`);
+            
             if (isPublicMode) {
-              // Store location in database
-              await storeUserLocationWithThrottle({
-                latitude: smoothed.latitude,
-                longitude: smoothed.longitude,
-                accuracy: fallbackLocation.coords.accuracy || undefined,
-                altitude: fallbackLocation.coords.altitude || undefined,
-                heading: fallbackLocation.coords.heading || undefined,
-                speed: fallbackLocation.coords.speed || undefined,
-                timestamp: new Date(fallbackLocation.timestamp),
+              // Store fallback location
+              await storeUserLocation({
+                latitude: smoothedFallback.coords.latitude,
+                longitude: smoothedFallback.coords.longitude,
+                accuracy: smoothedFallback.coords.accuracy || undefined,
+                altitude: smoothedFallback.coords.altitude || undefined,
+                heading: smoothedFallback.coords.heading || undefined,
+                speed: smoothedFallback.coords.speed || undefined,
+                timestamp: new Date(smoothedFallback.timestamp),
               });
-
+              
               // Fetch nearby users
               await fetchNearbyUsers();
             }
-          } else {
-            throw new Error('Failed to calculate smoothed location from fallback');
+          } catch (fallbackError) {
+            console.error('Error getting fallback location:', fallbackError);
+            setDebugInfo(`Error getting fallback location: ${fallbackError.message}`);
+            setErrorMessage('Failed to get your location. Please check your GPS settings and try again.');
           }
         } else {
-          throw locationError;
+          setErrorMessage('Failed to get your location after multiple attempts. Please check your GPS settings and try again.');
         }
       }
     } catch (error) {
       console.error('Error initializing location:', error);
       setDebugInfo(`Error: ${error.message}`);
       if (error.code === 'E_LOCATION_TIMEOUT') {
-        setErrorMessage('Location request timed out. Please try again in an area with better GPS signal.');
+        setErrorMessage('Location request timed out. Please try again.');
       } else if (error.code === 'E_LOCATION_UNAVAILABLE') {
-        setErrorMessage('Location is temporarily unavailable. Please try again in a moment.');
+        setErrorMessage('Location is temporarily unavailable. Please try again.');
       } else {
         setErrorMessage('Failed to get your location. Please check your GPS settings and try again.');
       }
@@ -253,61 +224,73 @@ export default function NearbyScreen() {
     }
   };
 
-  const addToLocationHistory = (newLocation: Location.LocationObject) => {
-    // Add new location to history
+  // Apply smoothing algorithm to location data
+  const applyLocationSmoothing = (newLocation: Location.LocationObject): Location.LocationObject => {
+    const now = Date.now();
+    
+    // Add to history
     locationHistory.current.push(newLocation);
     
-    // Keep only the most recent locations
-    if (locationHistory.current.length > LOCATION_HISTORY_SIZE) {
-      locationHistory.current.shift(); // Remove oldest location
+    // Keep history at maximum length
+    if (locationHistory.current.length > MAX_HISTORY_LENGTH) {
+      locationHistory.current.shift();
     }
-  };
-
-  const calculateSmoothedLocation = () => {
-    if (locationHistory.current.length === 0) return null;
     
-    // If we only have one location, return it directly
-    if (locationHistory.current.length === 1) {
-      const loc = locationHistory.current[0];
-      return {
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-        accuracy: loc.coords.accuracy,
-        timestamp: loc.timestamp
-      };
+    // If we don't have enough history or the location is very accurate, use it directly
+    if (locationHistory.current.length < 3 || 
+        (newLocation.coords.accuracy && newLocation.coords.accuracy < 10)) {
+      lastLocationUpdate.current = now;
+      return newLocation;
     }
     
     // Calculate weighted average based on accuracy and recency
     let totalWeight = 0;
-    let latitudeSum = 0;
-    let longitudeSum = 0;
-    const now = Date.now();
+    let weightedLat = 0;
+    let weightedLng = 0;
     
-    locationHistory.current.forEach(loc => {
-      // Calculate weight based on accuracy (higher accuracy = higher weight)
-      const accuracyWeight = loc.coords.accuracy ? (1 / Math.max(loc.coords.accuracy, 1)) : 0.1;
+    // Sort history by timestamp (newest first)
+    const sortedHistory = [...locationHistory.current].sort((a, b) => b.timestamp - a.timestamp);
+    
+    sortedHistory.forEach((loc, index) => {
+      // More weight to more recent and more accurate locations
+      const recencyWeight = 1 / (index + 1);
+      const accuracyWeight = loc.coords.accuracy ? (100 / loc.coords.accuracy) : 1;
+      const weight = recencyWeight * accuracyWeight;
       
-      // Calculate weight based on recency (more recent = higher weight)
-      const ageMs = now - loc.timestamp;
-      const recencyWeight = Math.max(0.1, 1 - (ageMs / 60000)); // Reduce weight as age approaches 1 minute
-      
-      // Combined weight
-      const weight = accuracyWeight * recencyWeight;
-      
-      latitudeSum += loc.coords.latitude * weight;
-      longitudeSum += loc.coords.longitude * weight;
+      weightedLat += loc.coords.latitude * weight;
+      weightedLng += loc.coords.longitude * weight;
       totalWeight += weight;
     });
     
-    // Get the most recent location for accuracy and timestamp
-    const mostRecent = locationHistory.current[locationHistory.current.length - 1];
-    
-    return {
-      latitude: latitudeSum / totalWeight,
-      longitude: longitudeSum / totalWeight,
-      accuracy: mostRecent.coords.accuracy,
-      timestamp: mostRecent.timestamp
+    // Create smoothed location object
+    const smoothedLocation: Location.LocationObject = {
+      ...newLocation,
+      coords: {
+        ...newLocation.coords,
+        latitude: weightedLat / totalWeight,
+        longitude: weightedLng / totalWeight,
+      }
     };
+    
+    console.log('🔄 Applied location smoothing:', {
+      original: {
+        lat: newLocation.coords.latitude,
+        lng: newLocation.coords.longitude,
+      },
+      smoothed: {
+        lat: smoothedLocation.coords.latitude,
+        lng: smoothedLocation.coords.longitude,
+      },
+      difference: calculateDistance(
+        newLocation.coords.latitude,
+        newLocation.coords.longitude,
+        smoothedLocation.coords.latitude,
+        smoothedLocation.coords.longitude
+      )
+    });
+    
+    lastLocationUpdate.current = now;
+    return smoothedLocation;
   };
 
   const startLocationTracking = async () => {
@@ -316,178 +299,119 @@ export default function NearbyScreen() {
     try {
       setIsTrackingLocation(true);
       console.log('📍 Starting continuous high-accuracy location tracking...');
-      setDebugInfo('Starting continuous high-accuracy tracking...');
       
-      // Stop any existing subscription
+      // First, stop any existing subscription
       if (locationSubscription.current) {
         locationSubscription.current.remove();
         locationSubscription.current = null;
       }
       
+      // Start a new subscription with highest accuracy settings
       locationSubscription.current = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.BestForNavigation, // Always use highest accuracy
-          distanceInterval: LOCATION_DISTANCE_FILTER, // Update every 1 meter of movement
-          timeInterval: LOCATION_UPDATE_INTERVAL, // Update every 5 seconds
+          distanceInterval: 1, // Update every 1 meter of movement (more frequent updates)
+          timeInterval: 5000, // Update every 5 seconds at minimum
         },
         async (newLocation) => {
-          if (!isMounted.current) return;
+          const now = Date.now();
           
-          console.log('📍 Location update received:', {
+          // Throttle updates to prevent too frequent database writes
+          if (now - lastLocationUpdate.current < MIN_UPDATE_INTERVAL) {
+            console.log('🔄 Throttling location update (too frequent)');
+            return;
+          }
+          
+          console.log('📍 High-precision location updated:', {
             latitude: newLocation.coords.latitude,
             longitude: newLocation.coords.longitude,
             accuracy: newLocation.coords.accuracy,
-            timestamp: new Date(newLocation.timestamp).toISOString()
+            timestamp: new Date(newLocation.timestamp).toISOString(),
           });
-          
-          // Check if accuracy is good enough
-          const accuracy = newLocation.coords.accuracy || 1000;
-          
-          if (accuracy > HIGH_ACCURACY_THRESHOLD && retryCount < MAX_RETRY_ATTEMPTS) {
-            // Location accuracy is poor, request a better one
-            console.log(`⚠️ Low accuracy location (${Math.round(accuracy)}m), requesting better accuracy...`);
-            setDebugInfo(`Low accuracy (${Math.round(accuracy)}m), requesting better location...`);
-            setRetryCount(prev => prev + 1);
+
+          // Only update if accuracy is good enough (dynamically adjusted threshold)
+          if (newLocation.coords.accuracy && newLocation.coords.accuracy <= accuracyThreshold.current) {
+            // Apply smoothing algorithm
+            const smoothedLocation = applyLocationSmoothing(newLocation);
             
+            setLocation(smoothedLocation);
+            setLocationAccuracy(smoothedLocation.coords.accuracy || null);
+            setDebugInfo(`Precise location: ${smoothedLocation.coords.latitude.toFixed(6)}, ${smoothedLocation.coords.longitude.toFixed(6)}, Accuracy: ${smoothedLocation.coords.accuracy?.toFixed(1)}m`);
+            
+            // Dynamically adjust accuracy threshold based on what we're getting
+            if (newLocation.coords.accuracy < 20) {
+              // If we're getting very good accuracy, tighten the threshold
+              accuracyThreshold.current = 30;
+            } else if (newLocation.coords.accuracy < 50) {
+              // If we're getting decent accuracy, maintain moderate threshold
+              accuracyThreshold.current = 50;
+            }
+            
+            // Only store location if still in public mode
+            if (isPublicMode) {
+              await storeUserLocation({
+                latitude: smoothedLocation.coords.latitude,
+                longitude: smoothedLocation.coords.longitude,
+                accuracy: smoothedLocation.coords.accuracy || undefined,
+                altitude: smoothedLocation.coords.altitude || undefined,
+                heading: smoothedLocation.coords.heading || undefined,
+                speed: smoothedLocation.coords.speed || undefined,
+                timestamp: new Date(smoothedLocation.timestamp),
+              });
+            }
+          } else {
+            console.log('📍 Skipping low accuracy location update:', newLocation.coords.accuracy);
+            setDebugInfo(`Skipped low accuracy update (${newLocation.coords.accuracy?.toFixed(1)}m). Waiting for better accuracy...`);
+            
+            // Try to request a more accurate location
             try {
-              // Request a one-time high accuracy update
-              const betterLocation = await Location.getCurrentPositionAsync({
+              const highAccuracyLocation = await Location.getCurrentPositionAsync({
                 accuracy: Location.Accuracy.BestForNavigation,
                 maximumAge: 0,
                 timeout: 10000,
               });
               
-              if (betterLocation.coords.accuracy && betterLocation.coords.accuracy <= accuracy) {
-                // Only use if it's actually better
-                console.log(`✅ Got better accuracy location (${Math.round(betterLocation.coords.accuracy)}m)`);
-                addToLocationHistory(betterLocation);
-                processNewLocation(betterLocation);
-              } else {
-                // Still use the original if we couldn't get better
-                console.log(`⚠️ Couldn't get better accuracy, using original (${Math.round(accuracy)}m)`);
-                addToLocationHistory(newLocation);
-                processNewLocation(newLocation);
+              if (highAccuracyLocation.coords.accuracy && highAccuracyLocation.coords.accuracy <= accuracyThreshold.current) {
+                console.log('📍 Obtained higher accuracy location:', highAccuracyLocation.coords.accuracy);
+                
+                // Apply smoothing
+                const smoothedHighAccuracy = applyLocationSmoothing(highAccuracyLocation);
+                
+                setLocation(smoothedHighAccuracy);
+                setLocationAccuracy(smoothedHighAccuracy.coords.accuracy || null);
+                setDebugInfo(`Improved location: ${smoothedHighAccuracy.coords.latitude.toFixed(6)}, ${smoothedHighAccuracy.coords.longitude.toFixed(6)}, Accuracy: ${smoothedHighAccuracy.coords.accuracy?.toFixed(1)}m`);
+                
+                if (isPublicMode) {
+                  await storeUserLocation({
+                    latitude: smoothedHighAccuracy.coords.latitude,
+                    longitude: smoothedHighAccuracy.coords.longitude,
+                    accuracy: smoothedHighAccuracy.coords.accuracy || undefined,
+                    altitude: smoothedHighAccuracy.coords.altitude || undefined,
+                    heading: smoothedHighAccuracy.coords.heading || undefined,
+                    speed: smoothedHighAccuracy.coords.speed || undefined,
+                    timestamp: new Date(smoothedHighAccuracy.timestamp),
+                  });
+                }
               }
             } catch (error) {
-              console.log(`⚠️ Failed to get better accuracy, using original (${Math.round(accuracy)}m)`);
-              addToLocationHistory(newLocation);
-              processNewLocation(newLocation);
+              console.log('📍 Failed to get higher accuracy location:', error);
             }
-          } else {
-            // Accuracy is good enough, use this location
-            addToLocationHistory(newLocation);
-            processNewLocation(newLocation);
-            setRetryCount(0); // Reset retry count on successful update
           }
         }
       );
       
-      console.log('✅ Location tracking started successfully');
-      setDebugInfo('Continuous high-accuracy tracking active');
+      console.log('✅ Location tracking started with highest accuracy settings');
     } catch (error) {
       console.error('Error starting location tracking:', error);
-      setDebugInfo(`Error starting tracking: ${error.message}`);
       setIsTrackingLocation(false);
+      setDebugInfo(`Error starting tracking: ${error.message}`);
       
-      // Try to restart with lower accuracy if we failed
-      if (retryCount < MAX_RETRY_ATTEMPTS) {
-        setRetryCount(prev => prev + 1);
-        console.log(`Retrying with balanced accuracy (attempt ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})...`);
-        
-        try {
-          locationSubscription.current = await Location.watchPositionAsync(
-            {
-              accuracy: Location.Accuracy.Balanced,
-              distanceInterval: LOCATION_DISTANCE_FILTER * 2,
-              timeInterval: LOCATION_UPDATE_INTERVAL * 2,
-            },
-            (newLocation) => {
-              if (!isMounted.current) return;
-              addToLocationHistory(newLocation);
-              processNewLocation(newLocation);
-            }
-          );
-          setIsTrackingLocation(true);
-          setDebugInfo('Tracking active (balanced accuracy)');
-        } catch (fallbackError) {
-          console.error('Error starting fallback location tracking:', fallbackError);
-          setDebugInfo(`Failed to start tracking: ${fallbackError.message}`);
+      // Try to restart tracking after a delay
+      setTimeout(() => {
+        if (isPublicMode && !isTrackingLocation) {
+          startLocationTracking();
         }
-      }
-    }
-  };
-
-  const processNewLocation = async (newLocation: Location.LocationObject) => {
-    if (!isMounted.current || !isPublicMode) return;
-    
-    // Calculate smoothed location
-    const smoothed = calculateSmoothedLocation();
-    if (!smoothed) return;
-    
-    // Log the difference between raw and smoothed location
-    const rawLat = newLocation.coords.latitude;
-    const rawLng = newLocation.coords.longitude;
-    const smoothedLat = smoothed.latitude;
-    const smoothedLng = smoothed.longitude;
-    
-    const distanceDiff = calculateDistance(
-      rawLat, rawLng,
-      smoothedLat, smoothedLng
-    );
-    
-    console.log(`📊 Location smoothing: Raw vs Smoothed difference: ${distanceDiff.toFixed(2)}m`);
-    
-    // Update state with new location
-    setLocation(newLocation);
-    setSmoothedLocation(smoothed);
-    setLocationAccuracy(newLocation.coords.accuracy || null);
-    
-    // Update debug info
-    const accuracyText = newLocation.coords.accuracy 
-      ? `±${Math.round(newLocation.coords.accuracy)}m` 
-      : 'unknown accuracy';
-    
-    setDebugInfo(`Location: ${smoothed.latitude.toFixed(6)}, ${smoothed.longitude.toFixed(6)} (${accuracyText})`);
-    
-    // Store location in database (with throttling)
-    await storeUserLocationWithThrottle({
-      latitude: smoothed.latitude,
-      longitude: smoothed.longitude,
-      accuracy: newLocation.coords.accuracy || undefined,
-      altitude: newLocation.coords.altitude || undefined,
-      heading: newLocation.coords.heading || undefined,
-      speed: newLocation.coords.speed || undefined,
-      timestamp: new Date(newLocation.timestamp),
-    });
-  };
-
-  const storeUserLocationWithThrottle = async (locationData: {
-    latitude: number;
-    longitude: number;
-    accuracy?: number;
-    altitude?: number;
-    heading?: number;
-    speed?: number;
-    timestamp: Date;
-  }) => {
-    // Throttle database updates to prevent overloading
-    const now = Date.now();
-    if (now - lastDbUpdateTime.current < DB_UPDATE_THROTTLE) {
-      console.log('🛑 Throttling database update, too frequent');
-      return;
-    }
-    
-    // Skip low accuracy updates
-    if (locationData.accuracy && locationData.accuracy > HIGH_ACCURACY_THRESHOLD * 2) {
-      console.log(`⚠️ Skipping low accuracy (${Math.round(locationData.accuracy)}m) database update`);
-      return;
-    }
-    
-    try {
-      lastDbUpdateTime.current = now;
-      await storeUserLocation(locationData);
-    } catch (error) {
-      console.error('Error storing location in database:', error);
+      }, 5000);
     }
   };
 
@@ -503,16 +427,18 @@ export default function NearbyScreen() {
       }
     }
     setIsTrackingLocation(false);
+    // Clear location history
+    locationHistory.current = [];
   };
 
   const startPeriodicRefresh = () => {
     if (refreshInterval.current) return;
 
     refreshInterval.current = setInterval(() => {
-      if (isPublicMode && smoothedLocation) {
+      if (isPublicMode && location) {
         fetchNearbyUsers();
       }
-    }, 30000);
+    }, 30000); // Refresh every 30 seconds
   };
 
   const stopPeriodicRefresh = () => {
@@ -523,7 +449,7 @@ export default function NearbyScreen() {
   };
 
   const fetchNearbyUsers = async () => {
-    if (!isPublicMode || !smoothedLocation) return;
+    if (!isPublicMode || !location) return;
 
     try {
       console.log('🔍 Fetching nearby users...');
@@ -541,8 +467,8 @@ export default function NearbyScreen() {
         const formattedUsers: NearbyUser[] = data.map((userLocation: any, index: number) => {
           const user = userLocation.profiles || userLocation;
           const distance = userLocation.distance || calculateDistance(
-            smoothedLocation.latitude,
-            smoothedLocation.longitude,
+            location.coords.latitude,
+            location.coords.longitude,
             userLocation.latitude,
             userLocation.longitude
           );
@@ -632,7 +558,7 @@ export default function NearbyScreen() {
     if (!isPublicMode) return;
     
     setRefreshing(true);
-    setDebugInfo('Refreshing location and nearby users...');
+    setDebugInfo('Refreshing with highest accuracy...');
     // Refresh both location and nearby users
     await initializeLocation();
     setRefreshing(false);
@@ -666,7 +592,6 @@ export default function NearbyScreen() {
         
         cleanup();
         setLocation(null);
-        setSmoothedLocation(null);
         setNearbyUsers([]);
         setErrorMessage(null);
         setDebugInfo('');
@@ -693,18 +618,20 @@ export default function NearbyScreen() {
 
   const getLocationAccuracyText = () => {
     if (!locationAccuracy) return '';
-    if (locationAccuracy < HIGH_ACCURACY_THRESHOLD) return 'Very High Accuracy';
-    if (locationAccuracy < MEDIUM_ACCURACY_THRESHOLD) return 'High Accuracy';
-    if (locationAccuracy < 100) return 'Good Accuracy';
+    if (locationAccuracy < 10) return 'Very High Accuracy';
+    if (locationAccuracy < 20) return 'High Accuracy';
+    if (locationAccuracy < 50) return 'Good Accuracy';
+    if (locationAccuracy < 100) return 'Moderate Accuracy';
     return 'Low Accuracy';
   };
 
   const getLocationAccuracyColor = () => {
     if (!locationAccuracy) return '#6B7280';
-    if (locationAccuracy < HIGH_ACCURACY_THRESHOLD) return '#10B981';
-    if (locationAccuracy < MEDIUM_ACCURACY_THRESHOLD) return '#F59E0B';
-    if (locationAccuracy < 100) return '#EF4444';
-    return '#6B7280';
+    if (locationAccuracy < 10) return '#10B981';
+    if (locationAccuracy < 20) return '#34D399';
+    if (locationAccuracy < 50) return '#F59E0B';
+    if (locationAccuracy < 100) return '#F97316';
+    return '#EF4444';
   };
 
   const UserModal = () => {
@@ -718,6 +645,10 @@ export default function NearbyScreen() {
         onRequestClose={() => setShowUserModal(false)}
       >
         <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalBackdrop} 
+            onPress={() => setShowUserModal(false)}
+          />
           <View style={styles.userModalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Professional Profile</Text>
@@ -972,14 +903,14 @@ export default function NearbyScreen() {
 
       {/* Extra Large Map Container */}
       <View style={styles.extraLargeMapContainer}>
-        {smoothedLocation && (
+        {location && (
           <MapBoxMap
             userLocations={nearbyUsers}
             currentUserLocation={{
-              latitude: smoothedLocation.latitude,
-              longitude: smoothedLocation.longitude,
-              accuracy: location?.coords.accuracy || undefined,
-              timestamp: location?.timestamp || Date.now(),
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+              accuracy: location.coords.accuracy || undefined,
+              timestamp: location.timestamp,
             }}
             onUserPinPress={handleUserPinPress}
             style={styles.map}
@@ -1483,6 +1414,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    flex: 1,
   },
   userModalContent: {
     backgroundColor: '#FFFFFF',
