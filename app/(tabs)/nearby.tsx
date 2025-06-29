@@ -129,18 +129,23 @@ export default function NearbyScreen() {
       if (isPublicMode) {
         // Store location in database
         console.log('📍 Storing high-precision location in database...');
-        await storeUserLocation({
-          latitude: currentLocation.coords.latitude,
-          longitude: currentLocation.coords.longitude,
-          accuracy: currentLocation.coords.accuracy || undefined,
-          altitude: currentLocation.coords.altitude || undefined,
-          heading: currentLocation.coords.heading || undefined,
-          speed: currentLocation.coords.speed || undefined,
-          timestamp: new Date(currentLocation.timestamp),
-        });
-
-        // Fetch nearby users
-        await fetchNearbyUsers();
+        try {
+          await storeUserLocation({
+            latitude: currentLocation.coords.latitude,
+            longitude: currentLocation.coords.longitude,
+            accuracy: currentLocation.coords.accuracy || undefined,
+            altitude: currentLocation.coords.altitude || undefined,
+            heading: currentLocation.coords.heading || undefined,
+            speed: currentLocation.coords.speed || undefined,
+            timestamp: new Date(currentLocation.timestamp),
+          });
+          
+          // Fetch nearby users
+          await fetchNearbyUsers();
+        } catch (storeError) {
+          console.error('Error storing location:', storeError);
+          setDebugInfo(`Error storing location: ${storeError.message}`);
+        }
       }
     } catch (error) {
       console.error('Error initializing location:', error);
