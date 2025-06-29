@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Eye, EyeOff, Mail, Lock, ArrowRight, CircleAlert as AlertCircle } from 'lucide-react-native';
@@ -83,6 +83,10 @@ export default function LoginScreen() {
     }
   };
 
+  const handleBoltLogoPress = () => {
+    Linking.openURL('https://bolt.new/');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView 
@@ -113,17 +117,17 @@ export default function LoginScreen() {
               <Text style={styles.tagline}>Know People Before You Meet Them</Text>
             </View>
 
-            {/* Debug Toggle Button - Only show when IS_DEBUG is true */}
-            {IS_DEBUG && (
-              <TouchableOpacity 
-                style={styles.debugToggle}
-                onPress={() => setShowDebugPanel(!showDebugPanel)}
-              >
-                <Text style={styles.debugToggleText}>
-                  {showDebugPanel ? 'Hide Debug' : 'Show Debug'}
-                </Text>
-              </TouchableOpacity>
-            )}
+            {/* Bolt Logo - Replaces Debug Toggle Button */}
+            <TouchableOpacity 
+              style={styles.boltLogoContainer}
+              onPress={handleBoltLogoPress}
+            >
+              <Image 
+                source={{ uri: 'https://stackblitz.com/storage/blobs/eyJfcmFpbHMiOnsibWVzc2FnZSI6IkJBaHBCTGVlUndFPSIsImV4cCI6bnVsbCwicHVyIjoiYmxvYl9pZCJ9fQ==--8a643fb02132fc31a3e1f6434e8fc82713fd5924/white_circle_360x360.png' }}
+                style={styles.boltLogo}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
           </LinearGradient>
 
           <View style={styles.formContainer}>
@@ -282,19 +286,18 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: 'rgba(255, 255, 255, 0.9)',
   },
-  debugToggle: {
+  boltLogoContainer: {
     position: 'absolute',
     top: 50,
     right: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
-  debugToggleText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
+  boltLogo: {
+    width: 40,
+    height: 40,
   },
   formContainer: {
     flex: 1,
