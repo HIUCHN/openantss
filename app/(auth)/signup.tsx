@@ -7,7 +7,6 @@ import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import DebugPanel from '@/components/DebugPanel';
 import { IS_DEBUG } from '@/constants';
-// Debug mode toggle - set to true to show debug information
 
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
@@ -140,7 +139,7 @@ export default function SignupScreen() {
             <View style={styles.successCheckmark}>
               <Text style={styles.checkmarkText}>✓</Text>
             </View>
-            <Text style={styles.successTitle}>Account Created!</Text>
+            <Text style={styles.successTitle}>Account Created Successfully!</Text>
             <Text style={styles.successSubtitle}>Welcome to OpenAnts</Text>
           </View>
         </LinearGradient>
@@ -161,7 +160,7 @@ export default function SignupScreen() {
               </Text>
               <Text style={styles.userEmailText}>{userEmail}</Text>
               <Text style={styles.verificationInstructions}>
-                Click the link in your email to activate your account, then return here to sign in.
+                Please check your email and click the verification link to activate your account. Once verified, you can sign in to start networking!
               </Text>
             </View>
 
@@ -577,6 +576,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: '#6366F1',
   },
+  // Success state styles
   successHeader: {
     paddingTop: 40,
     paddingBottom: 60,
