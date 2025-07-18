@@ -808,11 +808,7 @@ export default function NewsfeedScreen() {
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
             <View style={styles.appIcon}>
-              <Image 
-                source={require('@/assets/images/OpenAnts logo copy.png')} 
-                style={styles.logoImage}
-                resizeMode="contain"
-              />
+              <Text style={styles.logoText}>OA</Text>
             </View>
             <Text style={styles.headerTitle}>Newsfeed</Text>
           </View>
@@ -947,6 +943,11 @@ const styles = StyleSheet.create({
   logoImage: {
     width: 28,
     height: 28,
+  },
+  logoText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Bold',
+    color: '#FFFFFF',
   },
   headerTitle: {
     fontSize: 18,
