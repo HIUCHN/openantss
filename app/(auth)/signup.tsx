@@ -109,18 +109,24 @@ export default function SignupScreen() {
       } else {
         console.log('Account created successfully');
         Alert.alert(
-          'Success!', 
-          'Your account has been created successfully! You can now sign in.',
-          [{ 
-            text: 'Sign In Now', 
-            onPress: () => {
-              // Pre-fill the login form
-              router.replace({
-                pathname: '/(auth)/login',
-                params: { email: email.trim().toLowerCase() }
-              });
+          'Account Created Successfully!', 
+          'Please check your email and click the verification link to activate your account. Once verified, you can sign in.',
+          [
+            { 
+              text: 'Check Email', 
+              style: 'default'
+            },
+            { 
+              text: 'Go to Sign In', 
+              onPress: () => {
+                // Pre-fill the login form
+                router.replace({
+                  pathname: '/(auth)/login',
+                  params: { email: email.trim().toLowerCase() }
+                });
+              }
             }
-          }]
+          ]
         );
       }
     } catch (error) {
