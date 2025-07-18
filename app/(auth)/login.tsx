@@ -123,7 +123,7 @@ export default function LoginScreen() {
               onPress={handleBoltLogoPress}
             >
               <Image 
-                source={{ uri: 'https://stackblitz.com/storage/blobs/eyJfcmFpbHMiOnsibWVzc2FnZSI6IkJBaHBCSTZlUndFPSIsImV4cCI6bnVsbCwicHVyIjoiYmxvYl9pZCJ9fQ==--8a643fb02132fc31a3e1f6434e8fc82713fd5924/white_circle_360x360%20copy.png' }}
+                source={require('@/assets/images/white_circle_360x360 copy.png')}
                 style={styles.boltLogo}
                 resizeMode="contain"
               />
