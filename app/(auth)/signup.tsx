@@ -19,6 +19,8 @@ export default function SignupScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
   const { signUp } = useAuth();
 
   const validateEmail = (email: string) => {
@@ -108,26 +110,8 @@ export default function SignupScreen() {
         }
       } else {
         console.log('Account created successfully');
-        Alert.alert(
-          'Account Created Successfully!', 
-          'Please check your email and click the verification link to activate your account. Once verified, you can sign in.',
-          [
-            { 
-              text: 'Check Email', 
-              style: 'default'
-            },
-            { 
-              text: 'Go to Sign In', 
-              onPress: () => {
-                // Pre-fill the login form
-                router.replace({
-                  pathname: '/(auth)/login',
-                  params: { email: email.trim().toLowerCase() }
-                });
-              }
-            }
-          ]
-        );
+        setUserEmail(email.trim().toLowerCase());
+        setSignupSuccess(true);
       }
     } catch (error) {
       console.error('Unexpected error during signup:', error);
@@ -136,6 +120,75 @@ export default function SignupScreen() {
       setLoading(false);
     }
   };
+
+  const handleGoToSignIn = () => {
+    router.replace({
+      pathname: '/(auth)/login',
+      params: { email: userEmail }
+    });
+  };
+
+  // Success state - show after successful signup
+  if (signupSuccess) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <LinearGradient
+          colors={['#10B981', '#059669']}
+          style={styles.successHeader}
+        >
+          <View style={styles.successLogoContainer}>
+            <View style={styles.successCheckmark}>
+              <Text style={styles.checkmarkText}>✓</Text>
+            </View>
+            <Text style={styles.successTitle}>Account Created!</Text>
+            <Text style={styles.successSubtitle}>Welcome to OpenAnts</Text>
+          </View>
+        </LinearGradient>
+
+        <View style={styles.successFormContainer}>
+          <View style={styles.successContent}>
+            <Text style={styles.successMessage}>
+              Your account has been created successfully!
+            </Text>
+            
+            <View style={styles.emailVerificationCard}>
+              <View style={styles.emailIcon}>
+                <Text style={styles.emailIconText}>📧</Text>
+              </View>
+              <Text style={styles.verificationTitle}>Check Your Email</Text>
+              <Text style={styles.verificationText}>
+                We've sent a verification link to:
+              </Text>
+              <Text style={styles.userEmailText}>{userEmail}</Text>
+              <Text style={styles.verificationInstructions}>
+                Click the link in your email to activate your account, then return here to sign in.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.signInButton}
+              onPress={handleGoToSignIn}
+            >
+              <LinearGradient
+                colors={['#6366F1', '#8B5CF6']}
+                style={styles.signInButtonGradient}
+              >
+                <Text style={styles.signInButtonText}>Continue to Sign In</Text>
+                <ArrowRight size={20} color="#FFFFFF" />
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.backToSignupButton}
+              onPress={() => setSignupSuccess(false)}
+            >
+              <Text style={styles.backToSignupText}>← Back to Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -523,5 +576,135 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-SemiBold',
     color: '#6366F1',
+  },
+  successHeader: {
+    paddingTop: 40,
+    paddingBottom: 60,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    minHeight: 200,
+  },
+  successLogoContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  successCheckmark: {
+    width: 80,
+    height: 80,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  checkmarkText: {
+    fontSize: 40,
+    color: '#FFFFFF',
+    fontFamily: 'Inter-Bold',
+  },
+  successTitle: {
+    fontSize: 28,
+    fontFamily: 'Inter-Bold',
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  successSubtitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  successFormContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: -32,
+    paddingHorizontal: 32,
+    paddingTop: 40,
+    paddingBottom: 40,
+  },
+  successContent: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  successMessage: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  emailVerificationCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 32,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  emailIcon: {
+    width: 60,
+    height: 60,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emailIconText: {
+    fontSize: 24,
+  },
+  verificationTitle: {
+    fontSize: 20,
+    fontFamily: 'Inter-Bold',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  verificationText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  userEmailText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#6366F1',
+    marginBottom: 16,
+  },
+  verificationInstructions: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  signInButton: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  signInButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    gap: 8,
+    minHeight: 56,
+  },
+  signInButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#FFFFFF',
+  },
+  backToSignupButton: {
+    paddingVertical: 12,
+  },
+  backToSignupText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
   },
 });
